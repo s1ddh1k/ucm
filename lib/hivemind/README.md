@@ -5,7 +5,7 @@ Zettelkasten-style knowledge memory for AI coding assistants. Automatically extr
 ## Prerequisites
 
 - Node.js >= 18
-- `claude` CLI (for LLM features: extraction, query expansion, dedup)
+- `claude` or `codex` CLI (for LLM features: extraction, query expansion, dedup)
 - C/C++ toolchain for `better-sqlite3` native addon:
   - **macOS**: `xcode-select --install`
   - **Ubuntu/Debian**: `apt install python3 make g++`
@@ -55,6 +55,7 @@ hm delete <id>                  Delete zettel
 hm restore <id>                 Restore from archive
 hm context                      Show recent work (for CLAUDE.md)
 hm config [validate]            Show or validate config
+hm config provider [name]       Get/set LLM provider (claude|codex)
 hm docs add <dir>               Add document directory
 hm docs remove <dir>            Remove document directory
 hm docs list                    List document directories
@@ -109,6 +110,7 @@ Config file: `~/.hivemind/config.json`
 | `adapters.codex.enabled` | `true` | Scan Codex sessions |
 | `adapters.document.enabled` | `true` | Scan markdown directories |
 | `adapters.document.dirs` | `[]` | Directories to scan |
+| `llmProvider` | `claude` | LLM provider for extraction/search/dedup (`claude` or `codex`) |
 | `models.retrieval` | `claude-haiku-4-5-20251001` | Model for query expansion |
 | `models.extraction` | `claude-sonnet-4-6` | Model for knowledge extraction |
 | `models.dedup` | `claude-haiku-4-5-20251001` | Model for dedup verification |
@@ -117,6 +119,8 @@ Config file: `~/.hivemind/config.json`
 | `decayWeight` | `0.2` | Decay influence on search ranking (0-1) |
 | `gcThreshold` | `0.05` | Decay score below which zettels are archived |
 | `minKeep` | `50` | Minimum zettels to keep (GC protection) |
+
+If `llmProvider` is set to `codex`, the recommended model presets are: `retrieval=low`, `extraction=medium`, `dedup=low`, `consolidation=high`.
 
 ## Claude Code Integration
 

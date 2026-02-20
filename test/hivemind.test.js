@@ -1,4 +1,5 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 // IMPORTANT: setup must happen before requiring hivemind modules
@@ -12,7 +13,7 @@ const { decayScore } = require("../lib/hivemind/search");
 const extract = require("../lib/hivemind/extract");
 const lifecycle = require("../lib/hivemind/lifecycle");
 const document = require("../lib/hivemind/adapters/document");
-const { extractJson } = require("../lib/hivemind/llm");
+const { extractJson, buildLlmCallOptions } = require("../lib/hivemind/llm");
 
 // --- Test infrastructure ---
 
@@ -191,6 +192,29 @@ function testValidateConfig() {
   assert(warnings.some((w) => w.includes("models.retrieval")), "validateConfig: invalid model warning");
   assert(warnings.some((w) => w.includes("unknown")), "validateConfig: unknown adapter warning");
   assert(warnings.some((w) => w.includes("decayDays")), "validateConfig: decayDays range warning");
+
+  const codexValid = {
+    ...store.DEFAULT_CONFIG,
+    llmProvider: "codex",
+    models: {
+      retrieval: "low",
+      extraction: "medium",
+      dedup: "gpt-5-mini",
+      consolidation: "high",
+    },
+  };
+  const codexWarnings = store.validateConfig(codexValid);
+  assertEqual(codexWarnings.length, 0, "validateConfig codex: codex models accepted");
+
+  const codexInvalid = {
+    ...codexValid,
+    models: { ...codexValid.models, retrieval: "claude-sonnet-4-6" },
+  };
+  const codexInvalidWarnings = store.validateConfig(codexInvalid);
+  assert(
+    codexInvalidWarnings.some((w) => w.includes("models.retrieval")),
+    "validateConfig codex: claude model rejected"
+  );
 }
 
 // --- Indexer tests ---
@@ -508,7 +532,81 @@ async function testDocumentScanRead() {
   fs.rmSync(docDir, { recursive: true });
 }
 
+async function testCodexAdapterReadCurrentSchema() {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "hivemind-codex-home-"));
+  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2026", "02", "16");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  const sessionPath = path.join(sessionDir, "test-session.jsonl");
+
+  const longUserText = ("사용자 요청 문장입니다. ".repeat(80)).trim();
+  const longAssistantText = ("어시스턴트 응답 문장입니다. ".repeat(80)).trim();
+  const longReasoningText = ("중간 추론 문장입니다. ".repeat(80)).trim();
+  const lines = [
+    JSON.stringify({ type: "session_meta", payload: { id: "sess-001" } }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "user_message", message: longUserText },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: longAssistantText }],
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "agent_reasoning", text: longReasoningText },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: longUserText }],
+      },
+    }),
+    "",
+  ];
+  fs.writeFileSync(sessionPath, lines.join("\n"));
+
+  const prevHome = process.env.HOME;
+  process.env.HOME = fakeHome;
+  const modulePath = require.resolve("../lib/hivemind/adapters/codex");
+  delete require.cache[modulePath];
+  const codex = require("../lib/hivemind/adapters/codex");
+
+  try {
+    const items = await codex.scan({});
+    assertEqual(items.length, 1, "codex scan: found session file");
+
+    const chunks = await codex.read(items[0]);
+    assertEqual(chunks.length, 1, "codex read: generated one chunk");
+    assert(chunks[0].text.includes("[user]"), "codex read: includes user role");
+    assert(chunks[0].text.includes("[assistant]"), "codex read: includes assistant role");
+    assert(chunks[0].text.includes("[reasoning]"), "codex read: includes reasoning role");
+  } finally {
+    process.env.HOME = prevHome;
+    delete require.cache[modulePath];
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+}
+
 // --- LLM utility tests ---
+
+function testBuildLlmCallOptions() {
+  const codex = buildLlmCallOptions({ provider: "codex", model: "high" });
+  assertEqual(codex.provider, "codex", "buildLlmCallOptions codex: provider");
+  assertEqual(codex.outputFormat, "text", "buildLlmCallOptions codex: output text");
+
+  const claude = buildLlmCallOptions({ provider: "claude", model: "claude-sonnet-4-6" });
+  assertEqual(claude.provider, "claude", "buildLlmCallOptions claude: provider");
+  assertEqual(claude.outputFormat, "stream-json", "buildLlmCallOptions claude: stream-json");
+
+  const fallback = buildLlmCallOptions({ provider: "unknown" });
+  assertEqual(fallback.provider, "claude", "buildLlmCallOptions fallback: claude");
+}
 
 function testExtractJson() {
   const codeBlock = 'Some text\n```json\n{"key": "value"}\n```\nMore text';
@@ -582,7 +680,12 @@ async function main() {
   await testDocumentScanRead();
   console.log();
 
+  console.log("Codex Adapter Tests:");
+  await testCodexAdapterReadCurrentSchema();
+  console.log();
+
   console.log("LLM Utility Tests:");
+  testBuildLlmCallOptions();
   testExtractJson();
   console.log();
 
