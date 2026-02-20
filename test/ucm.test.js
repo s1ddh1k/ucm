@@ -20,15 +20,14 @@ const {
   PROPOSALS_DIR, SNAPSHOTS_DIR, PROPOSAL_STATUSES, VALID_CATEGORIES, VALID_RISKS,
   SOCK_PATH, PID_PATH, LOG_PATH, CONFIG_PATH, STATE_PATH,
   SOCKET_READY_TIMEOUT_MS, SOCKET_POLL_INTERVAL_MS, CLIENT_TIMEOUT_MS,
-  DEFAULT_CONFIG, TASK_STATES, GATE_STEPS, META_KEYS,
+  DEFAULT_CONFIG, TASK_STATES, META_KEYS,
   DATA_VERSION, SOURCE_ROOT,
   parseTaskFile, serializeTaskFile, extractMeta, generateTaskId, normalizeProjects,
-  createTempWorkspace, updateTaskProject, resolveProjectForTask,
+  createTempWorkspace, updateTaskProject,
   cleanStaleFiles, readPid, isProcessAlive, ensureDirectories,
   checkResources, getResourcePressure,
   broadcastWs,
-  resolvePipeline, normalizeStep, findResumeStepIndex, parseGateResult, extractCriticalIssues, isGateStep, buildStageResultsSummary, resolveMaxIterations, collectRelevantLessons, loadProjectPreferences,
-  acquireInfraLock, releaseInfraLock,
+  mapPipelineToForge, loadProjectPreferences,
   defaultState,
   generateProposalId, computeDedupHash, serializeProposal, parseProposalFile,
   saveProposal, loadProposal, listProposals,
@@ -232,7 +231,7 @@ function testNormalizeProjectsEmpty() {
   assertEqual(projects.length, 0, "normalize: empty returns []");
 }
 
-// ── Unit Tests: createTempWorkspace / updateTaskProject / resolveProjectForTask ──
+// ── Unit Tests: createTempWorkspace / updateTaskProject ──
 
 async function testCreateTempWorkspace() {
   const taskId = "tw" + generateTaskId();
@@ -258,35 +257,6 @@ async function testUpdateTaskProject() {
   await rm(taskPath);
 }
 
-async function testResolveProjectForTaskWithProject() {
-  const task = { project: SOURCE_ROOT };
-  const projects = await resolveProjectForTask("dummyid", task);
-  assertEqual(projects.length, 1, "resolveProjectForTask: returns existing project");
-  assertEqual(projects[0].path, path.resolve(SOURCE_ROOT), "resolveProjectForTask: correct path");
-}
-
-async function testResolveProjectForTaskWithoutProject() {
-  const taskId = generateTaskId();
-  const taskPath = path.join(TASKS_DIR, "pending", `${taskId}.md`);
-  await writeFile(taskPath, serializeTaskFile({ id: taskId, title: "test", status: "pending" }, "body"));
-
-  const task = { id: taskId };
-  const projects = await resolveProjectForTask(taskId, task);
-  assertEqual(projects.length, 1, "resolveProjectForTask no project: returns 1 project");
-  const expectedPath = path.join(WORKSPACES_DIR, taskId);
-  assertEqual(projects[0].path, expectedPath, "resolveProjectForTask no project: temp workspace path");
-  // verify workspace was created
-  const s = await stat(expectedPath);
-  assert(s.isDirectory(), "resolveProjectForTask no project: workspace dir exists");
-  // verify task file was updated
-  const content = await readFile(taskPath, "utf-8");
-  const { meta } = parseTaskFile(content);
-  assertEqual(meta.project, expectedPath, "resolveProjectForTask no project: task file updated");
-  // cleanup
-  await rm(expectedPath, { recursive: true });
-  await rm(taskPath);
-}
-
 // ── Unit Tests: generateTaskId ──
 
 function testGenerateTaskId() {
@@ -297,134 +267,7 @@ function testGenerateTaskId() {
   assert(id1 !== id2, "taskId: unique");
 }
 
-// ── Unit Tests: Pipeline Engine ──
-
-function testResolvePipeline() {
-  // frontmatter에서 pipeline 지정
-  const config = { ...DEFAULT_CONFIG };
-  const task1 = { pipeline: "implement" };
-  const result1 = resolvePipeline(task1, config);
-  assertEqual(result1.name, "implement", "resolvePipeline: frontmatter pipeline name");
-  assertEqual(result1.steps.length, 2, "resolvePipeline: implement has 2 steps (analyze + loop)");
-
-  // frontmatter에 없으면 defaultPipeline 사용
-  const task2 = {};
-  const result2 = resolvePipeline(task2, config);
-  assertEqual(result2.name, "quick", "resolvePipeline: default pipeline name");
-  assertDeepEqual(result2.steps, ["analyze", "implement"], "resolvePipeline: quick steps");
-
-  // 존재하지 않는 pipeline이면 legacy fallback
-  const task3 = { pipeline: "nonexistent" };
-  const result3 = resolvePipeline(task3, config);
-  assertEqual(result3.name, "legacy", "resolvePipeline: unknown falls back to legacy");
-  assertDeepEqual(result3.steps, ["analyze", "implement"], "resolvePipeline: legacy steps");
-}
-
-function testNormalizeStep() {
-  // string → stage
-  const s1 = normalizeStep("analyze");
-  assertEqual(s1.type, "stage", "normalizeStep: string type");
-  assertEqual(s1.stage, "analyze", "normalizeStep: string stage");
-
-  // loop object
-  const s2 = normalizeStep({ loop: ["implement", "test"], maxIterations: 5 });
-  assertEqual(s2.type, "loop", "normalizeStep: loop type");
-  assertDeepEqual(s2.steps, ["implement", "test"], "normalizeStep: loop steps");
-  assertEqual(s2.maxIterations, 5, "normalizeStep: loop maxIterations");
-
-  // rsa object
-  const s3 = normalizeStep({ rsa: "research", count: 3, strategy: "converge" });
-  assertEqual(s3.type, "rsa", "normalizeStep: rsa type");
-  assertEqual(s3.stage, "research", "normalizeStep: rsa stage");
-
-  // gather object
-  const s4 = normalizeStep({ gather: "autonomous" });
-  assertEqual(s4.type, "gather", "normalizeStep: gather type");
-  assertEqual(s4.mode, "autonomous", "normalizeStep: gather mode");
-
-  // unknown → throw
-  let threw = false;
-  try { normalizeStep({ unknown: true }); } catch { threw = true; }
-  assert(threw, "normalizeStep: unknown throws");
-}
-
-function testFindResumeStepIndex() {
-  // analyze + loop → resume from index 1
-  const steps1 = ["analyze", { loop: ["implement", "test", "self-review"], maxIterations: 3 }];
-  assertEqual(findResumeStepIndex(steps1), 1, "findResumeStepIndex: skips analyze");
-
-  // analyze + gather + loop → resume from index 2
-  const steps2 = ["analyze", { gather: "autonomous" }, { loop: ["implement", "test"] }];
-  assertEqual(findResumeStepIndex(steps2), 2, "findResumeStepIndex: skips analyze+gather");
-
-  // spec + analyze + implement → resume from index 2 (spec and analyze skipped)
-  const steps3 = ["spec", "analyze", "implement"];
-  assertEqual(findResumeStepIndex(steps3), 2, "findResumeStepIndex: skips spec+analyze");
-
-  // no setup stages → resume from 0
-  const steps4 = ["implement", "test"];
-  assertEqual(findResumeStepIndex(steps4), 0, "findResumeStepIndex: no setup stages");
-
-  // only analyze → resume from 1
-  const steps5 = ["analyze"];
-  assertEqual(findResumeStepIndex(steps5), 1, "findResumeStepIndex: only analyze");
-}
-
-function testParseGateResult() {
-  assertEqual(parseGateResult("some output\nGATE: PASS\n"), "pass", "parseGateResult: pass");
-  assertEqual(parseGateResult("some output\nGATE: FAIL\n"), "fail", "parseGateResult: fail");
-  assertEqual(parseGateResult("no gate output\n"), null, "parseGateResult: none");
-  assertEqual(parseGateResult("some output\ngate: pass\n"), "pass", "parseGateResult: case-insensitive");
-  assertEqual(parseGateResult("some output\nGATE: Pass\n"), "pass", "parseGateResult: mixed case");
-  assertEqual(parseGateResult(null), null, "parseGateResult: null input");
-}
-
-function testExtractCriticalIssues() {
-  // P1 present
-  const withP1 = `### Issues\n\n**P1 — CRITICAL (must fix):**\n- [ ] Missing null check — add guard\n- [ ] SQL injection — use parameterized query\n\n**P2 — IMPORTANT (should fix):**\n- [ ] Naming inconsistency\n\nGATE: FAIL`;
-  const p1Result = extractCriticalIssues(withP1);
-  assert(p1Result.includes("Missing null check"), "extractCriticalIssues: contains P1 item 1");
-  assert(p1Result.includes("SQL injection"), "extractCriticalIssues: contains P1 item 2");
-  assert(!p1Result.includes("Naming inconsistency"), "extractCriticalIssues: excludes P2");
-  assert(!p1Result.includes("GATE:"), "extractCriticalIssues: excludes GATE");
-
-  // no P1
-  const noP1 = `### Issues\n\n**P2 — IMPORTANT (should fix):**\n- [ ] Some issue\n\nGATE: PASS`;
-  assertEqual(extractCriticalIssues(noP1), "", "extractCriticalIssues: no P1 returns empty");
-
-  // empty/null input
-  assertEqual(extractCriticalIssues(""), "", "extractCriticalIssues: empty string");
-  assertEqual(extractCriticalIssues(null), "", "extractCriticalIssues: null input");
-}
-
-function testIsGateStep() {
-  assert(isGateStep("test"), "isGateStep: test is gate");
-  assert(isGateStep("self-review"), "isGateStep: self-review is gate");
-  assert(isGateStep("visual-check"), "isGateStep: visual-check is gate");
-  assert(!isGateStep("analyze"), "isGateStep: analyze is not gate");
-  assert(!isGateStep("implement"), "isGateStep: implement is not gate");
-}
-
-function testBuildStageResultsSummary() {
-  // empty
-  assertEqual(buildStageResultsSummary({}), "", "buildSummary: empty");
-
-  // multiple stages
-  const result = buildStageResultsSummary({ analyze: "analysis output", implement: "impl output" });
-  assert(result.includes("### analyze"), "buildSummary: has analyze header");
-  assert(result.includes("### implement"), "buildSummary: has implement header");
-  assert(result.includes("analysis output"), "buildSummary: has analyze content");
-
-  // gate keys excluded
-  const withGate = buildStageResultsSummary({ test: "test out", "test:gate": "pass" });
-  assert(!withGate.includes("### test:gate"), "buildSummary: gate key excluded");
-  assert(withGate.includes("### test"), "buildSummary: test key included");
-
-  // truncation
-  const longValue = "x".repeat(3000);
-  const truncated = buildStageResultsSummary({ long: longValue });
-  assert(truncated.includes("...(truncated)"), "buildSummary: long value truncated");
-}
+// ── Unit Tests: Forge Integration ──
 
 function testPipelineInMetaKeys() {
   const task = { id: "abc", title: "Test", pipeline: "implement", body: "should be excluded" };
@@ -432,102 +275,10 @@ function testPipelineInMetaKeys() {
   assertEqual(meta.pipeline, "implement", "extractMeta: pipeline included");
 }
 
-function testResolveMaxIterations() {
-  // numeric value
-  assertEqual(resolveMaxIterations(5, {}), 5, "resolveMaxIter: numeric");
-
-  // auto with trivial difficulty
-  assertEqual(resolveMaxIterations("auto", { analyze: "Difficulty: trivial\nsome text" }), 1, "resolveMaxIter: auto trivial");
-
-  // auto with easy difficulty
-  assertEqual(resolveMaxIterations("auto", { analyze: "difficulty: easy" }), 1, "resolveMaxIter: auto easy");
-
-  // auto with medium difficulty
-  assertEqual(resolveMaxIterations("auto", { analyze: "Difficulty: medium" }), 3, "resolveMaxIter: auto medium");
-
-  // auto with hard difficulty
-  assertEqual(resolveMaxIterations("auto", { analyze: "난이도: hard" }), 5, "resolveMaxIter: auto hard");
-
-  // auto with complex difficulty
-  assertEqual(resolveMaxIterations("auto", { analyze: "Difficulty: complex" }), 5, "resolveMaxIter: auto complex");
-
-  // auto with no difficulty found
-  assertEqual(resolveMaxIterations("auto", { analyze: "no difficulty info" }), 3, "resolveMaxIter: auto no match");
-
-  // auto with empty stageResults
-  assertEqual(resolveMaxIterations("auto", {}), 3, "resolveMaxIter: auto empty");
-
-  // fallback for unknown value
-  assertEqual(resolveMaxIterations(undefined, {}), 3, "resolveMaxIter: undefined fallback");
-}
-
-function testNormalizeStepMaxIterationsAuto() {
-  const step = { loop: ["implement", "test"], maxIterations: "auto" };
-  const normalized = normalizeStep(step);
-  assertEqual(normalized.maxIterations, "auto", "normalizeStep: maxIterations auto preserved");
-}
-
-function testNormalizeStepLoopDefaults() {
-  const step = { loop: ["implement", "test"] };
-  const normalized = normalizeStep(step);
-  assertEqual(normalized.maxIterations, 3, "normalizeStep: loop default maxIterations is 3");
-}
-
-function testTestTemplateExists() {
-  try {
-    fs.accessSync(path.join(__dirname, "..", "templates", "ucm-test.md"));
-    passed++;
-    process.stdout.write(".");
-  } catch {
-    failed++;
-    failures.push("test template: ucm-test.md missing");
-    process.stdout.write("F");
-  }
-}
-
-function testImplementTemplateHasTestFeedback() {
-  const content = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-implement.md"), "utf-8");
-  assert(content.includes("{{TEST_FEEDBACK}}"), "implement template: has TEST_FEEDBACK placeholder");
-}
-
-function testSelfReviewTemplateExists() {
-  const content = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-self-review.md"), "utf-8");
-  assert(content.includes("{{ANALYZE_RESULT}}"), "self-review template: has ANALYZE_RESULT");
-  assert(content.includes("GATE: PASS"), "self-review template: has GATE: PASS");
-  assert(content.includes("GATE: FAIL"), "self-review template: has GATE: FAIL");
-}
-
-function testGatherTemplateExists() {
-  const content = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-gather.md"), "utf-8");
-  assert(content.includes("{{TASK_TITLE}}"), "gather template: has TASK_TITLE");
-  assert(content.includes("{{TASK_DESCRIPTION}}"), "gather template: has TASK_DESCRIPTION");
-  assert(content.includes("{{WORKSPACE}}"), "gather template: has WORKSPACE");
-}
-
 function testSpecTemplateExists() {
   const content = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-spec.md"), "utf-8");
   assert(content.includes("{{GATHER_RESULT}}"), "spec template: has GATHER_RESULT");
   assert(content.includes("Acceptance Criteria"), "spec template: has acceptance criteria");
-}
-
-function testRsaTemplatesExist() {
-  const converge = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-rsa-converge.md"), "utf-8");
-  assert(converge.includes("{{AGENT_RESULTS}}"), "rsa-converge template: has AGENT_RESULTS");
-  assert(converge.includes("{{TASK_TITLE}}"), "rsa-converge template: has TASK_TITLE");
-
-  const diverge = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-rsa-diverge.md"), "utf-8");
-  assert(diverge.includes("{{AGENT_RESULTS}}"), "rsa-diverge template: has AGENT_RESULTS");
-
-  const rsaSelfReview = fs.readFileSync(path.join(__dirname, "..", "templates", "rsa-self-review.md"), "utf-8");
-  assert(rsaSelfReview.includes("GATE: PASS"), "rsa-self-review template: has GATE: PASS");
-  assert(rsaSelfReview.includes("GATE: FAIL"), "rsa-self-review template: has GATE: FAIL");
-  assert(rsaSelfReview.includes("P1"), "rsa-self-review template: has P1 priority");
-}
-
-function testVisualCheckTemplateExists() {
-  const content = fs.readFileSync(path.join(__dirname, "..", "templates", "ucm-visual-check.md"), "utf-8");
-  assert(content.includes("GATE: PASS"), "visual-check template: has GATE: PASS");
-  assert(content.includes("{{SPEC}}"), "visual-check template: has SPEC");
 }
 
 function testDefaultConfigInfra() {
@@ -537,46 +288,29 @@ function testDefaultConfigInfra() {
   assert(typeof DEFAULT_CONFIG.infra.upTimeoutMs === "number", "config: infra.upTimeoutMs is number");
 }
 
-function testDefaultConfigPipelines() {
-  assert(DEFAULT_CONFIG.pipelines !== undefined, "config: pipelines section exists");
-  assert(DEFAULT_CONFIG.pipelines.quick !== undefined, "config: quick pipeline exists");
-  assert(DEFAULT_CONFIG.pipelines.implement !== undefined, "config: implement pipeline exists");
-  assert(DEFAULT_CONFIG.pipelines.research !== undefined, "config: research pipeline exists");
-  assert(DEFAULT_CONFIG.pipelines.thorough !== undefined, "config: thorough pipeline exists");
-  assertEqual(DEFAULT_CONFIG.defaultPipeline, "quick", "config: defaultPipeline is quick");
+function testMapPipelineToForge() {
+  const { mapPipelineToForge } = require("../lib/ucmd.js");
+  assertEqual(mapPipelineToForge(null), null, "mapPipelineToForge: null → null");
+  assertEqual(mapPipelineToForge(undefined), null, "mapPipelineToForge: undefined → null");
+  assertEqual(mapPipelineToForge("auto"), null, "mapPipelineToForge: auto → null");
+  assertEqual(mapPipelineToForge("quick"), "small", "mapPipelineToForge: quick → small");
+  assertEqual(mapPipelineToForge("implement"), "small", "mapPipelineToForge: implement → small");
+  assertEqual(mapPipelineToForge("thorough"), "large", "mapPipelineToForge: thorough → large");
+  assertEqual(mapPipelineToForge("research"), "medium", "mapPipelineToForge: research → medium");
+  assertEqual(mapPipelineToForge("trivial"), "trivial", "mapPipelineToForge: trivial pass-through");
+  assertEqual(mapPipelineToForge("small"), "small", "mapPipelineToForge: small pass-through");
+  assertEqual(mapPipelineToForge("medium"), "medium", "mapPipelineToForge: medium pass-through");
+  assertEqual(mapPipelineToForge("large"), "large", "mapPipelineToForge: large pass-through");
+  assertEqual(mapPipelineToForge("unknown"), null, "mapPipelineToForge: unknown → null");
 }
 
-function testThoroughPipelineResolve() {
-  const task = { pipeline: "thorough" };
-  const cfg = { pipelines: DEFAULT_CONFIG.pipelines, defaultPipeline: "quick" };
-  const result = resolvePipeline(task, cfg);
-  assertEqual(result.name, "thorough", "resolvePipeline: thorough name");
-  assertEqual(result.steps.length, 2, "resolvePipeline: thorough has 2 steps");
-  assertEqual(result.steps[0], "analyze", "resolvePipeline: thorough step 1 is analyze");
-  const loopStep = normalizeStep(result.steps[1]);
-  assertEqual(loopStep.type, "loop", "resolvePipeline: thorough step 2 is loop");
-  assertEqual(loopStep.steps.length, 3, "resolvePipeline: thorough loop has 3 inner steps");
-  const rsaStep = normalizeStep(loopStep.steps[2]);
-  assertEqual(rsaStep.type, "rsa", "resolvePipeline: thorough loop contains rsa step");
-  assertEqual(rsaStep.stage, "self-review", "resolvePipeline: thorough rsa stage is self-review");
-  assertEqual(rsaStep.count, 3, "resolvePipeline: thorough rsa count is 3");
-  assertEqual(rsaStep.strategy, "converge", "resolvePipeline: thorough rsa strategy is converge");
-}
-
-function testSuspendedMetaKeys() {
-  assert(META_KEYS.has("suspended"), "META_KEYS: has suspended");
-  assert(META_KEYS.has("suspendedStage"), "META_KEYS: has suspendedStage");
-  assert(META_KEYS.has("suspendedStepIndex"), "META_KEYS: has suspendedStepIndex");
-}
-
-async function testInfraLockAcquireRelease() {
-  // should acquire immediately when no contention
-  let acquired = false;
-  const lockPromise = acquireInfraLock("test-infra-1");
-  lockPromise.then(() => { acquired = true; });
-  await new Promise((r) => setTimeout(r, 10));
-  assert(acquired, "infraLock: acquired immediately");
-  releaseInfraLock("test-infra-1");
+function testHandleStatsUsesForge() {
+  const { FORGE_PIPELINES } = require("../lib/core/constants");
+  const forgePipelineNames = Object.keys(FORGE_PIPELINES);
+  assert(forgePipelineNames.includes("trivial"), "forge pipelines: has trivial");
+  assert(forgePipelineNames.includes("small"), "forge pipelines: has small");
+  assert(forgePipelineNames.includes("medium"), "forge pipelines: has medium");
+  assert(forgePipelineNames.includes("large"), "forge pipelines: has large");
 }
 
 // ── Integration Tests: Directory Setup ──
@@ -1487,28 +1221,6 @@ async function testLessonsDirectory() {
     failures.push("ensureDirectories: lessons/global dir missing");
     process.stdout.write("F");
   }
-}
-
-async function testCollectRelevantLessons() {
-  // empty directory — no lessons
-  const emptyResult = await collectRelevantLessons("nonexistent-project");
-  assertEqual(emptyResult, "(no relevant lessons)", "collectRelevantLessons: empty returns placeholder");
-
-  // with lesson files
-  const testProject = "test-lessons-project";
-  const lessonsDir = path.join(LESSONS_DIR, testProject);
-  await mkdir(lessonsDir, { recursive: true });
-  await writeFile(path.join(lessonsDir, "lesson-001.md"), "---\nseverity: high\n---\n\n## Lesson 1: Test\n\n**Problem:** broken\n**Solution:** fix it");
-  await writeFile(path.join(lessonsDir, "lesson-002.md"), "---\nseverity: low\n---\n\n## Lesson 2: Minor\n\n**Problem:** style\n**Solution:** reformat");
-
-  const result = await collectRelevantLessons(testProject);
-  assert(result.includes("Lesson 1"), "collectRelevantLessons: contains lesson 1");
-  assert(result.includes("Lesson 2"), "collectRelevantLessons: contains lesson 2");
-  // high severity should come first
-  assert(result.indexOf("severity: high") < result.indexOf("severity: low"), "collectRelevantLessons: high severity first");
-
-  // cleanup
-  await rm(lessonsDir, { recursive: true });
 }
 
 async function testLoadProjectPreferences() {
@@ -2969,12 +2681,6 @@ function testObserveTemplateHasCommitHistory() {
   const template = fs2.readFileSync(path.join(SOURCE_ROOT, "templates/ucm-observe.md"), "utf-8");
   assert(template.includes("{{COMMIT_HISTORY}}"), "observe template has COMMIT_HISTORY");
   assert(template.includes("{{DOC_COVERAGE_SUMMARY}}"), "observe template has DOC_COVERAGE_SUMMARY");
-}
-
-function testSelfReviewTemplateHasDocCoverage() {
-  const fs2 = require("fs");
-  const template = fs2.readFileSync(path.join(SOURCE_ROOT, "templates/ucm-self-review.md"), "utf-8");
-  assert(template.includes("{{DOC_COVERAGE}}"), "self-review template has DOC_COVERAGE");
 }
 
 function testLargeCommitThreshold() {
@@ -4575,8 +4281,6 @@ async function main() {
   testNormalizeProjectsEmpty();
   await testCreateTempWorkspace();
   await testUpdateTaskProject();
-  await testResolveProjectForTaskWithProject();
-  await testResolveProjectForTaskWithoutProject();
   testGenerateTaskId();
   console.log();
 
@@ -4585,30 +4289,12 @@ async function main() {
   testGetResourcePressure();
   console.log();
 
-  console.log("Pipeline Engine Tests:");
-  testResolvePipeline();
-  testNormalizeStep();
-  testFindResumeStepIndex();
-  testParseGateResult();
-  testExtractCriticalIssues();
-  testIsGateStep();
-  testBuildStageResultsSummary();
+  console.log("Forge Integration Tests:");
   testPipelineInMetaKeys();
-  testResolveMaxIterations();
-  testNormalizeStepMaxIterationsAuto();
-  testNormalizeStepLoopDefaults();
-  testTestTemplateExists();
-  testImplementTemplateHasTestFeedback();
-  testSelfReviewTemplateExists();
-  testGatherTemplateExists();
   testSpecTemplateExists();
-  testRsaTemplatesExist();
-  testVisualCheckTemplateExists();
   testDefaultConfigInfra();
-  testDefaultConfigPipelines();
-  testThoroughPipelineResolve();
-  testSuspendedMetaKeys();
-  await testInfraLockAcquireRelease();
+  testMapPipelineToForge();
+  testHandleStatsUsesForge();
   console.log();
 
   console.log("WebSocket Frame Tests:");
@@ -4660,7 +4346,6 @@ async function main() {
 
   console.log("Template Placeholder Tests:");
   testObserveTemplateHasCommitHistory();
-  testSelfReviewTemplateHasDocCoverage();
   testAutopilotPlanTemplateHasProjectContext();
   testAutopilotReleaseTemplateUpdated();
   console.log();
@@ -4755,7 +4440,6 @@ async function main() {
   console.log("Integration Tests:");
   await testEnsureDirectories();
   await testLessonsDirectory();
-  await testCollectRelevantLessons();
   await testLoadProjectPreferences();
   await testConfig();
   await testArtifacts();
