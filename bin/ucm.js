@@ -81,6 +81,7 @@ function parseArgs(argv) {
     else if (args[i] === "--watch" || args[i] === "-w") { opts.watch = true; }
     else if (args[i] === "--background" || args[i] === "--bg") { opts.background = true; }
     else if (args[i] === "--verbose" || args[i] === "-v") { opts.verbose = true; }
+    else if (args[i] === "--port") { opts.port = parseInt(args[++i]) || 17172; }
     else if (args[i].startsWith("-")) {
       console.error(`알 수 없는 옵션: ${args[i]}`);
       process.exit(1);
@@ -703,9 +704,11 @@ async function main() {
         console.error("hint: `ucm daemon start`로 수동 시작하세요.");
         process.exit(1);
       }
+      const { startUiServer } = require("../lib/ucm-ui-server.js");
+      const port = opts.port || 17172;
+      await startUiServer({ port });
       const { exec } = require("child_process");
-      exec("open http://localhost:17172");
-      console.log("opening dashboard...");
+      exec(`open http://localhost:${port}`);
       break;
     }
     default:
