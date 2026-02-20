@@ -10,8 +10,8 @@ const {
   SOCK_PATH, PID_PATH, LOG_PATH, UCM_DIR, TASKS_DIR, SOURCE_ROOT,
   SOCKET_READY_TIMEOUT_MS, SOCKET_POLL_INTERVAL_MS, CLIENT_TIMEOUT_MS,
   parseTaskFile, cleanStaleFiles, readPid, isProcessAlive,
-} = require("./ucmd.js");
-const { createSocketClient } = require("./socket-client.js");
+} = require("../lib/ucmd.js");
+const { createSocketClient } = require("../lib/socket-client.js");
 
 const DAEMON_DIR = path.join(UCM_DIR, "daemon");
 
@@ -151,7 +151,7 @@ async function ensureDaemon() {
   await cleanStaleFiles();
   await mkdir(DAEMON_DIR, { recursive: true });
 
-  const ucmdPath = path.join(__dirname, "ucmd.js");
+  const ucmdPath = path.join(__dirname, "..", "lib", "ucmd.js");
   const logFd = fs.openSync(LOG_PATH, "a");
   const child = spawn(process.execPath, [ucmdPath, "start", "--foreground"], {
     detached: true,
@@ -709,7 +709,7 @@ async function cmdForge(opts) {
 
   if (opts.pipeline && !["trivial", "small", "medium", "large"].includes(opts.pipeline)) {
     if (opts.pipeline.includes(",")) {
-      const { STAGE_ARTIFACTS } = require("./core/constants");
+      const { STAGE_ARTIFACTS } = require("../lib/core/constants");
       const validStages = new Set(Object.keys(STAGE_ARTIFACTS));
       const stages = opts.pipeline.split(",").map((s) => s.trim());
       const invalid = stages.filter((s) => !validStages.has(s));
@@ -750,9 +750,9 @@ async function cmdForge(opts) {
     }
   }
 
-  const { forge } = require("./forge/index");
+  const { forge } = require("../lib/forge/index");
 
-  const { DEFAULT_TOKEN_BUDGET } = require("./core/constants");
+  const { DEFAULT_TOKEN_BUDGET } = require("../lib/core/constants");
   const dag = await forge(input, {
     project,
     pipeline: opts.pipeline,
@@ -800,9 +800,9 @@ async function cmdForgeResume(opts) {
     }
   }
 
-  const { resume } = require("./forge/index");
+  const { resume } = require("../lib/forge/index");
 
-  const { DEFAULT_TOKEN_BUDGET } = require("./core/constants");
+  const { DEFAULT_TOKEN_BUDGET } = require("../lib/core/constants");
   const dag = await resume(taskId, {
     project,
     fromStage: opts.from,
@@ -823,7 +823,7 @@ async function cmdAbort(opts) {
   const taskId = opts.positional[0];
   if (!taskId) { console.error("task-id 필수: ucm abort <id>"); process.exit(1); }
 
-  const { TaskDag } = require("./core/task");
+  const { TaskDag } = require("../lib/core/task");
   const dag = await TaskDag.load(taskId);
   if (dag.status !== "in_progress") {
     console.error(`중단 불가: 현재 상태 ${dag.status}`);
@@ -831,7 +831,7 @@ async function cmdAbort(opts) {
   }
 
   // worktree 정리
-  const { removeWorktrees, loadWorkspace } = require("./core/worktree");
+  const { removeWorktrees, loadWorkspace } = require("../lib/core/worktree");
   try {
     const workspace = await loadWorkspace(taskId);
     if (workspace) {
@@ -846,7 +846,7 @@ async function cmdAbort(opts) {
 }
 
 async function cmdGc(opts) {
-  const { gcTasks } = require("./core/worktree");
+  const { gcTasks } = require("../lib/core/worktree");
   const maxAgeDays = opts.days || 30;
   console.error(`cleaning up tasks older than ${maxAgeDays} days...`);
   const cleaned = await gcTasks({ maxAgeDays });
@@ -960,7 +960,7 @@ async function main() {
     // Other
     case "chat": await cmdChat(); break;
     case "ui": {
-      const { startUiServer } = require("./ucm-ui-server.js");
+      const { startUiServer } = require("../lib/ucm-ui-server.js");
       await startUiServer(opts);
       break;
     }
@@ -972,7 +972,7 @@ async function main() {
         console.error("hint: `ucm daemon start`로 수동 시작하세요.");
         process.exit(1);
       }
-      const { startUiServer } = require("./ucm-ui-server.js");
+      const { startUiServer } = require("../lib/ucm-ui-server.js");
       const port = opts.port || Number(process.env.UCM_UI_PORT) || 17172;
       await startUiServer({ port });
       const { exec } = require("child_process");
@@ -1017,7 +1017,7 @@ main().catch(async (e) => {
   const taskIdMatch = msg.match(/forge-\d{8}-[a-f0-9]+/);
   if (taskIdMatch) {
     try {
-      const { TaskDag } = require("./core/task");
+      const { TaskDag } = require("../lib/core/task");
       const dag = await TaskDag.load(taskIdMatch[0]);
       const next = getNextAction(dag);
       if (next) console.error(`next: ${next}`);

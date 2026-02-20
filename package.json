@@ -12,7 +12,7 @@
     "req": "./bin/req.js",
     "ucmd": "./bin/ucmd.js",
     "ucm-watchdog": "./bin/ucm-watchdog.js",
-    "ucm": "./lib/ucm-cli.js",
+    "ucm": "./bin/ucm.js",
     "hm": "./bin/hm.js",
     "hmd": "./bin/hmd.js"
   },

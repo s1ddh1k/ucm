@@ -3225,9 +3225,9 @@ function testPolishCustomPipelineDetection() {
 function testPolishStageEstimate() {
   // bin/ucm.js의 STAGE_EST에 polish가 포함되어 있는지 확인
   const ucmSource = require("fs").readFileSync(
-    require("path").join(__dirname, "..", "lib", "ucm-cli.js"), "utf-8"
+    require("path").join(__dirname, "..", "bin", "ucm.js"), "utf-8"
   );
-  assert(ucmSource.includes("polish:"), "ucm-cli.js: STAGE_EST has polish");
+  assert(ucmSource.includes("polish:"), "ucm.js: STAGE_EST has polish");
 }
 
 // ── UX Review Tests ──
