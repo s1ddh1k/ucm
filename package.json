@@ -3,6 +3,8 @@
   "version": "0.2.0",
   "description": "UCM Forge — 소프트웨어 팩토리",
   "bin": {
+    "ucm-dev": "./bin/ucm-dev.js",
+    "ucmd-dev": "./bin/ucmd-dev.js",
 "rsa": "./bin/rsa.js",
     "qna": "./bin/qna.js",
     "spec": "./bin/spec.js",
@@ -10,7 +12,7 @@
     "req": "./bin/req.js",
     "ucmd": "./bin/ucmd.js",
     "ucm-watchdog": "./bin/ucm-watchdog.js",
-    "ucm": "./bin/ucm.js",
+    "ucm": "./lib/ucm-cli.js",
     "hm": "./bin/hm.js",
     "hmd": "./bin/hmd.js"
   },
