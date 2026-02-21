@@ -4,9 +4,10 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThumbsUp, ThumbsDown } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Trash2 } from "lucide-react";
 import { RISK_COLORS, type RiskLevel } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { getProposalProjectLabel, getProposalProjectPath } from "@/lib/project";
 
 interface ProposalDetailDialogProps {
   proposal: Proposal | null;
@@ -14,15 +15,18 @@ interface ProposalDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 export function ProposalDetailDialog({
-  proposal, open, onOpenChange, onApprove, onReject,
+  proposal, open, onOpenChange, onApprove, onReject, onDelete,
 }: ProposalDetailDialogProps) {
   if (!proposal) return null;
 
   const riskColor = RISK_COLORS[proposal.risk as RiskLevel] || "text-muted-foreground";
   const isActionable = proposal.status === "proposed";
+  const projectLabel = getProposalProjectLabel(proposal);
+  const projectPath = getProposalProjectPath(proposal);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -32,6 +36,9 @@ export function ProposalDetailDialog({
             <Badge variant="outline">{proposal.category}</Badge>
             <span className={cn("text-xs font-medium", riskColor)}>{proposal.risk} risk</span>
             <Badge variant="secondary" className="text-xs">{proposal.status}</Badge>
+            <Badge variant="outline" className="text-xs font-normal" title={projectPath || projectLabel}>
+              {projectLabel}
+            </Badge>
           </div>
           <DialogTitle>{proposal.title}</DialogTitle>
           <DialogDescription>Priority: {proposal.priority}</DialogDescription>
@@ -58,16 +65,21 @@ export function ProposalDetailDialog({
             </div>
           )}
 
-          {isActionable && (
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="destructive" size="sm" onClick={() => onReject(proposal.id)}>
-                <ThumbsDown className="h-4 w-4" /> Reject
-              </Button>
-              <Button size="sm" onClick={() => onApprove(proposal.id)}>
-                <ThumbsUp className="h-4 w-4" /> Approve
-              </Button>
-            </div>
-          )}
+          <div className="flex justify-end gap-2 pt-2">
+            {isActionable && (
+              <>
+                <Button variant="destructive" size="sm" onClick={() => onReject(proposal.id)}>
+                  <ThumbsDown className="h-4 w-4" /> Reject
+                </Button>
+                <Button size="sm" onClick={() => onApprove(proposal.id)}>
+                  <ThumbsUp className="h-4 w-4" /> Approve
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={() => onDelete(proposal.id)}>
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

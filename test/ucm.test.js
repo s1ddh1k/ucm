@@ -11,6 +11,7 @@ const crypto = require("crypto");
 
 const { startSuiteTimer } = require("./harness");
 const { trackPid, cleanupAll } = require("./helpers/cleanup");
+const { ensureWebDistBuilt } = require("./helpers/web-build");
 
 // isolate test daemon from production
 const TEST_UCM_DIR = path.join(os.tmpdir(), `ucm-test-${process.pid}`);
@@ -1049,6 +1050,9 @@ async function testHttpServer() {
     assert(typeof stats.resources.cpuLoad === "number", "stats: resources.cpuLoad is number");
     assert(typeof stats.resources.memoryFreeMb === "number", "stats: resources.memoryFreeMb is number");
     assert(stats.resourcePressure !== undefined, "stats: has resourcePressure");
+    assert(stats.llm !== undefined, "stats: has llm info");
+    assert(typeof stats.llm.provider === "string", "stats: llm.provider is string");
+    assert(typeof stats.llm.model === "string", "stats: llm.model is string");
   } catch (e) {
     failed++;
     failures.push(`stats resources: ${e.message}`);
@@ -1642,64 +1646,30 @@ async function testMkdirApi() {
 }
 
 function testUiModalNotClosedBeforeSuccess() {
-  const src = fs.readFileSync(path.join(__dirname, "..", "lib", "ucm-ui.js"), "utf-8");
-
-  // submitTask: hideModal must be inside try block (after res.ok check), not before fetch
-  const submitFn = src.match(/async function submitTask\(\)[\s\S]*?^}/m);
-  assert(submitFn, "uiModal: submitTask function found");
-  if (submitFn) {
-    const body = submitFn[0];
-    const hideIdx = body.indexOf("hideModal()");
-    const fetchIdx = body.indexOf("fetch(");
-    const resOkIdx = body.indexOf("res.ok");
-    assert(hideIdx > fetchIdx, "uiModal: submitTask hideModal after fetch");
-    assert(hideIdx > resOkIdx, "uiModal: submitTask hideModal after res.ok check");
-  }
-
-  // startRefinement: hideModal must be after fetch succeeds
-  const refineFn = src.match(/async function startRefinement\(mode\)[\s\S]*?^}/m);
-  assert(refineFn, "uiModal: startRefinement function found");
-  if (refineFn) {
-    const body = refineFn[0];
-    const hideIdx = body.indexOf("hideModal()");
-    const fetchIdx = body.indexOf("fetch(");
-    assert(hideIdx > fetchIdx, "uiModal: startRefinement hideModal after fetch");
-    // refinementSession should be set only after API success
-    const sessionAssign = body.indexOf("refinementSession = {");
-    assert(sessionAssign > fetchIdx, "uiModal: refinementSession set after fetch");
-  }
+  const src = fs.readFileSync(path.join(__dirname, "..", "lib", "ucm-ui-server.js"), "utf-8");
+  assert(src.includes("WEB_DIST_DIR"), "uiDist: server uses web/dist path");
+  assert(src.includes("SPA fallback"), "uiDist: server includes SPA fallback routing");
+  assert(!src.includes('require("./ucm-ui.js")'), "uiDist: legacy ucm-ui.js renderer removed");
 }
 
 function testUiRightPanelRefinementGuard() {
-  const src = fs.readFileSync(path.join(__dirname, "..", "lib", "ucm-ui.js"), "utf-8");
-  // renderAll should not hide .right when refinementSession is active
-  assert(src.includes("tasks.length === 0 && !refinementSession"), "uiPanel: renderAll guards .right with refinementSession");
-  // switchPanel should not overwrite detailView when refinementSession is active
-  const switchFn = src.match(/function switchPanel\(panel\)[\s\S]*?^}/m);
-  assert(switchFn, "uiPanel: switchPanel function found");
-  if (switchFn) {
-    assert(switchFn[0].includes("!refinementSession"), "uiPanel: switchPanel guards detailView with refinementSession");
-  }
-  // loadInitial should preserve refinementPanel instead of calling switchPanel
-  const loadFn = src.match(/async function loadInitial\(\)[\s\S]*?^}/m);
-  assert(loadFn, "uiPanel: loadInitial function found");
-  if (loadFn) {
-    assert(loadFn[0].includes("refinementSession"), "uiPanel: loadInitial guards switchPanel with refinementSession");
-  }
+  ensureWebDistBuilt();
+  const distIndexPath = path.join(__dirname, "..", "web", "dist", "index.html");
+  assert(fs.existsSync(distIndexPath), "uiDist: web/dist/index.html exists");
+  const html = fs.readFileSync(distIndexPath, "utf-8");
+  assert(html.includes('id="root"'), "uiDist: index.html has React root mount");
 }
 
 function testUiHtmlJsSyntax() {
-  const { buildHtml } = require("../lib/ucm-ui.js");
-  const html = buildHtml(9999);
-  const start = html.lastIndexOf("<script>");
-  const end = html.indexOf("</script>", start);
-  assert(start > 0 && end > start, "uiHtml: script block found");
-  const script = html.substring(start + 8, end);
-  try {
-    new Function(script);
-    assert(true, "uiHtml: JS syntax is valid");
-  } catch (e) {
-    assert(false, "uiHtml: JS syntax error: " + e.message);
+  ensureWebDistBuilt();
+  const distDir = path.join(__dirname, "..", "web", "dist");
+  const html = fs.readFileSync(path.join(distDir, "index.html"), "utf-8");
+  const scriptSrcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+  const appScript = scriptSrcs.find((src) => src.includes("assets/") && src.endsWith(".js"));
+  assert(!!appScript, "uiDist: index.html references bundled JS asset");
+  if (appScript) {
+    const assetPath = path.join(distDir, appScript.replace(/^\//, ""));
+    assert(fs.existsSync(assetPath), "uiDist: referenced JS asset exists");
   }
 }
 
@@ -2776,6 +2746,8 @@ function testBuildCommandProviders() {
   const codex = buildCommand({ provider: "codex", model: "opus", cwd: "/tmp" });
   assertEqual(codex.cmd, "codex", "buildCommand: codex cmd");
   assert(codex.args.includes("exec"), "buildCommand: codex has exec");
+  const codexJson = buildCommand({ provider: "codex", outputFormat: "json" });
+  assert(codexJson.args.includes("--json"), "buildCommand: codex has --json for json output");
 
   // unknown provider throws
   let threw = false;
@@ -2999,6 +2971,18 @@ function testAgentSkipPermissions() {
   assert(agentSource.includes("sessionPersistence: false"), "agent: passes sessionPersistence");
 }
 
+function testAgentCodexJsonParsing() {
+  // agent.js가 codex는 json 모드로 실행하고 command_execution 이벤트를 파싱하는지 확인
+  const agentSource = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "lib", "core", "agent.js"), "utf-8"
+  );
+  assert(agentSource.includes('provider === "codex" ? "json" : "stream-json"'), "agent: codex uses json output");
+  assert(agentSource.includes('item.type === "command_execution"'), "agent: parses codex command_execution events");
+  assert(agentSource.includes('event.type === "turn.completed"'), "agent: parses codex turn.completed usage");
+  assert(agentSource.includes("[agent:spawn]"), "agent: writes spawn command metadata log");
+  assert(agentSource.includes("JSON.stringify({"), "agent: logs spawn metadata as JSON");
+}
+
 function testRsaClassifySkipPermissions() {
   // rsa.js classify가 skipPermissions를 전달하는지 확인
   const rsaSource = require("fs").readFileSync(
@@ -3058,6 +3042,21 @@ function testVerifyUsesExtractJson() {
   );
   assert(verifySource.includes("extractJson"), "verify: uses extractJson for robust parsing");
   assert(!verifySource.includes("JSON.parse(testResult"), "verify: no raw JSON.parse on agent output");
+}
+
+function testRunStageRespectsResultGates() {
+  // runStage가 verify/ux-review의 passed=false를 실패로 처리하는지 확인
+  const forgeSource = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "lib", "forge", "index.js"), "utf-8"
+  );
+  assert(
+    forgeSource.includes('stageName === "verify"') && forgeSource.includes("result?.passed === false"),
+    "runStage: verify gate respects result.passed"
+  );
+  assert(
+    forgeSource.includes('stageName === "ux-review"') && forgeSource.includes("!result?.skipped"),
+    "runStage: ux-review gate respects result.passed"
+  );
 }
 
 function testSubtaskMissingContinues() {
@@ -3678,6 +3677,84 @@ function testAutopilotModuleExports() {
   assert(typeof ucmdAutopilot.handleAutopilotSession === "function", "autopilot exports handleAutopilotSession");
   assert(ucmdAutopilot.sessions instanceof Map, "autopilot exports sessions Map");
   assert(ucmdAutopilot.projectSessionMap instanceof Map, "autopilot exports projectSessionMap");
+}
+
+function testAutopilotApprovedProposalsSource() {
+  const src = fs.readFileSync(path.join(__dirname, "..", "lib", "ucmd-autopilot.js"), "utf-8");
+  assert(src.includes('require("./ucmd-proposal.js")'), "autopilot uses proposal store for approved proposal loading");
+  assert(!src.includes('require("./ucmd-observer.js")'), "autopilot does not require observer for proposal listing");
+  assert(src.includes("failed to load approved proposals"), "autopilot logs warning when proposal loading fails");
+}
+
+async function testAutopilotPlanPromptIncludesApprovedProposal() {
+  const projectDir = path.join(TEST_UCM_DIR, "ap-approved-proposal");
+  try { await rm(projectDir, { recursive: true, force: true }); } catch {}
+  await mkdir(projectDir, { recursive: true });
+  await writeFile(path.join(projectDir, "README.md"), "# test\n");
+  execFileSync("git", ["init"], { cwd: projectDir, stdio: "ignore" });
+  execFileSync("git", ["add", "README.md"], { cwd: projectDir, stdio: "ignore" });
+  execFileSync(
+    "git",
+    ["-c", "user.name=ucm-test", "-c", "user.email=ucm-test@example.com", "commit", "-m", "init"],
+    { cwd: projectDir, stdio: "ignore" },
+  );
+
+  const proposal = {
+    id: generateProposalId(),
+    title: "approved proposal appears in plan prompt",
+    status: "approved",
+    category: "core",
+    risk: "low",
+    priority: 9,
+    created: new Date().toISOString(),
+    observationCycle: 1,
+    dedupHash: computeDedupHash("approved proposal appears in plan prompt", "core", "inject approved proposal"),
+    project: path.basename(projectDir),
+    problem: "test problem",
+    change: "inject approved proposal",
+    expectedImpact: "autopilot plan should include approved proposals",
+  };
+  await saveProposal(proposal);
+
+  let capturedPrompt = "";
+  ucmdAutopilot.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => ({ daemonStatus: "running" }),
+    broadcastWs: () => {},
+    spawnAgent: async (prompt, opts) => {
+      if (opts && opts.stage === "plan") {
+        capturedPrompt = prompt;
+      }
+      return { status: "done", stdout: "[]" };
+    },
+    log: () => {},
+  });
+  ucmdAutopilot.setLog(() => {});
+
+  const started = await ucmdAutopilot.handleAutopilotStart({ project: projectDir, maxItems: 1 });
+
+  const deadline = Date.now() + 3000;
+  while (!capturedPrompt && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  assert(capturedPrompt.includes(proposal.title), "autopilot plan prompt includes approved proposal title");
+  assert(capturedPrompt.includes(proposal.change), "autopilot plan prompt includes approved proposal change");
+
+  const deadlineStop = Date.now() + 3000;
+  while (ucmdAutopilot.sessions.has(started.sessionId) && Date.now() < deadlineStop) {
+    const s = ucmdAutopilot.sessions.get(started.sessionId);
+    if (s && s.status === "stopped") break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  if (ucmdAutopilot.sessions.has(started.sessionId)) {
+    const s = ucmdAutopilot.sessions.get(started.sessionId);
+    if (s) {
+      s.status = "stopped";
+      ucmdAutopilot.projectSessionMap.delete(s.project);
+    }
+    ucmdAutopilot.sessions.delete(started.sessionId);
+  }
 }
 
 function testAutopilotSessionCreation() {
@@ -4486,12 +4563,14 @@ async function main() {
   testTaskDagSaveChaining();
   testDeliverAutoMergeFailureSetsReview();
   testAgentSkipPermissions();
+  testAgentCodexJsonParsing();
   testRsaClassifySkipPermissions();
   testServerTaskIdValidation();
   testWireEventsIncludesAbort();
   testSubtasksRunSequentially();
   testParallelTokenUsage();
   testVerifyUsesExtractJson();
+  testRunStageRespectsResultGates();
   testSubtaskMissingContinues();
   testResumeInvalidStageThrows();
   testImplementFailureRecordsStage();
@@ -4531,6 +4610,8 @@ async function main() {
 
   console.log("Autopilot Tests:");
   testAutopilotModuleExports();
+  testAutopilotApprovedProposalsSource();
+  await testAutopilotPlanPromptIncludesApprovedProposal();
   testAutopilotSessionCreation();
   testAutopilotDuplicateProject();
   testAutopilotStatusHandler();

@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Play, Check, X, RotateCw, Trash2, Ban, FileText, Pause, ChevronUp, ChevronDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useTaskQuery, useTaskDiffQuery, useTaskLogsQuery, useTaskArtifactsQuery } from "@/queries/tasks";
 import { useEventsStore } from "@/stores/events";
@@ -14,16 +15,22 @@ import { TimeAgo } from "@/components/shared/time-ago";
 import { formatDate } from "@/lib/format";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { EmptyState } from "@/components/shared/empty-state";
+import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
 
 interface TaskDetailProps {
   taskId: string;
 }
 
+type TaskDetailTab = "overview" | "logs" | "diff" | "artifacts";
+
 export function TaskDetail({ taskId }: TaskDetailProps) {
   const { data: task } = useTaskQuery(taskId);
+  const projectPath = task ? getTaskProjectPath(task) : null;
+  const projectLabel = task ? getTaskProjectLabel(task) : "";
   const [feedbackText, setFeedbackText] = useState("");
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [activeTab, setActiveTab] = useState<TaskDetailTab>("overview");
 
   const startTask = useStartTask();
   const approveTask = useApproveTask();
@@ -34,6 +41,16 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const gateApprove = useStageGateApprove();
   const gateReject = useStageGateReject();
   const updatePriority = useUpdatePriority();
+
+  useEffect(() => {
+    setActiveTab("overview");
+  }, [taskId]);
+
+  useEffect(() => {
+    if (task?.state === "review" && activeTab === "overview") {
+      setActiveTab("diff");
+    }
+  }, [activeTab, task?.state]);
 
   if (!task) return null;
 
@@ -46,6 +63,9 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             <h2 className="text-lg font-semibold truncate">{task.title}</h2>
             <div className="flex items-center gap-2 mt-1">
               <TaskStatusBadge state={task.state as TaskState} />
+              <Badge variant="outline" className="text-[10px] font-normal" title={projectPath || projectLabel}>
+                {projectLabel}
+              </Badge>
               {task.pipeline && (
                 <span className="text-xs text-muted-foreground">{task.pipeline}</span>
               )}
@@ -64,7 +84,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={task.state === "review" ? "diff" : "overview"} key={`${taskId}-${task.state}`} className="flex-1 flex flex-col overflow-hidden">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TaskDetailTab)} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="mx-4 mt-2 justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
@@ -106,7 +126,8 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
         )}
         {task.state === "pending" && (
           <Button size="sm" onClick={() => startTask.mutate(taskId)} disabled={startTask.isPending}>
-            <Play className="h-4 w-4" /> Start
+            {startTask.isPending ? <RotateCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            {startTask.isPending ? "Starting..." : "Start"}
           </Button>
         )}
         {task.state === "review" && (
@@ -232,6 +253,20 @@ function formatTokenCount(n: number): string {
 }
 
 function OverviewTab({ task }: { task: Task }) {
+  const inputTokens = task.tokenUsage
+    ? (task.tokenUsage.input ?? task.tokenUsage.inputTokens)
+    : undefined;
+  const outputTokens = task.tokenUsage
+    ? (task.tokenUsage.output ?? task.tokenUsage.outputTokens)
+    : undefined;
+  const totalTokens = task.tokenUsage
+    ? (
+      task.tokenUsage.total
+      ?? task.tokenUsage.totalTokens
+      ?? ((inputTokens != null || outputTokens != null) ? (inputTokens || 0) + (outputTokens || 0) : undefined)
+    )
+    : undefined;
+
   return (
     <div className="space-y-3">
       <InfoRow label="ID" value={task.id} mono />
@@ -261,19 +296,19 @@ function OverviewTab({ task }: { task: Task }) {
         <div>
           <span className="text-xs text-muted-foreground">Token Usage</span>
           <div className="flex items-center gap-3 mt-1 text-xs">
-            {task.tokenUsage.inputTokens != null && (
+            {inputTokens != null && (
               <span className="px-2 py-0.5 rounded bg-muted">
-                In: {formatTokenCount(task.tokenUsage.inputTokens)}
+                In: {formatTokenCount(inputTokens)}
               </span>
             )}
-            {task.tokenUsage.outputTokens != null && (
+            {outputTokens != null && (
               <span className="px-2 py-0.5 rounded bg-muted">
-                Out: {formatTokenCount(task.tokenUsage.outputTokens)}
+                Out: {formatTokenCount(outputTokens)}
               </span>
             )}
-            {task.tokenUsage.totalTokens != null && (
+            {totalTokens != null && (
               <span className="px-2 py-0.5 rounded bg-muted font-medium">
-                Total: {formatTokenCount(task.tokenUsage.totalTokens)}
+                Total: {formatTokenCount(totalTokens)}
               </span>
             )}
           </div>
@@ -345,20 +380,22 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 
 function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
   const logLines = taskState === "failed" ? 500 : 200;
-  const { data: logs } = useTaskLogsQuery(taskId, logLines);
+  const { data: logs } = useTaskLogsQuery(taskId, logLines, taskState === "running");
   const wsLogs = useEventsStore((s) => s.getTaskLogs(taskId));
 
   // Merge: HTTP logs as baseline, append any WS lines received after
   const mergedLogs = useMemo(() => {
     if (!logs && wsLogs.length === 0) return null;
     const httpLines = logs || "";
-    if (taskState !== "running" || wsLogs.length === 0) return httpLines;
+    const normalizedWsLogs = wsLogs.map((line) => (typeof line === "string" ? line : String(line ?? "")));
+    if (taskState !== "running" || normalizedWsLogs.length === 0) return httpLines;
     // Append WS lines that aren't already in the HTTP response
     const lastHttpLine = httpLines.split("\n").filter(Boolean).pop() || "";
-    const wsStartIdx = lastHttpLine
-      ? wsLogs.findIndex((l) => l.trim() === lastHttpLine.trim()) + 1
-      : 0;
-    const newLines = wsLogs.slice(wsStartIdx > 0 ? wsStartIdx : wsLogs.length);
+    const lastMatchIdx = lastHttpLine
+      ? normalizedWsLogs.findIndex((line) => line.trim() === lastHttpLine.trim())
+      : -1;
+    const wsStartIdx = lastMatchIdx >= 0 ? lastMatchIdx + 1 : 0;
+    const newLines = normalizedWsLogs.slice(wsStartIdx);
     return newLines.length > 0 ? httpLines + "\n" + newLines.join("\n") : httpLines;
   }, [logs, wsLogs, taskState]);
 

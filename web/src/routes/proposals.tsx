@@ -1,50 +1,148 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useParams, useSearchParams } from "react-router";
 import { Lightbulb, Eye, Search as SearchIcon, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProposalCard } from "@/components/proposals/proposal-card";
 import { ProposalDetailDialog } from "@/components/proposals/proposal-detail-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { StatusDot } from "@/components/shared/status-dot";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   useProposalsQuery, useApproveProposal, useRejectProposal,
   useSetProposalPriority, useObserverStatusQuery, useRunObserver,
-  useAnalyzeProject, useResearchProject,
+  useAnalyzeProject, useResearchProject, useDeleteProposal,
 } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 import type { Proposal } from "@/api/types";
+import {
+  getProjectKey,
+  getProjectLabel,
+  getProposalProjectPath,
+  decodeProjectKeyFromRoute,
+  UNKNOWN_PROJECT_KEY,
+  getTaskProjectPath,
+} from "@/lib/project";
+import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 
 export default function ProposalsPage() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const routeScoped = Boolean(params.projectKey);
 
   const proposalFilter = useUiStore((s) => s.proposalFilter);
+  const proposalProjectFilter = useUiStore((s) => s.proposalProjectFilter);
   const categoryFilter = useUiStore((s) => s.proposalCategoryFilter);
   const riskFilter = useUiStore((s) => s.proposalRiskFilter);
   const setProposalFilter = useUiStore((s) => s.setProposalFilter);
+  const setProposalProjectFilter = useUiStore((s) => s.setProposalProjectFilter);
+  const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setCategoryFilter = useUiStore((s) => s.setProposalCategoryFilter);
   const setRiskFilter = useUiStore((s) => s.setProposalRiskFilter);
 
   const { data: proposals, isLoading } = useProposalsQuery();
+  const { data: tasks } = useTasksQuery();
   const { data: observerStatus } = useObserverStatusQuery();
   const runObserver = useRunObserver();
   const approveProposal = useApproveProposal();
   const rejectProposal = useRejectProposal();
+  const deleteProposal = useDeleteProposal();
   const setPriority = useSetProposalPriority();
   const analyzeProject = useAnalyzeProject();
   const researchProject = useResearchProject();
+  const routeProjectKey = useMemo(
+    () => decodeProjectKeyFromRoute(params.projectKey),
+    [params.projectKey]
+  );
+  const routeProjectLabel = routeProjectKey === UNKNOWN_PROJECT_KEY ? "Unknown Project" : getProjectLabel(routeProjectKey);
+  const effectiveProjectFilter = routeScoped
+    ? routeProjectKey
+    : proposalProjectFilter;
+  const projectPathForActions = routeProjectKey === UNKNOWN_PROJECT_KEY ? "." : routeProjectKey;
+
+  useEffect(() => {
+    if (!routeScoped) {
+      clearActiveProject();
+      setProposalProjectFilter("");
+      return;
+    }
+    setProposalProjectFilter(routeProjectKey);
+    setActiveProject({
+      key: routeProjectKey,
+      label: routeProjectLabel,
+      path: routeProjectKey === UNKNOWN_PROJECT_KEY ? null : routeProjectKey,
+    });
+  }, [
+    clearActiveProject,
+    routeProjectKey,
+    routeProjectLabel,
+    routeScoped,
+    setActiveProject,
+    setProposalProjectFilter,
+  ]);
+
+  useEffect(() => {
+    if (!routeScoped) return;
+    const kickoff = searchParams.get("kickoff");
+    if (!kickoff) return;
+    if (kickoff === "analyze") {
+      analyzeProject.mutate(projectPathForActions);
+    } else if (kickoff === "research") {
+      researchProject.mutate(projectPathForActions);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("kickoff");
+    setSearchParams(next, { replace: true });
+  }, [analyzeProject, projectPathForActions, researchProject, routeScoped, searchParams, setSearchParams]);
+
+  const projectTaskCount = useMemo(
+    () => (tasks || []).filter((t) => getProjectKey(getTaskProjectPath(t)) === routeProjectKey).length,
+    [tasks, routeProjectKey]
+  );
+  const projectProposalCount = useMemo(
+    () => (proposals || []).filter((p) => getProjectKey(getProposalProjectPath(p)) === routeProjectKey).length,
+    [proposals, routeProjectKey]
+  );
+
+  const projectOptions = useMemo(() => {
+    if (!proposals) return [];
+    const unique = new Map<string, string>();
+    for (const proposal of proposals) {
+      const projectPath = getProposalProjectPath(proposal);
+      const key = getProjectKey(projectPath);
+      if (!unique.has(key)) {
+        unique.set(key, getProjectLabel(projectPath));
+      }
+    }
+    const labelCounts = new Map<string, number>();
+    for (const label of unique.values()) {
+      labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+    }
+    return [...unique.entries()]
+      .map(([key, label]) => {
+        const duplicated = (labelCounts.get(label) || 0) > 1 && key !== UNKNOWN_PROJECT_KEY;
+        return { key, label: duplicated ? `${label} · ${key}` : label };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [proposals]);
 
   const filteredProposals = useMemo(() => {
     if (!proposals) return [];
     let result = [...proposals];
     if (proposalFilter) result = result.filter((p) => p.status === proposalFilter);
+    if (effectiveProjectFilter) {
+      result = result.filter((p) => getProjectKey(getProposalProjectPath(p)) === effectiveProjectFilter);
+    }
     if (categoryFilter) result = result.filter((p) => p.category === categoryFilter);
     if (riskFilter) result = result.filter((p) => p.risk === riskFilter);
     result.sort((a, b) => (b.priority || 0) - (a.priority || 0));
     return result;
-  }, [proposals, proposalFilter, categoryFilter, riskFilter]);
+  }, [proposals, proposalFilter, effectiveProjectFilter, categoryFilter, riskFilter]);
 
   const handleApprove = (id: string) => {
     approveProposal.mutate(id);
@@ -54,11 +152,45 @@ export default function ProposalsPage() {
     rejectProposal.mutate(id);
     setDetailOpen(false);
   };
+  const handleDelete = (id: string) => {
+    deleteProposal.mutate(id);
+    if (detailProposal?.id === id) setDetailOpen(false);
+  };
+
+  useEffect(() => {
+    if (!detailProposal || !proposals) return;
+    const exists = proposals.some((proposal) => proposal.id === detailProposal.id);
+    if (!exists) {
+      setDetailOpen(false);
+      setDetailProposal(null);
+    }
+  }, [detailProposal, proposals]);
 
   if (isLoading) return <LoadingSkeleton />;
 
   return (
     <div className="p-6 space-y-6">
+      {routeScoped ? (
+        <ProjectWorkspaceNav
+          projectKey={routeProjectKey}
+          projectLabel={routeProjectLabel}
+          projectPath={routeProjectKey === UNKNOWN_PROJECT_KEY ? null : routeProjectKey}
+          activeTab="proposals"
+          taskCount={projectTaskCount}
+          proposalCount={projectProposalCount}
+        />
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Global Proposal Queue</p>
+            <h2 className="text-base font-semibold">Proposal Inbox</h2>
+            <p className="text-sm text-muted-foreground">
+              Review improvement suggestions across every project, then move into project workspaces.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -82,10 +214,20 @@ export default function ProposalsPage() {
           >
             <Eye className="h-4 w-4" /> Run Observer
           </Button>
-          <Button size="sm" variant="outline" onClick={() => analyzeProject.mutate(".")} disabled={analyzeProject.isPending}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => analyzeProject.mutate(projectPathForActions)}
+            disabled={analyzeProject.isPending}
+          >
             <SearchIcon className="h-4 w-4" /> Analyze
           </Button>
-          <Button size="sm" variant="outline" onClick={() => researchProject.mutate(".")} disabled={researchProject.isPending}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => researchProject.mutate(projectPathForActions)}
+            disabled={researchProject.isPending}
+          >
             <FlaskConical className="h-4 w-4" /> Research
           </Button>
         </div>
@@ -105,6 +247,22 @@ export default function ProposalsPage() {
             <SelectItem value="implemented">Implemented</SelectItem>
           </SelectContent>
         </Select>
+
+        {!routeScoped && (
+          <Select value={effectiveProjectFilter || "all"} onValueChange={(v) => setProposalProjectFilter(v === "all" ? "" : v)}>
+            <SelectTrigger className="w-44 h-8">
+              <SelectValue placeholder="Project" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {projectOptions.map((project) => (
+                <SelectItem key={project.key} value={project.key}>
+                  {project.key === UNKNOWN_PROJECT_KEY ? "Unknown Project" : project.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
           <SelectTrigger className="w-32 h-8">
@@ -153,6 +311,7 @@ export default function ProposalsPage() {
               proposal={proposal}
               onApprove={() => handleApprove(proposal.id)}
               onReject={() => handleReject(proposal.id)}
+              onDelete={() => handleDelete(proposal.id)}
               onPriorityUp={() => setPriority.mutate({ proposalId: proposal.id, delta: 1 })}
               onPriorityDown={() => setPriority.mutate({ proposalId: proposal.id, delta: -1 })}
               onClick={() => {
@@ -170,6 +329,7 @@ export default function ProposalsPage() {
         onOpenChange={setDetailOpen}
         onApprove={handleApprove}
         onReject={handleReject}
+        onDelete={handleDelete}
       />
     </div>
   );

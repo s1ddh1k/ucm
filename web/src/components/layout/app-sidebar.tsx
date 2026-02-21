@@ -1,6 +1,6 @@
 import { NavLink } from "react-router";
 import {
-  LayoutDashboard, ListTodo, Lightbulb, Bot, Terminal, Settings,
+  LayoutDashboard, FolderTree, ListTodo, Lightbulb, Bot, Terminal, Settings,
   PanelLeftClose, PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,8 +11,9 @@ import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/tasks", icon: ListTodo, label: "Tasks" },
-  { to: "/proposals", icon: Lightbulb, label: "Proposals" },
+  { to: "/projects", icon: FolderTree, label: "Projects" },
+  { to: "/tasks", icon: ListTodo, label: "Task Inbox" },
+  { to: "/proposals", icon: Lightbulb, label: "Proposal Inbox" },
   { to: "/autopilot", icon: Bot, label: "Autopilot" },
   { to: "/terminal", icon: Terminal, label: "Terminal" },
 ];

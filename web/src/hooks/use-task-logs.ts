@@ -10,8 +10,8 @@ export function useTaskLogs(taskId: string | null) {
     if (!taskId) return;
 
     const unsub = wsManager.on("task:log", (data) => {
-      if (data.taskId === taskId && data.line) {
-        addTaskLog(taskId, data.line as string);
+      if (data.taskId === taskId && data.line != null) {
+        addTaskLog(taskId, data.line);
       }
     });
 

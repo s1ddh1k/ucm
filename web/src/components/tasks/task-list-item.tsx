@@ -2,6 +2,8 @@ import type { Task } from "@/api/types";
 import { StatusDot } from "@/components/shared/status-dot";
 import { TimeAgo } from "@/components/shared/time-ago";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
 
 interface TaskListItemProps {
   task: Task;
@@ -16,8 +18,12 @@ function formatTokens(n: number): string {
 }
 
 export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
+  const projectPath = getTaskProjectPath(task);
+  const projectLabel = getTaskProjectLabel(task);
   const totalTokens = task.tokenUsage?.totalTokens
+    || task.tokenUsage?.total
     || ((task.tokenUsage?.inputTokens || 0) + (task.tokenUsage?.outputTokens || 0))
+    || ((task.tokenUsage?.input || 0) + (task.tokenUsage?.output || 0))
     || 0;
 
   return (
@@ -33,6 +39,11 @@ export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
         <StatusDot status={task.state} className="mt-1.5" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{task.title}</p>
+          <div className="mt-1">
+            <Badge variant="outline" className="text-[10px] font-normal" title={projectPath || projectLabel}>
+              {projectLabel}
+            </Badge>
+          </div>
           <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
             <span>{task.state}</span>
             {task.pipeline && (

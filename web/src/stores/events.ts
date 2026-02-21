@@ -11,7 +11,7 @@ interface EventsState {
   activities: ActivityEvent[];
   taskLogs: Map<string, string[]>;
   addActivity: (event: string, data: Record<string, unknown>) => void;
-  addTaskLog: (taskId: string, line: string) => void;
+  addTaskLog: (taskId: string, line: unknown) => void;
   getTaskLogs: (taskId: string) => string[];
   clearTaskLogs: (taskId: string) => void;
 }
@@ -40,7 +40,8 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     set((s) => {
       const taskLogs = new Map(s.taskLogs);
       const existing = taskLogs.get(taskId) || [];
-      taskLogs.set(taskId, [...existing, line].slice(-500));
+      const nextLine = typeof line === "string" ? line : String(line ?? "");
+      taskLogs.set(taskId, [...existing, nextLine].slice(-500));
       return { taskLogs };
     }),
 

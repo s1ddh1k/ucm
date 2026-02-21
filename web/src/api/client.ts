@@ -103,6 +103,8 @@ export const proposals = {
     post<{ proposalId: string; status: string; taskId?: string }>(`/api/proposal/approve/${proposalId}`),
   reject: (proposalId: string) =>
     post<{ proposalId: string; status: string }>(`/api/proposal/reject/${proposalId}`),
+  delete: (proposalId: string) =>
+    post<{ proposalId: string; status: string }>(`/api/proposal/delete/${proposalId}`),
   priority: (proposalId: string, delta: number) =>
     post<{ proposalId: string; priority: number }>(`/api/proposal/priority/${proposalId}`, { delta }),
 };

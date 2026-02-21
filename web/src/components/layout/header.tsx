@@ -3,8 +3,9 @@ import { ConnectionIndicator } from "@/components/shared/connection-indicator";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
-  "/tasks": "Tasks",
-  "/proposals": "Proposals",
+  "/projects": "Projects",
+  "/tasks": "Task Inbox",
+  "/proposals": "Proposal Inbox",
   "/autopilot": "Autopilot",
   "/terminal": "Terminal",
   "/settings": "Settings",
@@ -12,7 +13,18 @@ const pageTitles: Record<string, string> = {
 
 export function Header() {
   const location = useLocation();
-  const title = pageTitles[location.pathname] || "UCM";
+  const title = (() => {
+    if (location.pathname.startsWith("/projects/") && location.pathname.split("/").length === 3) {
+      return "Project Overview";
+    }
+    if (location.pathname.startsWith("/projects/") && location.pathname.endsWith("/tasks")) {
+      return "Project Tasks";
+    }
+    if (location.pathname.startsWith("/projects/") && location.pathname.endsWith("/proposals")) {
+      return "Project Proposals";
+    }
+    return pageTitles[location.pathname] || "UCM";
+  })();
 
   return (
     <header className="flex h-14 items-center justify-between border-b px-6">

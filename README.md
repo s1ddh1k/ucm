@@ -46,8 +46,8 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 |-----------|------|------|
 | **trivial** | implement → verify → deliver | 오타, 한 줄 수정 |
 | **small** | design → implement → verify → deliver | 함수 추가 |
-| **medium** | clarify → specify → design → implement → verify → polish → deliver | 일반 기능 |
-| **large** | clarify → specify → decompose → design → implement → verify → polish → integrate → deliver | 대규모 작업 |
+| **medium** | clarify → specify → design → implement → verify → ux-review → polish → deliver | 일반 기능 |
+| **large** | clarify → specify → decompose → design → implement → verify → ux-review → polish → integrate → deliver | 대규모 작업 |
 
 ## CLI 명령어
 

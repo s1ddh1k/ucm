@@ -63,8 +63,7 @@ ucm/
 │   ├── ucmd-sandbox.js     #   Self-modification 안전장치
 │   ├── ucmd-prompt.js      #   템플릿 로딩
 │   ├── ucmd-structure.js   #   프로젝트 구조 분석
-│   ├── ucm-ui-server.js    #   대시보드 HTTP/WS 서버
-│   ├── ucm-ui.js           #   SPA HTML 빌드 (인라인 번들 삽입)
+│   ├── ucm-ui-server.js    #   대시보드 HTTP/WS 서버 (web/dist 정적 서빙)
 │   └── socket-client.js    #   소켓 클라이언트 유틸
 │
 ├── web/                    # React 대시보드
@@ -191,7 +190,7 @@ npm run dev      # 개발 서버 (HMR)
 npm run build    # 프로덕션 빌드 → web/dist/
 ```
 
-프로덕션 빌드 결과는 `ucm-ui.js` 가 인라인으로 삽입하여 단일 HTML로 서빙한다.
+프로덕션 빌드 결과(`web/dist`)는 `ucm-ui-server.js`가 정적 파일로 서빙한다.
 
 ### 디렉토리 규칙
 

@@ -10,6 +10,7 @@ const http = require("http");
 
 const { state, assert, assertEqual, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
 const { trackPid, cleanupAll } = require("./helpers/cleanup.js");
+const { ensureWebDistBuilt } = require("./helpers/web-build.js");
 
 const UCM_DIR = path.join(os.tmpdir(), `ucm-integration-${Date.now()}`);
 const DAEMON_DIR = path.join(UCM_DIR, "daemon");
@@ -190,6 +191,7 @@ async function startDaemon() {
 }
 
 async function startUiServer() {
+  ensureWebDistBuilt();
   uiPort = await findFreePort();
   const uiPath = path.join(__dirname, "..", "lib", "ucm-ui-server.js");
 

@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { wsManager } from "@/api/websocket";
 import { useDaemonStore } from "@/stores/daemon";
 import { useEventsStore } from "@/stores/events";
+import { useUiStore } from "@/stores/ui";
+import type { Proposal, Task } from "@/api/types";
 
 const BASE_TITLE = "UCM Dashboard";
 
@@ -35,6 +37,7 @@ export function useWebSocket() {
   const setConnected = useDaemonStore((s) => s.setConnected);
   const addActivity = useEventsStore((s) => s.addActivity);
   const addTaskLog = useEventsStore((s) => s.addTaskLog);
+  const clearTaskLogs = useEventsStore((s) => s.clearTaskLogs);
   const initialized = useRef(false);
   const pendingCount = useRef(0);
 
@@ -69,6 +72,30 @@ export function useWebSocket() {
     wsManager.connect();
 
     const unsubs: Array<() => void> = [];
+    const nowIso = () => new Date().toISOString();
+
+    const patchTaskCaches = (taskId: string, updater: (task: Task) => Task) => {
+      queryClient.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        Array.isArray(old) ? old.map((task) => (task.id === taskId ? updater(task) : task)) : old
+      );
+      queryClient.setQueryData<Task>(["task", taskId], (old) => (old ? updater(old) : old));
+    };
+
+    const removeTaskFromCaches = (taskId: string) => {
+      queryClient.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+        Array.isArray(old) ? old.filter((task) => task.id !== taskId) : old
+      );
+      queryClient.removeQueries({ queryKey: ["task", taskId], exact: true });
+      queryClient.removeQueries({ queryKey: ["task-diff", taskId], exact: true });
+      queryClient.removeQueries({ queryKey: ["task-logs", taskId], exact: false });
+      queryClient.removeQueries({ queryKey: ["task-artifacts", taskId], exact: true });
+    };
+
+    const removeProposalFromCaches = (proposalId: string) => {
+      queryClient.setQueriesData<Proposal[]>({ queryKey: ["proposals"] }, (old) =>
+        Array.isArray(old) ? old.filter((proposal) => proposal.id !== proposalId) : old
+      );
+    };
 
     unsubs.push(
       wsManager.on("ws:connected", () => setConnected(true)),
@@ -91,9 +118,24 @@ export function useWebSocket() {
         addActivity("task:created", data);
       }),
       wsManager.on("task:updated", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["tasks"] });
-        if (data.taskId) {
-          queryClient.invalidateQueries({ queryKey: ["task", data.taskId] });
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        const nextState = typeof data.state === "string" ? data.state : null;
+
+        if (taskId && nextState) {
+          patchTaskCaches(taskId, (task) => {
+            const updates: Partial<Task> = { state: nextState as Task["state"] };
+            if (nextState === "running" && !task.startedAt) {
+              updates.startedAt = nowIso();
+            }
+            if ((nextState === "review" || nextState === "done" || nextState === "failed") && !task.completedAt) {
+              updates.completedAt = nowIso();
+            }
+            if (nextState === "pending" || nextState === "running") {
+              updates.completedAt = undefined;
+            }
+            return { ...task, ...updates };
+          });
+          queryClient.invalidateQueries({ queryKey: ["task", taskId] });
         }
         addActivity("task:updated", data);
 
@@ -112,12 +154,19 @@ export function useWebSocket() {
         }
       }),
       wsManager.on("task:deleted", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        if (taskId) {
+          removeTaskFromCaches(taskId);
+          clearTaskLogs(taskId);
+          if (useUiStore.getState().selectedTaskId === taskId) {
+            useUiStore.getState().setSelectedTaskId(null);
+          }
+        }
         addActivity("task:deleted", data);
       }),
       wsManager.on("task:log", (data) => {
-        if (data.taskId && data.line) {
-          addTaskLog(data.taskId as string, data.line as string);
+        if (typeof data.taskId === "string" && data.line != null) {
+          addTaskLog(data.taskId, data.line);
         }
       }),
 
@@ -138,8 +187,27 @@ export function useWebSocket() {
         addActivity("proposal:created", data);
       }),
       wsManager.on("proposal:updated", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["proposals"] });
+        const proposalId = typeof data.proposalId === "string" ? data.proposalId : null;
+        const status = typeof data.status === "string" ? data.status : null;
+        if (proposalId && status) {
+          queryClient.setQueriesData<Proposal[]>({ queryKey: ["proposals"] }, (old) =>
+            Array.isArray(old)
+              ? old.map((proposal) => (proposal.id === proposalId ? { ...proposal, status: status as Proposal["status"] } : proposal))
+              : old
+          );
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["proposals"] });
+        }
         addActivity("proposal:updated", data);
+      }),
+      wsManager.on("proposal:deleted", (data) => {
+        const proposalId = typeof data.proposalId === "string" ? data.proposalId : null;
+        if (proposalId) {
+          removeProposalFromCaches(proposalId);
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["proposals"] });
+        }
+        addActivity("proposal:deleted", data);
       }),
 
       // Observer events
@@ -200,39 +268,55 @@ export function useWebSocket() {
       }),
 
       // Stage events
+      wsManager.on("stage:start", (data) => {
+        addActivity("stage:started", data);
+      }),
       wsManager.on("stage:started", (data) => {
         addActivity("stage:started", data);
       }),
       wsManager.on("stage:complete", (data) => {
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        if (taskId) {
+          queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+        }
         addActivity("stage:complete", data);
-        queryClient.invalidateQueries({ queryKey: ["tasks"] });
       }),
 
       // Config events
       wsManager.on("config:updated", (data) => {
         queryClient.invalidateQueries({ queryKey: ["config"] });
+        queryClient.invalidateQueries({ queryKey: ["project-catalog"] });
         addActivity("config:updated", data);
       }),
 
       // Stage gate events
       wsManager.on("stage:gate", (data) => {
-        if (data.taskId) {
-          queryClient.invalidateQueries({ queryKey: ["task", data.taskId] });
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        const stageName = (data.stage as string) || (data.stageName as string) || "unknown";
+        if (taskId) {
+          patchTaskCaches(taskId, (task) => ({
+            ...task,
+            stageGate: stageName,
+            currentStage: stageName,
+          }));
+          queryClient.invalidateQueries({ queryKey: ["task", taskId] });
         }
-        queryClient.invalidateQueries({ queryKey: ["tasks"] });
         addActivity("stage:gate", data);
 
         // Notify on stage gate awaiting approval
-        const taskLabel = (data.taskId as string) || "unknown";
-        const stageName = (data.stage as string) || (data.stageName as string) || "unknown";
+        const taskLabel = taskId || "unknown";
         notify("Stage awaiting approval", `Task ${taskLabel} is waiting for approval at stage "${stageName}".`);
         updateTitleBadge(1);
       }),
       wsManager.on("stage:gate_resolved", (data) => {
-        if (data.taskId) {
-          queryClient.invalidateQueries({ queryKey: ["task", data.taskId] });
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        if (taskId) {
+          patchTaskCaches(taskId, (task) => ({
+            ...task,
+            stageGate: undefined,
+          }));
+          queryClient.invalidateQueries({ queryKey: ["task", taskId] });
         }
-        queryClient.invalidateQueries({ queryKey: ["tasks"] });
         addActivity("stage:gate_resolved", data);
 
         // A gate was resolved, decrement the pending badge
@@ -253,5 +337,5 @@ export function useWebSocket() {
       wsManager.disconnect();
       initialized.current = false;
     };
-  }, [queryClient, setStatus, setConnected, addActivity, addTaskLog, updateTitleBadge]);
+  }, [queryClient, setStatus, setConnected, addActivity, addTaskLog, clearTaskLogs, updateTitleBadge]);
 }

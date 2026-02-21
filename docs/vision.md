@@ -65,7 +65,7 @@ lib/ucmd.js         Daemon (task queue, pipeline engine, observer, autopilot)
 lib/forge/          Forge pipeline (intake, clarify, specify, design, implement, verify, deliver)
 lib/hivemind/       Zettelkasten 지식 메모리
 lib/ucmd-*.js       Daemon 모듈 (handlers, observer, autopilot, refinement, ...)
-lib/ucm-ui.js       Dashboard UI
+lib/ucm-ui-server.js Dashboard UI server (serves web/dist)
 templates/          Stage 프롬프트 템플릿
 ```
 

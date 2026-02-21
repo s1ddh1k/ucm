@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSubmitTask } from "@/queries/tasks";
+import { useProjectCatalogQuery } from "@/queries/projects";
 import { useUiStore } from "@/stores/ui";
 import { api } from "@/api/client";
 import type { BrowseResult } from "@/api/types";
@@ -21,9 +22,10 @@ const PIPELINE_INFO: Record<string, { stages: string; desc: string }> = {
 interface TaskCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultProjectPath?: string;
 }
 
-export function TaskCreateDialog({ open, onOpenChange }: TaskCreateDialogProps) {
+export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: TaskCreateDialogProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [project, setProject] = useState("");
@@ -33,7 +35,14 @@ export function TaskCreateDialog({ open, onOpenChange }: TaskCreateDialogProps) 
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
 
   const submitTask = useSubmitTask();
+  const { data: projectCatalog } = useProjectCatalogQuery();
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
+
+  useEffect(() => {
+    if (open && defaultProjectPath) {
+      setProject(defaultProjectPath);
+    }
+  }, [open, defaultProjectPath]);
 
   const handleSubmit = () => {
     if (!title.trim()) return;
@@ -63,6 +72,13 @@ export function TaskCreateDialog({ open, onOpenChange }: TaskCreateDialogProps) 
     );
   };
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && defaultProjectPath) {
+      setProject(defaultProjectPath);
+    }
+    onOpenChange(nextOpen);
+  };
+
   const openBrowser = async () => {
     try {
       const result = await api.browse.list(project || undefined);
@@ -89,7 +105,7 @@ export function TaskCreateDialog({ open, onOpenChange }: TaskCreateDialogProps) 
   const info = PIPELINE_INFO[pipeline];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Task</DialogTitle>
@@ -119,6 +135,29 @@ export function TaskCreateDialog({ open, onOpenChange }: TaskCreateDialogProps) 
 
           <div>
             <label className="text-sm font-medium mb-1.5 block">Project Path</label>
+            {(projectCatalog?.length || 0) === 0 && (
+              <p className="text-xs text-amber-400 mb-2">
+                No registered project yet. Add one in Projects for better task organization.
+              </p>
+            )}
+            {(projectCatalog?.length || 0) > 0 && (
+              <Select
+                value={project || "__custom__"}
+                onValueChange={(value) => setProject(value === "__custom__" ? "" : value)}
+              >
+                <SelectTrigger className="mb-2">
+                  <SelectValue placeholder="Select from registered projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__custom__">Custom path...</SelectItem>
+                  {(projectCatalog || []).map((entry) => (
+                    <SelectItem key={entry.path} value={entry.path}>
+                      {entry.name ? `${entry.name} · ${entry.path}` : entry.path}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <div className="flex gap-1">
               <Input
                 placeholder="~/my-project (optional)"

@@ -619,6 +619,19 @@ async function cmdRelease(opts) {
     if (!opts.force) process.exit(1);
   }
 
+  console.log("React 대시보드 빌드...");
+  try {
+    execFileSync("npm", ["run", "build"], {
+      cwd: path.join(SOURCE_ROOT, "web"),
+      stdio: "inherit",
+      timeout: 180000,
+    });
+    console.log("대시보드 빌드 통과");
+  } catch {
+    console.error("대시보드 빌드 실패 — 릴리즈 중단. --force로 건너뛸 수 있습니다.");
+    if (!opts.force) process.exit(1);
+  }
+
   const releaseDir = path.join(os.homedir(), ".ucm", "release");
   const releaseSockPath = path.join(os.homedir(), ".ucm", "daemon", "ucm.sock");
 
@@ -629,7 +642,7 @@ async function cmdRelease(opts) {
   await mkdir(releaseDir, { recursive: true });
 
   // copy source directories and files
-  const items = ["bin", "lib", "templates", "skill", "scripts", "package.json", "package-lock.json"];
+  const items = ["bin", "lib", "templates", "skill", "scripts", "web/dist", "package.json", "package-lock.json"];
   for (const item of items) {
     const src = path.join(SOURCE_ROOT, item);
     const dst = path.join(releaseDir, item);

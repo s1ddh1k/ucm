@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { useEventsStore } from "@/stores/events";
+import { useUiStore } from "@/stores/ui";
+import type { Task } from "@/api/types";
 
 export function useTasksQuery(status?: string) {
   return useQuery({
     queryKey: ["tasks", status],
     queryFn: () => api.tasks.list(status),
-    refetchInterval: 60000,
+    refetchInterval: 30000,
   });
 }
 
@@ -14,7 +17,7 @@ export function useTaskQuery(taskId: string | null) {
     queryKey: ["task", taskId],
     queryFn: () => api.tasks.status(taskId!),
     enabled: !!taskId,
-    refetchInterval: 10000,
+    refetchInterval: 20000,
   });
 }
 
@@ -26,12 +29,12 @@ export function useTaskDiffQuery(taskId: string | null) {
   });
 }
 
-export function useTaskLogsQuery(taskId: string | null, lines?: number) {
+export function useTaskLogsQuery(taskId: string | null, lines?: number, live = true) {
   return useQuery({
     queryKey: ["task-logs", taskId, lines],
     queryFn: () => api.tasks.logs(taskId!, lines),
     enabled: !!taskId,
-    refetchInterval: 5000,
+    refetchInterval: live ? 8000 : false,
   });
 }
 
@@ -54,6 +57,17 @@ function invalidateTaskQueries(qc: ReturnType<typeof useQueryClient>, taskId?: s
   }
 }
 
+function updateTaskInTaskCaches(
+  qc: ReturnType<typeof useQueryClient>,
+  taskId: string,
+  updater: (task: Task) => Task
+) {
+  qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
+    Array.isArray(old) ? old.map((task) => (task.id === taskId ? updater(task) : task)) : old
+  );
+  qc.setQueryData<Task>(["task", taskId], (old) => (old ? updater(old) : old));
+}
+
 export function useSubmitTask() {
   const qc = useQueryClient();
   return useMutation({
@@ -66,6 +80,34 @@ export function useStartTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.start(taskId),
+    onMutate: async (taskId) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: ["tasks"] }),
+        qc.cancelQueries({ queryKey: ["task", taskId] }),
+      ]);
+
+      const previousTask = qc.getQueryData<Task>(["task", taskId]);
+      const previousTaskLists = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
+      const startedAt = new Date().toISOString();
+
+      updateTaskInTaskCaches(qc, taskId, (task) => ({
+        ...task,
+        state: "running",
+        startedAt: task.startedAt || startedAt,
+      }));
+
+      return { previousTask, previousTaskLists };
+    },
+    onError: (_error, taskId, context) => {
+      if (context?.previousTask) {
+        qc.setQueryData(["task", taskId], context.previousTask);
+      }
+      if (context?.previousTaskLists) {
+        for (const [queryKey, snapshot] of context.previousTaskLists) {
+          qc.setQueryData(queryKey, snapshot);
+        }
+      }
+    },
     onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
   });
 }
@@ -108,7 +150,17 @@ export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.delete(taskId),
-    onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, taskId) => {
+      invalidateTaskQueries(qc, taskId);
+      qc.removeQueries({ queryKey: ["task", taskId], exact: true });
+      qc.removeQueries({ queryKey: ["task-diff", taskId], exact: true });
+      qc.removeQueries({ queryKey: ["task-logs", taskId], exact: false });
+      qc.removeQueries({ queryKey: ["task-artifacts", taskId], exact: true });
+      useEventsStore.getState().clearTaskLogs(taskId);
+      if (useUiStore.getState().selectedTaskId === taskId) {
+        useUiStore.getState().setSelectedTaskId(null);
+      }
+    },
   });
 }
 

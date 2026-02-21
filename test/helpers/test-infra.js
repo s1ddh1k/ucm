@@ -9,6 +9,7 @@ const net = require("net");
 const http = require("http");
 
 const { trackPid, cleanupAll } = require("./cleanup.js");
+const { ensureWebDistBuilt } = require("./web-build.js");
 
 class TestEnvironment {
   constructor(prefix = "ucm-dashboard-test") {
@@ -189,6 +190,7 @@ class TestEnvironment {
   }
 
   async startUiServer() {
+    ensureWebDistBuilt();
     this.uiPort = await this.findFreePort();
     const uiPath = path.join(__dirname, "..", "..", "lib", "ucm-ui-server.js");
 

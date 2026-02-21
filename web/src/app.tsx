@@ -5,6 +5,8 @@ import { Toaster } from "sonner";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import RootLayout from "@/routes/root-layout";
 import DashboardPage from "@/routes/dashboard";
+import ProjectsPage from "@/routes/projects";
+import ProjectOverviewPage from "@/routes/project-overview";
 import TasksPage from "@/routes/tasks";
 import ProposalsPage from "@/routes/proposals";
 import AutopilotPage from "@/routes/autopilot";
@@ -30,6 +32,10 @@ export default function App() {
             <Routes>
               <Route element={<RootLayout />}>
                 <Route index element={<DashboardPage />} />
+                <Route path="projects" element={<ProjectsPage />} />
+                <Route path="projects/:projectKey" element={<ProjectOverviewPage />} />
+                <Route path="projects/:projectKey/tasks" element={<TasksPage />} />
+                <Route path="projects/:projectKey/proposals" element={<ProposalsPage />} />
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="proposals" element={<ProposalsPage />} />
                 <Route path="autopilot" element={<AutopilotPage />} />

@@ -10,6 +10,7 @@ const http = require("http");
 
 const { state, assert, assertEqual, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
 const { trackPid, cleanupAll } = require("./helpers/cleanup.js");
+const { ensureWebDistBuilt } = require("./helpers/web-build.js");
 const { launchBrowser, killBrowser, findChrome } = require("../lib/core/browser.js");
 
 const UCM_DIR = path.join(os.tmpdir(), `ucm-browser-${Date.now()}`);
@@ -281,6 +282,7 @@ async function startDaemon() {
 }
 
 async function startUiServer() {
+  ensureWebDistBuilt();
   uiPort = await findFreePort();
   const uiPath = path.join(__dirname, "..", "lib", "ucm-ui-server.js");
 
@@ -363,19 +365,19 @@ async function main() {
       assertEqual(title, "UCM Dashboard", "page title");
     },
 
-    "left panel (task list) exists": async () => {
-      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('.left')");
-      assert(exists, "left panel should exist");
+    "left panel (sidebar) exists": async () => {
+      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('aside')");
+      assert(exists, "left sidebar should exist");
     },
 
-    "right panel (detail) exists": async () => {
-      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('.right')");
-      assert(exists, "right panel should exist");
+    "main content panel exists": async () => {
+      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('main')");
+      assert(exists, "main content should exist");
     },
 
-    "header exists with UCM title": async () => {
-      const text = await cdpEvaluate(wsUrl, "document.querySelector('.header h1')?.textContent || ''");
-      assert(text.includes("UCM"), "header should contain UCM");
+    "header exists with Dashboard title": async () => {
+      const text = await cdpEvaluate(wsUrl, "document.querySelector('header h1')?.textContent || ''");
+      assert(text.includes("Dashboard"), "header should contain Dashboard");
     },
   }, { timeout: 15000 });
 
@@ -396,30 +398,26 @@ async function main() {
       // Wait a moment for WebSocket update to propagate
       await new Promise((r) => setTimeout(r, 2000));
 
-      // Re-fetch wsUrl in case the page context changed
+      await cdpNavigate(wsUrl, `http://localhost:${uiPort}/tasks`);
       wsUrl = await cdpRequest(browser.port);
 
-      const hasTask = await cdpEvaluate(wsUrl, `
-        (function() {
-          const items = document.querySelectorAll('.task-item .title');
-          for (const item of items) {
-            if (item.textContent.includes('browser test task')) return true;
-          }
-          return false;
-        })()
-      `);
+      let hasTask = false;
+      for (let i = 0; i < 12; i++) {
+        hasTask = await cdpEvaluate(wsUrl, "document.body.textContent.includes('browser test task')");
+        if (hasTask) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
       assert(hasTask, "task should appear in task list");
     },
   }, { timeout: 20000 });
 
   await runGroup("UI Panels", {
     "proposals tab or section exists": async () => {
-      // Check for proposals toggle or tab
       const hasProposals = await cdpEvaluate(wsUrl, `
         (function() {
-          const toggles = document.querySelectorAll('.toggle, .tabs button');
-          for (const el of toggles) {
-            if (el.textContent.toLowerCase().includes('proposal')) return true;
+          const links = document.querySelectorAll('aside a');
+          for (const el of links) {
+            if ((el.textContent || '').toLowerCase().includes('proposal')) return true;
           }
           return false;
         })()
@@ -430,9 +428,9 @@ async function main() {
     "autopilot tab exists": async () => {
       const hasAutopilot = await cdpEvaluate(wsUrl, `
         (function() {
-          const toggles = document.querySelectorAll('.toggle, .tabs button');
-          for (const el of toggles) {
-            if (el.textContent.toLowerCase().includes('autopilot')) return true;
+          const links = document.querySelectorAll('aside a');
+          for (const el of links) {
+            if ((el.textContent || '').toLowerCase().includes('autopilot')) return true;
           }
           return false;
         })()
