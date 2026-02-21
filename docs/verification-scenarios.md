@@ -7,13 +7,14 @@
 ucm ui
 
 # 대시보드
-open http://localhost:7777
+open http://localhost:17172
 ```
 
 - `ucm ui`가 데몬 시작/중지/상태 확인을 자동 처리 (UI에서 Start/Stop 버튼)
 - 데몬은 `--no-http` 모드로 소켓만 운영, UI 서버가 프록시
 - 개발 중 UI 변경을 즉시 반영하려면: `ucm ui --dev`
 - 테스트용 프로젝트: 기존 git 레포 아무거나 (예: `~/git/sample-app`)
+- 태스크는 `Submit`만으로 실행되지 않음. `pending`에서 `Start`를 눌러야 실행 시작.
 
 ---
 
@@ -26,9 +27,11 @@ open http://localhost:7777
 **실행**:
 - UI에서 태스크 제출: title="README에 설치 가이드 추가", project=테스트 레포
 - pipeline: quick (기본값)
+- 태스크 상세에서 Start 클릭
 
 **확인 포인트**:
-- [ ] pending → running 전환 (UI 실시간 반영)
+- [ ] Submit 직후 상태가 pending으로 유지됨
+- [ ] Start 클릭 후 pending → running 전환 (UI 실시간 반영)
 - [ ] analyze 스테이지 실행, artifacts에 analyze.md 생성
 - [ ] implement 스테이지 실행, worktree에 실제 코드 변경
 - [ ] running → review 전환
@@ -48,12 +51,14 @@ open http://localhost:7777
 - [ ] review → failed 전환
 - [ ] worktree 정리됨
 - [ ] Retry 버튼으로 failed → pending 복구 가능
+- [ ] Retry 후에도 자동 실행되지 않고 pending 유지
 - [ ] Delete 버튼으로 태스크 완전 삭제 가능
 
 ### S3. 태스크 취소 (Cancel while running)
 
 **실행**:
-- 태스크 제출, running 상태에서 Cancel 클릭
+- 태스크 제출 후 Start 클릭
+- running 상태에서 Cancel 클릭
 
 **확인 포인트**:
 - [ ] 에이전트 프로세스 SIGTERM으로 종료
@@ -181,6 +186,7 @@ open http://localhost:7777
 **실행**:
 - config에 `concurrency: 2` 설정
 - 2개 태스크 연속 제출
+- 두 태스크 모두 Start 클릭
 
 **확인 포인트**:
 - [ ] 2개 동시 running
@@ -194,7 +200,7 @@ open http://localhost:7777
 
 **확인 포인트**:
 - [ ] getResourcePressure가 "high" 반환
-- [ ] 새 태스크 시작 지연/스킵
+- [ ] Start 요청한 태스크의 실행이 지연/스킵
 - [ ] 정상값으로 복원 후 재개
 
 ### S14. Self-target 태스크

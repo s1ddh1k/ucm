@@ -27,6 +27,7 @@ Usage:
   Task management (daemon):
     ucm submit <file.md>                      태스크 파일 제출
     ucm submit --project <dir> --title "..."  인라인 태스크 제출 (stdin으로 본문)
+    ucm start <task-id>                       pending 태스크 시작(큐 등록)
     ucm list [--status <s>] [--project <dir>] 태스크 목록
     ucm status [<task-id>]                    태스크/데몬 상태 조회
     ucm approve <task-id>                     태스크 승인 (merge)
@@ -247,6 +248,16 @@ async function cmdList(opts) {
       console.log(`  ${task.id}  ${task.title}${project}`);
     }
   }
+}
+
+async function cmdStart(opts) {
+  await ensureDaemon();
+
+  const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm start <task-id>"); process.exit(1); }
+
+  const result = await socketRequest({ method: "start", params: { taskId } });
+  console.log(`started: ${result.id} → ${result.status}`);
 }
 
 async function cmdStatus(opts) {
@@ -941,6 +952,7 @@ async function main() {
     case "research": await cmdResearch(opts); break;
     // Task management (daemon)
     case "submit": await cmdSubmit(opts); break;
+    case "start": await cmdStart(opts); break;
     case "list": await cmdList(opts); break;
     case "status": await cmdStatus(opts); break;
     case "approve": await cmdApprove(opts); break;

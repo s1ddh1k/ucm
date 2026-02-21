@@ -154,6 +154,14 @@ ucm list --status review    # 리뷰 대기 중인 것만
 
 상태 필터: `pending`, `in_progress`, `done`, `failed`, `review`, `rejected`, `aborted`
 
+### `ucm start <id>` — pending 작업 시작
+
+```bash
+ucm start 7f2a1c9d
+```
+
+`ucm submit`으로 등록된 작업은 자동 실행되지 않는다. `ucm start <id>`를 호출해야 큐에 등록되어 실행된다.
+
 ### `ucm status <id>` — 작업 상태 상세
 
 ```bash
@@ -290,7 +298,8 @@ ucm daemon stop     # 데몬 중지
 | 상태 | 가능한 액션 |
 |------|------------|
 | `review` | Approve, Request Changes (피드백 입력 후 반려), Reject |
-| `pending`, `running` | Cancel |
+| `pending` | Start, Cancel |
+| `running` | Cancel |
 | `failed` | Retry, Delete |
 | `done` | Delete |
 
