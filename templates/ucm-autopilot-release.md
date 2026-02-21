@@ -24,3 +24,10 @@ Update project documentation to reflect the completed iteration.
 4. 문서 파일만 수정 (.md, .txt, .rst). 소스 코드/package.json 수정 금지
 5. 기존 문서의 언어와 스타일을 유지
 6. 변경사항은 명확한 커밋 메시지로 커밋
+
+## Documentation Sync
+
+- 아래 항목은 모두 필수 기입입니다. 빈칸 금지, 해당 없음이면 N/A로 작성합니다.
+- README 변경 여부 (필수):
+- 수정한 README 섹션 (필수):
+- 변경 없음 근거 (필수):
