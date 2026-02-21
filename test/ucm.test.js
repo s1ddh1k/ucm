@@ -2674,6 +2674,10 @@ function testAutopilotReleaseTemplateUpdated() {
   assert(template.includes("README.md"), "release template has README.md instruction");
   assert(template.includes("CHANGELOG.md"), "release template has CHANGELOG.md instruction");
   assert(template.includes("docs/"), "release template has docs/ instruction");
+  assert(template.includes("Documentation Sync"), "release template has Documentation Sync section");
+  assert(template.includes("README 변경 여부"), "release template has README change required field");
+  assert(template.includes("수정한 README 섹션"), "release template has README section required field");
+  assert(template.includes("변경 없음 근거"), "release template has no-change rationale required field");
   assert(!template.includes("Respond with ONLY a JSON"), "release template is no longer JSON output format");
 }
 
