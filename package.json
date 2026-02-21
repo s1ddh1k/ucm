@@ -5,7 +5,7 @@
   "bin": {
     "ucm-dev": "./bin/ucm-dev.js",
     "ucmd-dev": "./bin/ucmd-dev.js",
-"rsa": "./bin/rsa.js",
+    "rsa": "./bin/rsa.js",
     "qna": "./bin/qna.js",
     "spec": "./bin/spec.js",
     "prl": "./bin/prl.js",
