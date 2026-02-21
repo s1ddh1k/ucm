@@ -8,6 +8,9 @@ export interface StageHistoryEntry {
 }
 
 export interface TokenUsage {
+  input?: number;
+  output?: number;
+  total?: number;
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
@@ -59,6 +62,11 @@ export interface DaemonStats {
   tasksCompleted: number;
   tasksFailed: number;
   totalSpawns: number;
+  llm?: {
+    provider: string;
+    model: string;
+    envProvider?: string | null;
+  };
 }
 
 export interface ResourceInfo {
@@ -274,6 +282,8 @@ export interface StageApprovalConfig {
 }
 
 export interface UcmConfig {
+  provider?: string;
+  model?: string;
   stageApproval: StageApprovalConfig;
   [key: string]: unknown;
 }
