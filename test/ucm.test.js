@@ -2663,6 +2663,9 @@ function testAutopilotPlanTemplateHasProjectContext() {
   const template = fs.readFileSync(path.join(SOURCE_ROOT, "templates/ucm-autopilot-plan.md"), "utf-8");
   assert(template.includes("{{PROJECT_CONTEXT}}"), "plan template has PROJECT_CONTEXT placeholder");
   assert(template.includes("Project Documentation State"), "plan template has documentation state section");
+  assert(template.includes("Commit Slicing Plan"), "plan template has commit slicing section");
+  assert(template.includes("feature/docs/test"), "plan template has feature/docs/test split guidance");
+  assert(template.includes("500줄 이하 목표"), "plan template has 500 lines target guidance");
 }
 
 function testAutopilotReleaseTemplateUpdated() {

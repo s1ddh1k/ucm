@@ -46,6 +46,17 @@ If there are approved proposals, include them as items in the roadmap (matching 
 
 {{PROJECT_CONTEXT}}
 
+## Commit Slicing Plan
+
+커밋 분할은 Item Mix Guidelines를 실행하기 위한 하위 원칙입니다.
+각 roadmap item의 description에는 해당 작업의 커밋 슬라이싱 의도를 포함하세요.
+
+- feature/docs/test 단위로 커밋을 분리해 계획하세요.
+- `feature`: 기능 구현과 직접 관련된 코드 변경 커밋
+- `docs`: README/docs 등 문서 동반 변경 커밋
+- `test`: 테스트 추가/보강 및 검증 코드 변경 커밋
+- 기본 가이드라인은 커밋당 500줄 이하 목표입니다(하드 제한이 아닌 target).
+
 ## Instructions
 
 1. Scan the project directory to understand current state (code structure, README, tests, package.json, etc.)
