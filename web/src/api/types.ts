@@ -1,0 +1,287 @@
+// Task types
+export interface StageHistoryEntry {
+  stage: string;
+  status: string;
+  durationMs?: number;
+  timestamp?: string;
+  tokenUsage?: { input?: number; output?: number } | null;
+}
+
+export interface TokenUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  [key: string]: number | undefined;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  state: TaskState;
+  priority: number;
+  created: string;
+  startedAt?: string;
+  completedAt?: string;
+  project?: string;
+  projects?: ProjectRef[];
+  pipeline?: string;
+  currentStage?: string;
+  pipelineType?: string;
+  stageHistory?: StageHistoryEntry[];
+  tokenUsage?: TokenUsage;
+  feedback?: string;
+  refined?: boolean;
+  autopilotSession?: string;
+  body?: string;
+  suspended?: boolean;
+  suspendedStage?: string;
+  stageGate?: string;
+}
+
+export type TaskState = "pending" | "running" | "review" | "done" | "failed";
+
+export interface ProjectRef {
+  path: string;
+  role?: string;
+}
+
+// Stats
+export interface DaemonStats {
+  pid: number;
+  uptime: number;
+  daemonStatus: "running" | "paused" | "offline";
+  activeTasks: string[];
+  suspendedTasks: string[];
+  queueLength: number;
+  resources: ResourceInfo;
+  resourcePressure: string;
+  pipelines: string[];
+  tasksCompleted: number;
+  tasksFailed: number;
+  totalSpawns: number;
+}
+
+export interface ResourceInfo {
+  cpuLoad: number;              // CPU load average normalized to core count
+  memoryFreeMb: number;         // free memory in MB
+  diskFreeGb: number | null;    // free disk in GB (null if unavailable)
+}
+
+// Diff — backend getWorktreeDiff returns an array directly
+export type DiffResult = Array<{
+  project: string;
+  diff: string;
+}>;
+
+// Artifacts
+export interface Artifacts {
+  taskId: string;
+  summary: string | null;
+  memory: Record<string, unknown> | null;
+  files: string[];
+  contents: Record<string, unknown>;
+}
+
+// Verify report artifact
+export interface VerifyReport {
+  passed: boolean;
+  testsPassed: boolean;
+  reviewPassed: boolean;
+  testFailures: string[];
+  issues: Array<{ severity: string; description: string; file?: string }>;
+  summary: string;
+}
+
+// Polish summary artifact
+export interface PolishSummary {
+  lenses: Array<{ lens: string; rounds: number; issuesFound: number; converged: boolean }>;
+  totalRounds: number;
+  totalIssuesFound: number;
+}
+
+// UX review artifact
+export interface UxReviewReport {
+  score: number;
+  summary: string;
+  canUserAccomplishGoal: { goal: string; result: string; blockers: string[] };
+  usabilityIssues: Array<{ severity: string; description: string; where?: string; fix?: string }>;
+  confusingElements: string[];
+  positives: string[];
+  mobile: { usable: boolean; issues: string[] };
+}
+
+// Proposals — matches parseProposalFile + listProposals response
+export interface Proposal {
+  id: string;
+  title: string;
+  category: string;
+  risk: string;
+  priority: number;
+  status: ProposalStatus;
+  problem: string;
+  change: string;
+  expectedImpact: string;
+  created: string;
+  observationCycle?: number;
+  dedupHash?: string;
+  implementedBy?: string | null;
+  project?: string;
+  relatedTasks?: string[];
+  evaluation?: ProposalEvaluation;
+}
+
+export type ProposalStatus = "proposed" | "approved" | "rejected" | "implemented";
+
+export interface ProposalEvaluation {
+  regulatorApproved: boolean;
+  regulatorReason?: string;
+  score?: number;
+}
+
+// Observer — matches handleObserveStatus response
+export interface ObserverStatus {
+  cycle: number;
+  lastRunAt: string | null;
+  taskCountAtLastRun: number;
+  observerConfig: Record<string, unknown>;
+  latestSnapshot: {
+    timestamp: string;
+    [key: string]: unknown;
+  } | null;
+}
+
+// Autopilot
+export interface AutopilotSession {
+  id: string;
+  status: AutopilotSessionStatus;
+  pausedPhase?: string;
+  project: string;
+  projectName: string;
+  pipeline: string;
+  roadmap: RoadmapItem[];
+  currentItem: number;
+  currentTaskId: string | null;
+  iteration: number;
+  releases: Release[];
+  stats: AutopilotStats;
+  consecutiveFailures: number;
+  totalItemsProcessed: number;
+  maxItems: number;
+  startedAt: string;
+  lastActivityAt: string;
+  log: LogEntry[];
+  stableTag: string | null;
+  currentItemIteration: number;
+  currentTestResults: unknown[];
+  currentItemLog: unknown[];
+  directives: Directive[];
+  projectContext: string | null;
+}
+
+export type AutopilotSessionStatus =
+  | "planning" | "running" | "paused" | "awaiting_review"
+  | "releasing" | "stopped" | "completed";
+
+export interface AutopilotSessionSummary {
+  id: string;
+  status: AutopilotSessionStatus;
+  project: string;
+  projectName: string;
+  iteration: number;
+  stats: AutopilotStats;
+  currentItem: number;
+  currentTaskId: string | null;
+  startedAt: string;
+  lastActivityAt: string;
+  totalItemsProcessed: number;
+  maxItems: number;
+  releasesCount: number;
+  pendingDirectives: number;
+}
+
+export interface RoadmapItem {
+  title: string;
+  type: string;
+  description: string;
+  status: "pending" | "running" | "done" | "failed";
+  taskId: string | null;
+  iteration: number;
+}
+
+export interface Release {
+  version: string;
+  changelog: string;
+  releaseNotes: string;
+  taskIds: string[];
+  itemTitles: string[];
+  timestamp: string;
+  tag: string;
+}
+
+export interface AutopilotStats {
+  totalItems: number;
+  completedItems: number;
+  failedItems: number;
+  skippedItems: number;
+  totalReleases: number;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  message: string;
+  type: "info" | "warn" | "error";
+}
+
+export interface Directive {
+  id: string;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "consumed";
+  consumedInIteration: number | null;
+}
+
+// Browse
+export interface BrowseResult {
+  current: string;
+  parent: string;
+  directories: Array<{ name: string; path: string }>;
+}
+
+// WebSocket events
+export interface WsEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
+// Daemon status — /api/daemon/status returns { online: true, ...stats } or { online: false }
+export type DaemonStatus =
+  | { online: true } & DaemonStats
+  | { online: false };
+
+// Stage Approval Config
+export interface StageApprovalConfig {
+  clarify: boolean;
+  specify: boolean;
+  decompose: boolean;
+  design: boolean;
+  implement: boolean;
+  verify: boolean;
+  "ux-review": boolean;
+  polish: boolean;
+  integrate: boolean;
+  [stage: string]: boolean;
+}
+
+export interface UcmConfig {
+  stageApproval: StageApprovalConfig;
+  [key: string]: unknown;
+}
+
+// Refinement
+export interface RefinementQuestion {
+  id: string;
+  question: string;
+  options?: string[];
+  context?: string;
+}

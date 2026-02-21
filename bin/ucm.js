@@ -33,6 +33,11 @@ Usage:
     ucm approve <task-id>                     태스크 승인 (merge)
     ucm reject <task-id> [--feedback "..."]   태스크 반려
     ucm cancel <task-id>                      태스크 취소
+    ucm retry <task-id>                       실패한 태스크 재시도
+    ucm delete <task-id>                      태스크 삭제
+    ucm priority <task-id> <N>                우선순위 변경
+    ucm gate approve <task-id>                스테이지 승인
+    ucm gate reject <task-id>                 스테이지 반려
     ucm diff <task-id>                        변경사항 조회
     ucm logs <task-id> [--lines N]            로그 조회
 
@@ -55,12 +60,14 @@ Usage:
     ucm observe [--status]                    수동 관찰 트리거
 
   Other:
+    ucm init                                  초기 설정 및 환경 점검
     ucm chat                                  대화형 AI 관리 모드
     ucm ui [--port N] [--dev]                 대시보드 UI 서버 시작
     ucm dashboard                             브라우저에서 대시보드 열기
     ucm release                               릴리즈 배포 (~/.ucm/release/)
 
 Options:
+  --version              버전 출력
   --project <dir>      프로젝트 디렉토리 (기본: cwd)
   --pipeline <name>    파이프라인 (trivial|small|medium|large 또는 "stage1,stage2,...")
   --autopilot          사람 개입 없이 실행
@@ -89,6 +96,10 @@ function parseArgs(argv) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--help" || args[i] === "-h") {
       console.log(USAGE);
+      process.exit(0);
+    } else if (args[i] === "--version" || args[i] === "-V") {
+      const pkg = require("../package.json");
+      console.log(pkg.version);
       process.exit(0);
     } else if (args[i] === "--status") { opts.status = args[++i]; }
     else if (args[i] === "--project") { opts.project = args[++i]; }
@@ -245,7 +256,10 @@ async function cmdList(opts) {
     console.log(`\n[${state}]`);
     for (const task of stateTasks) {
       const project = task.project ? ` (${path.basename(task.project)})` : "";
-      console.log(`  ${task.id}  ${task.title}${project}`);
+      const stage = task.currentStage && (state === "running" || state === "review")
+        ? (task.stageGate ? ` ⏸ ${task.currentStage}` : ` → ${task.currentStage}`)
+        : "";
+      console.log(`  ${task.id}  ${task.title}${project}${stage}`);
     }
   }
 }
@@ -281,13 +295,45 @@ async function cmdStatus(opts) {
   }
 
   const task = await socketRequest({ method: "status", params: { taskId } });
-  console.log(`id:      ${task.id}`);
-  console.log(`title:   ${task.title}`);
-  console.log(`status:  ${task.state || task.status}`);
-  if (task.project) console.log(`project: ${task.project}`);
-  if (task.created) console.log(`created: ${task.created}`);
-  if (task.startedAt) console.log(`started: ${task.startedAt}`);
-  if (task.completedAt) console.log(`done:    ${task.completedAt}`);
+  console.log(`id:       ${task.id}`);
+  console.log(`title:    ${task.title}`);
+  console.log(`status:   ${task.state || task.status}`);
+  if (task.project) console.log(`project:  ${task.project}`);
+  if (task.pipelineType) console.log(`pipeline: ${task.pipelineType}`);
+  if (task.currentStage) {
+    const stageLabel = task.stageGate ? `${task.currentStage} (⏸ awaiting approval)` : task.currentStage;
+    console.log(`stage:    ${stageLabel}`);
+  }
+  if (task.created) console.log(`created:  ${task.created}`);
+  if (task.startedAt) console.log(`started:  ${task.startedAt}`);
+  if (task.completedAt) console.log(`done:     ${task.completedAt}`);
+  if (task.priority) console.log(`priority: ${task.priority}`);
+
+  // Token usage
+  if (task.tokenUsage) {
+    const tu = task.tokenUsage;
+    const fmt = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const input = tu.input || tu.inputTokens || 0;
+    const output = tu.output || tu.outputTokens || 0;
+    console.log(`tokens:   ${fmt(input)} in / ${fmt(output)} out (${fmt(input + output)} total)`);
+  }
+
+  // Stage history
+  if (task.stageHistory && task.stageHistory.length > 0) {
+    console.log(`\nstage history:`);
+    for (const s of task.stageHistory) {
+      const status = s.status === "pass" ? "✓" : s.status === "fail" ? "✗" : "·";
+      const dur = s.durationMs ? ` (${(s.durationMs / 1000).toFixed(1)}s)` : "";
+      const tokens = s.tokenUsage ? ` [${((s.tokenUsage.input || 0) + (s.tokenUsage.output || 0))} tok]` : "";
+      console.log(`  ${status} ${s.stage}${dur}${tokens}`);
+    }
+  }
+
+  // Next action hint
+  const nextAction = getNextAction(task);
+  if (nextAction) {
+    console.log(`\nnext: ${nextAction}`);
+  }
 }
 
 async function cmdApprove(opts) {
@@ -349,6 +395,47 @@ async function cmdLogs(opts) {
     params: { taskId, lines: opts.lines },
   });
   console.log(logs);
+}
+
+async function cmdRetry(opts) {
+  await ensureDaemon();
+  const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm retry <task-id>"); process.exit(1); }
+  const result = await socketRequest({ method: "retry", params: { taskId } });
+  console.log(`retried: ${result.id} → ${result.status}`);
+}
+
+async function cmdDelete(opts) {
+  await ensureDaemon();
+  const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm delete <task-id>"); process.exit(1); }
+  const result = await socketRequest({ method: "delete", params: { taskId } });
+  console.log(`deleted: ${result.id}`);
+}
+
+async function cmdGateApprove(opts) {
+  await ensureDaemon();
+  const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm gate approve <task-id>"); process.exit(1); }
+  const result = await socketRequest({ method: "stage_gate_approve", params: { taskId } });
+  console.log(`gate approved: ${result.id}`);
+}
+
+async function cmdGateReject(opts) {
+  await ensureDaemon();
+  const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm gate reject <task-id>"); process.exit(1); }
+  const result = await socketRequest({ method: "stage_gate_reject", params: { taskId, feedback: opts.feedback } });
+  console.log(`gate rejected: ${result.id}`);
+}
+
+async function cmdPriority(opts) {
+  await ensureDaemon();
+  const taskId = opts.positional[0];
+  const priority = parseInt(opts.positional[1]);
+  if (!taskId || isNaN(priority)) { console.error("사용법: ucm priority <task-id> <value>"); process.exit(1); }
+  const result = await socketRequest({ method: "update_priority", params: { taskId, priority } });
+  console.log(`priority updated: ${result.id} → ${result.priority}`);
 }
 
 async function cmdPause() {
@@ -924,12 +1011,87 @@ async function cmdDaemon(opts) {
 }
 
 function getNextAction(dag) {
-  switch (dag.status) {
+  const state = dag.state || dag.status;
+  if (dag.stageGate) return `ucm gate approve ${dag.id}  또는  ucm gate reject ${dag.id}`;
+  switch (state) {
+    case "pending": return `ucm start ${dag.id}`;
+    case "running":
+    case "in_progress": return `ucm logs ${dag.id}  (진행 중)`;
     case "review": return `ucm approve ${dag.id}  또는  ucm reject ${dag.id} --feedback "..."`;
     case "rejected": return `ucm resume ${dag.id}`;
-    case "failed": return `ucm resume ${dag.id} --from ${dag.currentStage || "implement"}`;
-    case "in_progress": return `ucm logs ${dag.id}  (진행 중)`;
+    case "failed": return `ucm retry ${dag.id}  또는  ucm resume ${dag.id} --from ${dag.currentStage || "implement"}`;
     default: return null;
+  }
+}
+
+// ── Init ──
+
+async function cmdInit() {
+  console.log("UCM — Unified Code Manager");
+  console.log("Initializing...\n");
+
+  // Prerequisites check
+  console.log("Prerequisites:");
+
+  let claudeOk = false;
+  try {
+    execFileSync("which", ["claude"], { stdio: "pipe" });
+    claudeOk = true;
+  } catch {}
+  console.log(`  ${claudeOk ? "\u2713" : "\u2717"} claude CLI ${claudeOk ? "found" : "not found — install from https://docs.anthropic.com/en/docs/claude-code"}`);
+
+  const apiKeyOk = !!process.env.ANTHROPIC_API_KEY;
+  console.log(`  ${apiKeyOk ? "\u2713" : "\u2717"} ANTHROPIC_API_KEY ${apiKeyOk ? "set" : "not set — export ANTHROPIC_API_KEY=sk-..."}`);
+
+  console.log("");
+
+  // Create directories
+  const dirs = [
+    path.join(TASKS_DIR, "pending"),
+    path.join(TASKS_DIR, "running"),
+    path.join(TASKS_DIR, "review"),
+    path.join(TASKS_DIR, "done"),
+    path.join(TASKS_DIR, "failed"),
+    path.join(UCM_DIR, "daemon"),
+    path.join(UCM_DIR, "forge"),
+    path.join(UCM_DIR, "artifacts"),
+    path.join(UCM_DIR, "logs"),
+    path.join(UCM_DIR, "proposals", "proposed"),
+    path.join(UCM_DIR, "proposals", "approved"),
+    path.join(UCM_DIR, "proposals", "rejected"),
+    path.join(UCM_DIR, "proposals", "implemented"),
+    path.join(UCM_DIR, "autopilot"),
+    path.join(UCM_DIR, "snapshots"),
+    path.join(UCM_DIR, "worktrees"),
+    path.join(UCM_DIR, "lessons"),
+  ];
+
+  for (const dir of dirs) {
+    await mkdir(dir, { recursive: true });
+  }
+  console.log(`Directories created: ${UCM_DIR}`);
+
+  // Create default config
+  const configPath = path.join(UCM_DIR, "config.json");
+  if (!fs.existsSync(configPath)) {
+    await writeFile(configPath, "{}\n");
+    console.log("Default config created: config.json");
+  } else {
+    console.log("Config already exists: config.json");
+  }
+
+  console.log("\n--- Getting Started ---\n");
+  console.log("  1. Start daemon:        ucm daemon start");
+  console.log("  2. Submit a task:        ucm submit task.md");
+  console.log("  3. Start the task:       ucm start <task-id>");
+  console.log("  4. Open dashboard:       ucm dashboard");
+  console.log("  5. Check status:         ucm status");
+  console.log("");
+
+  if (!claudeOk || !apiKeyOk) {
+    console.log("\u26A0 Please resolve the prerequisite issues above before using UCM.");
+  } else {
+    console.log("Ready to go! Run `ucm daemon start` to begin.");
   }
 }
 
@@ -958,6 +1120,16 @@ async function main() {
     case "approve": await cmdApprove(opts); break;
     case "reject": await cmdReject(opts); break;
     case "cancel": await cmdCancel(opts); break;
+    case "retry": await cmdRetry(opts); break;
+    case "delete": await cmdDelete(opts); break;
+    case "gate": {
+      const sub = opts.positional.shift();
+      if (sub === "approve") await cmdGateApprove(opts);
+      else if (sub === "reject") await cmdGateReject(opts);
+      else { console.error("사용법: ucm gate <approve|reject> <task-id>"); process.exit(1); }
+      break;
+    }
+    case "priority": await cmdPriority(opts); break;
     case "diff": await cmdDiff(opts); break;
     case "logs": await cmdLogs(opts); break;
     // Daemon control
@@ -970,6 +1142,7 @@ async function main() {
     case "proposals": await cmdProposals(opts); break;
     case "proposal": await cmdProposal(opts); break;
     // Other
+    case "init": await cmdInit(); break;
     case "chat": await cmdChat(); break;
     case "ui": {
       const { startUiServer } = require("../lib/ucm-ui-server.js");

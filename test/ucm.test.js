@@ -939,8 +939,8 @@ async function testArtifacts() {
 
 // ── Unit Tests: Resource Monitor ──
 
-function testCheckResources() {
-  const resources = checkResources();
+async function testCheckResources() {
+  const resources = await checkResources();
   assert(typeof resources.cpuLoad === "number", "resources: cpuLoad is number");
   assert(resources.cpuLoad >= 0, "resources: cpuLoad >= 0");
   assert(typeof resources.memoryFreeMb === "number", "resources: memoryFreeMb is number");
@@ -3127,7 +3127,7 @@ function testIntegrateConflictResolutionUsesOrigin() {
   const intSource = require("fs").readFileSync(
     require("path").join(__dirname, "..", "lib", "forge", "integrate.js"), "utf-8"
   );
-  assert(intSource.includes("workspace.projects[0]?.origin"), "integrate: conflict resolution uses origin path");
+  assert(intSource.includes("workspace.projects?.[0]?.origin"), "integrate: conflict resolution uses origin path");
 }
 
 function testPolishConfig() {
@@ -4285,7 +4285,7 @@ async function main() {
   console.log();
 
   console.log("Resource Monitor Tests:");
-  testCheckResources();
+  await testCheckResources();
   testGetResourcePressure();
   console.log();
 
