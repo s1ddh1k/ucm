@@ -4293,6 +4293,48 @@ async function testRefinementCleansAutopilotSessionAfterSpawnFailure() {
   }
 }
 
+async function testRefinementCleansAutopilotSessionAfterStatusFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({ status: "error", stdout: "" }),
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot status failure cleanup",
+      description: "autopilot session should be cleaned when spawn status is non-done",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(errors.length, 1, "refinement autopilot status failure cleanup: emits refinement:error once");
+    assert(String(errors[0]?.data?.error || "").includes("autopilot round 1 failed"), "refinement autopilot status failure cleanup: includes non-done status error");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "refinement autopilot status failure cleanup: session is auto-cleaned after terminal status failure");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
 // ── (Chat tests removed — PTY bridge) ──
 
 // ── Structure Analysis Tests ──
@@ -8055,6 +8097,7 @@ async function main() {
   await testRefinementCleansSessionAfterQuestionGenerationStatusFailure();
   await testRefinementCleansSessionAfterSpawnFailure();
   await testRefinementCleansAutopilotSessionAfterSpawnFailure();
+  await testRefinementCleansAutopilotSessionAfterStatusFailure();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
