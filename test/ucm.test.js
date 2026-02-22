@@ -4857,6 +4857,177 @@ async function testSocketResumeRejectsUnsuspendedRunningTask() {
   }
 }
 
+async function testSocketResumeRollbackRestoresSuspendedTracking() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  const forgeModule = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+  const { MAX_CONCURRENT_TASKS } = require("../lib/core/constants");
+
+  const originalForgePipeline = forgeModule.ForgePipeline;
+  const originalResolveResumeProject = forgeModule.resolveResumeProject;
+  const originalAssertResumableDagStatus = forgeModule.assertResumableDagStatus;
+  const originalLoad = TaskDag.load;
+
+  const taskId = "forge-20260222-fade";
+  const runningPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  const daemonState = {
+    daemonStatus: "running",
+    activeTasks: ["keep-active"],
+    suspendedTasks: [taskId, "keep-suspended"],
+    stats: { totalSpawns: 0 },
+  };
+  let markStateDirtyCalls = 0;
+  let runCalled = false;
+
+  // Simulate a race: first capacity check passes, second check (in startForgePipeline) fails.
+  const activeForgePipelines = {
+    _store: new Map(),
+    _sizeReads: 0,
+    has(id) { return this._store.has(id); },
+    set(id, value) {
+      this._store.set(id, value);
+      return this;
+    },
+    delete(id) { return this._store.delete(id); },
+    get size() {
+      this._sizeReads += 1;
+      return this._sizeReads >= 2 ? MAX_CONCURRENT_TASKS : (MAX_CONCURRENT_TASKS - 1);
+    },
+  };
+
+  class FakePipeline {
+    constructor(options = {}) {
+      this.taskId = options.taskId;
+    }
+
+    on() {}
+
+    run() {
+      runCalled = true;
+      return Promise.resolve({ id: this.taskId, status: "in_progress" });
+    }
+  }
+
+  forgeModule.ForgePipeline = FakePipeline;
+  forgeModule.resolveResumeProject = async () => process.cwd();
+  forgeModule.assertResumableDagStatus = () => {};
+  TaskDag.load = async () => ({
+    id: taskId,
+    status: "failed",
+    pipeline: "small",
+    stageHistory: [{ stage: "verify", status: "fail" }],
+  });
+
+  await writeFile(runningPath, serializeTaskFile({
+    id: taskId,
+    title: "socket resume suspended rollback tracking",
+    state: "running",
+    created: new Date().toISOString(),
+    suspended: true,
+    suspendedStage: "implement",
+    suspendedReason: "reject_feedback",
+  }, "resume body"));
+
+  const applyTaskMetaUpdates = async (targetTaskId, updates) => {
+    for (const state of TASK_STATES) {
+      const taskPath = path.join(TASKS_DIR, state, `${targetTaskId}.md`);
+      try {
+        const content = await readFile(taskPath, "utf-8");
+        const { meta, body } = parseTaskFile(content);
+        for (const [key, value] of Object.entries(updates || {})) {
+          if (value === undefined || value === null) delete meta[key];
+          else meta[key] = value;
+        }
+        await writeFile(taskPath, serializeTaskFile(meta, body));
+        return;
+      } catch {}
+    }
+  };
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    log: () => {},
+    broadcastWs: () => {},
+    markStateDirty: () => {},
+    inflightTasks: new Set(),
+    taskQueue: [],
+    taskQueueIds: new Set(),
+    wakeProcessLoop: () => {},
+    getResourcePressure: () => "normal",
+    requeueSuspendedTasks: async () => {},
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    getProbeIntervalMs: () => 1000,
+    setProbeIntervalMs: () => {},
+    QUOTA_PROBE_INITIAL_MS: 1000,
+    activeForgePipelines,
+    updateTaskMeta: applyTaskMetaUpdates,
+    reloadConfig: async () => {},
+  });
+
+  ucmdServer.setDeps({
+    activeForgePipelines,
+    updateTaskMeta: applyTaskMetaUpdates,
+    loadTask: ucmdHandlers.loadTask,
+    moveTask: ucmdHandlers.moveTask,
+    daemonState: () => daemonState,
+    markStateDirty: () => { markStateDirtyCalls++; },
+    log: () => {},
+    gracefulShutdown: () => {},
+    handlers: () => ({
+      handleResume: () => ({ status: "running" }),
+    }),
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caughtError = null;
+    try {
+      await socketRequest({ method: "resume", params: { taskId, project: process.cwd() } });
+    } catch (e) {
+      caughtError = e;
+    }
+
+    assert(!!caughtError, "socket resume rollback: returns error when race triggers capacity failure");
+    assert(
+      caughtError && caughtError.message.includes("concurrent task limit reached"),
+      "socket resume rollback: error contains capacity reason"
+    );
+    assertEqual(runCalled, false, "socket resume rollback: does not start forge pipeline");
+    assert(markStateDirtyCalls > 0, "socket resume rollback: updates daemon tracking state during rollback");
+
+    const task = await ucmdHandlers.loadTask(taskId);
+    assert(task && task.state === "running", "socket resume rollback: task remains running");
+    assert(task && task.suspended === true, "socket resume rollback: restores suspended flag");
+    assertEqual(task?.suspendedStage, "implement", "socket resume rollback: restores suspendedStage");
+    assertEqual(task?.suspendedReason, "reject_feedback", "socket resume rollback: restores suspendedReason");
+
+    assert(!daemonState.activeTasks.includes(taskId), "socket resume rollback: removes task from activeTasks");
+    assert(daemonState.activeTasks.includes("keep-active"), "socket resume rollback: keeps unrelated active task ids");
+    assert(daemonState.suspendedTasks.includes("keep-suspended"), "socket resume rollback: keeps unrelated suspended tasks");
+    assert(
+      daemonState.suspendedTasks.includes(taskId),
+      "socket resume rollback: restores task in suspendedTasks for later resume"
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    try { await rm(runningPath, { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "review", `${taskId}.md`), { force: true }); } catch {}
+    forgeModule.ForgePipeline = originalForgePipeline;
+    forgeModule.resolveResumeProject = originalResolveResumeProject;
+    forgeModule.assertResumableDagStatus = originalAssertResumableDagStatus;
+    TaskDag.load = originalLoad;
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -6622,6 +6793,7 @@ async function main() {
   await testSocketResumeCapacityFailureDoesNotMutateState();
   await testSocketResumeRejectsNonResumableTaskState();
   await testSocketResumeRejectsUnsuspendedRunningTask();
+  await testSocketResumeRollbackRestoresSuspendedTracking();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
