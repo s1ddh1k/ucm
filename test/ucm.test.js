@@ -3422,6 +3422,93 @@ async function testRefinementFinalizeRequiresCompletion() {
   }
 }
 
+async function testRefinementFinalizeRejectsConcurrentFinalization() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let submitCalls = 0;
+  const submitResolvers = [];
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => {
+      submitCalls++;
+      return new Promise((resolve) => { submitResolvers.push(resolve); });
+    },
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  let firstFinalizePromise = null;
+  let secondFinalizePromise = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "finalize concurrency guard",
+      description: "concurrent finalize should not submit twice",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    firstFinalizePromise = ucmdRefinement.finalizeRefinement(sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let secondErr = null;
+    secondFinalizePromise = ucmdRefinement.finalizeRefinement(sessionId).catch((e) => {
+      secondErr = e;
+      return null;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assertEqual(submitCalls, 1, "refinement finalize concurrency: submitTask called once while first finalize is in progress");
+    assert(secondErr && secondErr.message.includes("finalization in progress"), "refinement finalize concurrency: second finalize rejected while in progress");
+
+    if (submitResolvers[0]) submitResolvers[0]({ id: "finalize-concurrency-task" });
+    const finalized = await firstFinalizePromise;
+    assertEqual(finalized.taskId, "finalize-concurrency-task", "refinement finalize concurrency: first finalize returns taskId");
+    const finalizedEvents = events.filter((e) => e.event === "refinement:finalized" && e.data?.sessionId === sessionId);
+    assertEqual(finalizedEvents.length, 1, "refinement finalize concurrency: emits finalized once");
+  } finally {
+    for (const resolve of submitResolvers) {
+      try { resolve({ id: "finalize-concurrency-cleanup" }); } catch {}
+    }
+    const pending = [firstFinalizePromise, secondFinalizePromise].filter(Boolean);
+    if (pending.length > 0) {
+      await Promise.allSettled(pending);
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7523,6 +7610,7 @@ async function main() {
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
+  await testRefinementFinalizeRejectsConcurrentFinalization();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
