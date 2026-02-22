@@ -3433,6 +3433,73 @@ async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   }
 }
 
+async function testRefinementSwitchToAutopilotRejectsCompletedSession() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot completed guard",
+      description: "completed session should reject autopilot switch",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let switchErr = null;
+    try {
+      await ucmdRefinement.switchToAutopilot(sessionId);
+    } catch (e) {
+      switchErr = e;
+    }
+
+    assert(switchErr && switchErr.message.includes("refinement already complete"), "refinement autopilot complete guard: rejects switch after completion");
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const modeChanged = events.filter((e) => e.event === "refinement:mode_changed" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 1, "refinement autopilot complete guard: does not emit duplicate complete");
+    assertEqual(modeChanged.length, 0, "refinement autopilot complete guard: does not emit mode_changed after completion");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7334,6 +7401,7 @@ async function main() {
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
+  await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
