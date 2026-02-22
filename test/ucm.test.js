@@ -6438,6 +6438,54 @@ async function testSocketRefinementAnswerAcceptsLegacyAnswerAlias() {
   }
 }
 
+async function testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let captured = null;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleRefinementAnswer: async (sessionId, answer) => {
+        captured = { sessionId, answer };
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    await socketRequest({
+      method: "refinement_answer",
+      params: {
+        sessionId: "refinement-legacy-nested-answer",
+        answer: {
+          area: "수용 조건",
+          questionText: "중첩 레거시 질문",
+          answer: "중첩 레거시 답변 필드",
+          reason: "중첩 레거시 사유",
+        },
+      },
+    });
+
+    assert(captured !== null, "socket refinement answer nested legacy alias: handler called");
+    assertEqual(captured?.sessionId, "refinement-legacy-nested-answer", "socket refinement answer nested legacy alias: sessionId forwarded");
+    assertEqual(captured?.answer?.area, "수용 조건", "socket refinement answer nested legacy alias: area forwarded");
+    assertEqual(captured?.answer?.questionText, "중첩 레거시 질문", "socket refinement answer nested legacy alias: questionText forwarded");
+    assertEqual(captured?.answer?.reason, "중첩 레거시 사유", "socket refinement answer nested legacy alias: reason forwarded");
+    assertEqual(captured?.answer?.value, "중첩 레거시 답변 필드", "socket refinement answer nested legacy alias: maps answer string to value");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -8228,6 +8276,7 @@ async function main() {
   await testSocketResumeRollbackRestoresSuspendedTracking();
   await testSocketRefinementAnswerAcceptsFlatPayload();
   await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
+  await testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
