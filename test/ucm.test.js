@@ -4058,6 +4058,54 @@ async function testRefinementRetriesAfterJsonParseFailure() {
   }
 }
 
+async function testRefinementCleansSessionAfterRepeatedJsonParseFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      return { status: "done", stdout: "not valid json" };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "json parse hard failure cleanup",
+      description: "session should be cleaned when parse retries are exhausted",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(spawnCalls, 2, "refinement parse hard failure cleanup: retries exactly once");
+    assertEqual(errors.length, 1, "refinement parse hard failure cleanup: emits refinement:error once");
+    assert(String(errors[0]?.data?.error || "").includes("JSON parse failed"), "refinement parse hard failure cleanup: includes parse error message");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "refinement parse hard failure cleanup: session is auto-cleaned after terminal parse error");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCleansSessionAfterSpawnFailure() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7903,6 +7951,7 @@ async function main() {
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
   await testRefinementRetriesAfterJsonParseFailure();
+  await testRefinementCleansSessionAfterRepeatedJsonParseFailure();
   await testRefinementCleansSessionAfterSpawnFailure();
   await testRefinementCleansAutopilotSessionAfterSpawnFailure();
   console.log();
