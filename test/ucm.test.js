@@ -47,6 +47,7 @@ const {
 } = require("../lib/ucmd.js");
 
 const ucmdAutopilot = require("../lib/ucmd-autopilot.js");
+const ucmdRefinement = require("../lib/ucmd-refinement.js");
 const ucmdHandlers = require("../lib/ucmd-handlers.js");
 const ucmdSandbox = require("../lib/ucmd-sandbox.js");
 const {
@@ -3092,6 +3093,111 @@ function testComputeCoverageWithRefinementBrownfield() {
   assertEqual(coverage["변경 대상"], 1.0, "refinement brownfield coverage: 변경 대상 full");
   assertEqual(coverage["기능 요구사항"], 0.2, "refinement brownfield coverage: 1/5 = 0.2");
   assertEqual(coverage["수용 조건"], 0, "refinement brownfield coverage: 수용 조건 = 0");
+}
+
+async function testRefinementCancelPreventsLateQuestionEvent() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveSpawn;
+  let spawnStartedResolve;
+  const spawnStarted = new Promise((resolve) => { spawnStartedResolve = resolve; });
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnStartedResolve();
+      return new Promise((resolve) => { resolveSpawn = resolve; });
+    },
+  });
+
+  try {
+    const { sessionId } = await ucmdRefinement.startRefinement({
+      title: "cancel race",
+      description: "cancel race description",
+      mode: "interactive",
+    });
+
+    await spawnStarted;
+    ucmdRefinement.cancelRefinement(sessionId);
+
+    resolveSpawn({
+      status: "done",
+      stdout: JSON.stringify({
+        question: "late question",
+        options: [{ label: "a", reason: "r" }],
+        area: "기능 요구사항",
+        done: false,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const cancelled = events.filter((e) => e.event === "refinement:cancelled" && e.data?.sessionId === sessionId);
+    assertEqual(cancelled.length, 1, "refinement cancel race: emits cancelled once");
+    assertEqual(lateQuestions.length, 0, "refinement cancel race: does not emit late question");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
+async function testRefinementFinalizePreventsLateQuestionEvent() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveSpawn;
+  let spawnStartedResolve;
+  const spawnStarted = new Promise((resolve) => { spawnStartedResolve = resolve; });
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "late-finalize-task" }),
+    spawnAgent: async () => {
+      spawnStartedResolve();
+      return new Promise((resolve) => { resolveSpawn = resolve; });
+    },
+  });
+
+  try {
+    const { sessionId } = await ucmdRefinement.startRefinement({
+      title: "finalize race",
+      description: "finalize race description",
+      mode: "interactive",
+    });
+
+    await spawnStarted;
+    const finalized = await ucmdRefinement.finalizeRefinement(sessionId);
+    assertEqual(finalized.taskId, "late-finalize-task", "refinement finalize race: finalize returns taskId");
+
+    resolveSpawn({
+      status: "done",
+      stdout: JSON.stringify({
+        question: "late question",
+        options: [{ label: "a", reason: "r" }],
+        area: "기능 요구사항",
+        done: false,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const finalizedEvents = events.filter((e) => e.event === "refinement:finalized" && e.data?.sessionId === sessionId);
+    assertEqual(finalizedEvents.length, 1, "refinement finalize race: emits finalized once");
+    assertEqual(lateQuestions.length, 0, "refinement finalize race: does not emit late question");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
 }
 
 // ── (Chat tests removed — PTY bridge) ──
@@ -6726,6 +6832,8 @@ async function main() {
   testFormatRefinedRequirementsEmpty();
   testFormatRefinedRequirementsUnknownArea();
   testFormatRefinedRequirementsSectionOrder();
+  await testRefinementCancelPreventsLateQuestionEvent();
+  await testRefinementFinalizePreventsLateQuestionEvent();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
