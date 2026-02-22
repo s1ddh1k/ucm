@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { execFileSync, spawn } = require("child_process");
+const { execFileSync, spawn, spawnSync } = require("child_process");
 const {
   readFile, writeFile, mkdir, rm, readdir, access, stat,
 } = require("fs/promises");
@@ -3170,6 +3170,36 @@ function testParseArgsCli() {
   assertEqual(r3.budget, 500000, "parseArgs: budget value");
 }
 
+function testCliRejectsInvalidNumericOptions() {
+  const cliPath = path.join(__dirname, "..", "bin", "ucm.js");
+  const env = { ...process.env, UCM_DIR: TEST_UCM_DIR };
+  const timeout = 2000;
+
+  const invalidPort = spawnSync(process.execPath, [cliPath, "ui", "--port", "abc"], {
+    env,
+    encoding: "utf-8",
+    timeout,
+  });
+  assertEqual(invalidPort.status, 1, "cli option validation: invalid --port exits with code 1");
+  assert((invalidPort.stderr || "").includes("--port 옵션은 정수여야 합니다"), "cli option validation: invalid --port message");
+
+  const missingPort = spawnSync(process.execPath, [cliPath, "ui", "--port"], {
+    env,
+    encoding: "utf-8",
+    timeout,
+  });
+  assertEqual(missingPort.status, 1, "cli option validation: missing --port value exits with code 1");
+  assert((missingPort.stderr || "").includes("--port 옵션에는 값이 필요합니다"), "cli option validation: missing --port value message");
+
+  const invalidLines = spawnSync(process.execPath, [cliPath, "logs", "task-1", "--lines", "0"], {
+    env,
+    encoding: "utf-8",
+    timeout,
+  });
+  assertEqual(invalidLines.status, 1, "cli option validation: invalid --lines exits with code 1");
+  assert((invalidLines.stderr || "").includes("--lines 옵션은 1 이상이어야 합니다"), "cli option validation: invalid --lines message");
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -4888,6 +4918,7 @@ async function main() {
   testImplementVerifyLoopIncludesStageGates();
   testSanitizeContentPatterns();
   testParseArgsCli();
+  testCliRejectsInvalidNumericOptions();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();

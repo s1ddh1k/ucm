@@ -93,7 +93,41 @@ function parseArgs(argv) {
   const args = argv.slice(2);
   const opts = {};
   const positional = [];
-  for (let i = 0; i < args.length; i++) {
+
+  function failOption(message) {
+    console.error(message);
+    process.exit(1);
+  }
+
+  function readOptionValue(flag, { allowDashValue = false } = {}) {
+    const value = args[i + 1];
+    if (value === undefined || (!allowDashValue && value.startsWith("-"))) {
+      failOption(`${flag} 옵션에는 값이 필요합니다.`);
+    }
+    i++;
+    return value;
+  }
+
+  function readIntegerOption(flag, { min = null, max = null } = {}) {
+    const raw = readOptionValue(flag, { allowDashValue: true });
+    if (!/^-?\d+$/.test(raw)) {
+      failOption(`${flag} 옵션은 정수여야 합니다: ${raw}`);
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value)) {
+      failOption(`${flag} 옵션 값이 너무 큽니다: ${raw}`);
+    }
+    if (min !== null && value < min) {
+      failOption(`${flag} 옵션은 ${min} 이상이어야 합니다: ${raw}`);
+    }
+    if (max !== null && value > max) {
+      failOption(`${flag} 옵션은 ${max} 이하여야 합니다: ${raw}`);
+    }
+    return value;
+  }
+
+  let i = 0;
+  for (; i < args.length; i++) {
     if (args[i] === "--help" || args[i] === "-h") {
       console.log(USAGE);
       process.exit(0);
@@ -101,22 +135,22 @@ function parseArgs(argv) {
       const pkg = require("../package.json");
       console.log(pkg.version);
       process.exit(0);
-    } else if (args[i] === "--status") { opts.status = args[++i]; }
-    else if (args[i] === "--project") { opts.project = args[++i]; }
-    else if (args[i] === "--title") { opts.title = args[++i]; }
-    else if (args[i] === "--priority") { opts.priority = parseInt(args[++i]) || 0; }
-    else if (args[i] === "--feedback") { opts.feedback = args[++i]; }
-    else if (args[i] === "--lines") { opts.lines = parseInt(args[++i]) || 100; }
-    else if (args[i] === "--score") { opts.score = parseInt(args[++i]); }
-    else if (args[i] === "--port") { opts.port = parseInt(args[++i]) || 17172; }
+    } else if (args[i] === "--status") { opts.status = readOptionValue("--status"); }
+    else if (args[i] === "--project") { opts.project = readOptionValue("--project"); }
+    else if (args[i] === "--title") { opts.title = readOptionValue("--title"); }
+    else if (args[i] === "--priority") { opts.priority = readIntegerOption("--priority"); }
+    else if (args[i] === "--feedback") { opts.feedback = readOptionValue("--feedback"); }
+    else if (args[i] === "--lines") { opts.lines = readIntegerOption("--lines", { min: 1 }); }
+    else if (args[i] === "--score") { opts.score = readIntegerOption("--score"); }
+    else if (args[i] === "--port") { opts.port = readIntegerOption("--port", { min: 1, max: 65535 }); }
     else if (args[i] === "--dev") { opts.dev = true; }
     // Forge-specific flags
-    else if (args[i] === "--pipeline") { opts.pipeline = args[++i]; }
+    else if (args[i] === "--pipeline") { opts.pipeline = readOptionValue("--pipeline"); }
     else if (args[i] === "--autopilot") { opts.autopilot = true; }
-    else if (args[i] === "--file") { opts.file = args[++i]; }
-    else if (args[i] === "--from") { opts.from = args[++i]; }
-    else if (args[i] === "--budget") { opts.budget = parseInt(args[++i]) || 0; }
-    else if (args[i] === "--days") { opts.days = parseInt(args[++i]) || 30; }
+    else if (args[i] === "--file") { opts.file = readOptionValue("--file"); }
+    else if (args[i] === "--from") { opts.from = readOptionValue("--from"); }
+    else if (args[i] === "--budget") { opts.budget = readIntegerOption("--budget", { min: 0 }); }
+    else if (args[i] === "--days") { opts.days = readIntegerOption("--days", { min: 1 }); }
     else if (args[i] === "--follow" || args[i] === "-f") { opts.follow = true; }
     else if (args[i] === "--watch" || args[i] === "-w") { opts.watch = true; }
     else if (args[i] === "--background" || args[i] === "--bg") { opts.background = true; }
