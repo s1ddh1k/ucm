@@ -3374,6 +3374,77 @@ async function testRefinementInteractiveAnswerEmitsProgress() {
   }
 }
 
+async function testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "질문 영역 고정 확인",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "interactive area consistency",
+      description: "mismatched answer area should not break coverage",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "수용 조건",
+      questionText: "클라이언트가 잘못 보낸 질문",
+      value: "질문 기준 영역으로 기록되어야 함",
+      reason: "영역 불일치 재현",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    assertEqual(progresses.length, 1, "refinement area consistency: emits progress once");
+
+    const progress = progresses[0]?.data || {};
+    const expectedCoverage = 1 / REFINEMENT_GREENFIELD["기능 요구사항"];
+    assertEqual(
+      progress.decision?.area,
+      "기능 요구사항",
+      "refinement area consistency: decision area follows current question area"
+    );
+    assert(
+      Math.abs(((progress.coverage && progress.coverage["기능 요구사항"]) || 0) - expectedCoverage) < 1e-9,
+      "refinement area consistency: coverage advances in current question area"
+    );
+    assertEqual(
+      (progress.coverage && progress.coverage["수용 조건"]) || 0,
+      0,
+      "refinement area consistency: mismatched answer area does not advance unrelated coverage"
+    );
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -3433,6 +3504,7 @@ async function testRefinementFinalizePreventsLateQuestionEvent() {
   for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
     for (let i = 0; i < count; i++) answerPlan.push(area);
   }
+  let questionIndex = 0;
 
   ucmdRefinement.setDeps({
     config: () => DEFAULT_CONFIG,
@@ -3442,13 +3514,15 @@ async function testRefinementFinalizePreventsLateQuestionEvent() {
     broadcastWs: (event, data) => events.push({ event, data }),
     submitTask: async () => ({ id: "late-finalize-task" }),
     spawnAgent: async () => {
+      const area = answerPlan[Math.min(questionIndex, answerPlan.length - 1)] || "기능 요구사항";
+      questionIndex += 1;
       return {
         status: "done",
         stdout: JSON.stringify({
           done: false,
           question: "다음 요구사항?",
           options: [{ label: "옵션", reason: "이유" }],
-          area: "기능 요구사항",
+          area,
         }),
       };
     },
@@ -3566,6 +3640,7 @@ async function testRefinementFinalizeRejectsConcurrentFinalization() {
   for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
     for (let i = 0; i < count; i++) answerPlan.push(area);
   }
+  let questionIndex = 0;
   let submitCalls = 0;
   const submitResolvers = [];
 
@@ -3585,7 +3660,7 @@ async function testRefinementFinalizeRejectsConcurrentFinalization() {
         done: false,
         question: "다음 요구사항?",
         options: [{ label: "옵션", reason: "이유" }],
-        area: "기능 요구사항",
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
       }),
     }),
   });
@@ -3653,6 +3728,7 @@ async function testRefinementCancelRejectsDuringFinalization() {
   for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
     for (let i = 0; i < count; i++) answerPlan.push(area);
   }
+  let questionIndex = 0;
   let submitResolve = null;
   let submitSettled = false;
   let finalizePromise = null;
@@ -3676,7 +3752,7 @@ async function testRefinementCancelRejectsDuringFinalization() {
         done: false,
         question: "다음 요구사항?",
         options: [{ label: "옵션", reason: "이유" }],
-        area: "기능 요구사항",
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
       }),
     }),
   });
@@ -3872,6 +3948,7 @@ async function testRefinementSwitchToAutopilotRejectsCompletedSession() {
   for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
     for (let i = 0; i < count; i++) answerPlan.push(area);
   }
+  let questionIndex = 0;
 
   ucmdRefinement.setDeps({
     config: () => DEFAULT_CONFIG,
@@ -3886,7 +3963,7 @@ async function testRefinementSwitchToAutopilotRejectsCompletedSession() {
         done: false,
         question: "다음 요구사항?",
         options: [{ label: "옵션", reason: "이유" }],
-        area: "기능 요구사항",
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
       }),
     }),
   });
@@ -4093,6 +4170,7 @@ async function testRefinementIgnoresLateAnswerAfterCompletion() {
   for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
     for (let i = 0; i < count; i++) answerPlan.push(area);
   }
+  let questionIndex = 0;
   let spawnCalls = 0;
   let submitted = null;
 
@@ -4114,7 +4192,7 @@ async function testRefinementIgnoresLateAnswerAfterCompletion() {
           done: false,
           question: "다음 요구사항?",
           options: [{ label: "옵션", reason: "이유" }],
-          area: "기능 요구사항",
+          area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
         }),
       };
     },
@@ -8416,6 +8494,7 @@ async function main() {
   await testRefinementStartNormalizesInvalidModeToInteractive();
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
   await testRefinementInteractiveAnswerEmitsProgress();
+  await testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
