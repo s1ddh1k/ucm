@@ -3247,27 +3247,75 @@ async function testRefinementFinalizePreventsLateQuestionEvent() {
     });
 
     await spawnStarted;
+    resolveSpawn({
+      status: "done",
+      stdout: JSON.stringify({ done: true }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const finalized = await ucmdRefinement.finalizeRefinement(sessionId);
     assertEqual(finalized.taskId, "late-finalize-task", "refinement finalize race: finalize returns taskId");
 
-    resolveSpawn({
-      status: "done",
-      stdout: JSON.stringify({
-        question: "late question",
-        options: [{ label: "a", reason: "r" }],
-        area: "기능 요구사항",
-        done: false,
-      }),
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
     const finalizedEvents = events.filter((e) => e.event === "refinement:finalized" && e.data?.sessionId === sessionId);
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 1, "refinement finalize race: emits complete once");
     assertEqual(finalizedEvents.length, 1, "refinement finalize race: emits finalized once");
     assertEqual(lateQuestions.length, 0, "refinement finalize race: does not emit late question");
   } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
+async function testRefinementFinalizeRequiresCompletion() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveSpawn;
+  let submitCalls = 0;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => {
+      submitCalls++;
+      return { id: "should-not-submit-before-complete" };
+    },
+    spawnAgent: async () => new Promise((resolve) => { resolveSpawn = resolve; }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "finalize requires complete",
+      description: "finalize should be blocked before complete",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    let finalizeError = null;
+    try {
+      await ucmdRefinement.finalizeRefinement(sessionId);
+    } catch (e) {
+      finalizeError = e;
+    }
+
+    assert(finalizeError && finalizeError.message.includes("refinement not complete"), "refinement finalize guard: blocks finalize before complete");
+    assertEqual(submitCalls, 0, "refinement finalize guard: submitTask not called before complete");
+    const finalizedEvents = events.filter((e) => e.event === "refinement:finalized" && e.data?.sessionId === sessionId);
+    assertEqual(finalizedEvents.length, 0, "refinement finalize guard: does not emit finalized before complete");
+  } finally {
+    if (resolveSpawn) {
+      resolveSpawn({ status: "done", stdout: JSON.stringify({ done: true }) });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
     ucmdRefinement.setDeps({});
   }
 }
@@ -6970,6 +7018,7 @@ async function main() {
   await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
+  await testRefinementFinalizeRequiresCompletion();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   console.log();
 
