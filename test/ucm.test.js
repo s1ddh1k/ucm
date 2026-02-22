@@ -4487,6 +4487,137 @@ async function testSocketResumeRejectsNonResumableTaskState() {
   }
 }
 
+async function testSocketResumeRejectsUnsuspendedRunningTask() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  const forgeModule = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+
+  const originalForgePipeline = forgeModule.ForgePipeline;
+  const originalResolveResumeProject = forgeModule.resolveResumeProject;
+  const originalAssertResumableDagStatus = forgeModule.assertResumableDagStatus;
+  const originalLoad = TaskDag.load;
+
+  const taskId = "forge-20260222-aced";
+  const runningPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  const daemonState = {
+    daemonStatus: "running",
+    activeTasks: ["keep-active"],
+    suspendedTasks: ["keep-suspended"],
+    stats: { totalSpawns: 0 },
+  };
+  const activeForgePipelines = new Map();
+  const wsEvents = [];
+  let runCalled = false;
+  let markStateDirtyCalls = 0;
+
+  class FakePipeline {
+    constructor(options = {}) {
+      this.taskId = options.taskId;
+    }
+
+    on() {}
+
+    run() {
+      runCalled = true;
+      return Promise.resolve({ id: this.taskId, status: "in_progress" });
+    }
+  }
+
+  forgeModule.ForgePipeline = FakePipeline;
+  forgeModule.resolveResumeProject = async () => process.cwd();
+  forgeModule.assertResumableDagStatus = () => {};
+  TaskDag.load = async () => ({
+    id: taskId,
+    status: "failed",
+    pipeline: "small",
+    stageHistory: [{ stage: "verify", status: "fail" }],
+  });
+
+  await writeFile(runningPath, serializeTaskFile({
+    id: taskId,
+    title: "socket resume running-state guard",
+    state: "running",
+    created: new Date().toISOString(),
+  }, "resume body"));
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    log: () => {},
+    broadcastWs: (event, data) => wsEvents.push({ event, data }),
+    markStateDirty: () => {},
+    inflightTasks: new Set(),
+    taskQueue: [],
+    taskQueueIds: new Set(),
+    wakeProcessLoop: () => {},
+    getResourcePressure: () => "normal",
+    requeueSuspendedTasks: async () => {},
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    getProbeIntervalMs: () => 1000,
+    setProbeIntervalMs: () => {},
+    QUOTA_PROBE_INITIAL_MS: 1000,
+    activeForgePipelines,
+    updateTaskMeta: async () => {},
+    reloadConfig: async () => {},
+  });
+
+  ucmdServer.setDeps({
+    activeForgePipelines,
+    updateTaskMeta: async () => {},
+    loadTask: ucmdHandlers.loadTask,
+    moveTask: ucmdHandlers.moveTask,
+    daemonState: () => daemonState,
+    markStateDirty: () => { markStateDirtyCalls++; },
+    log: () => {},
+    gracefulShutdown: () => {},
+    handlers: () => ({
+      handleResume: () => ({ status: "running" }),
+    }),
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caughtError = null;
+    try {
+      await socketRequest({ method: "resume", params: { taskId, project: process.cwd() } });
+    } catch (e) {
+      caughtError = e;
+    }
+
+    assert(!!caughtError, "socket resume running-state guard: returns error for unsuspended running task");
+    assert(
+      caughtError && caughtError.message.includes("cannot resume task in state: running"),
+      "socket resume running-state guard: error message includes running state"
+    );
+    assertEqual(runCalled, false, "socket resume running-state guard: does not start forge pipeline");
+    const runningExists = await access(runningPath).then(() => true).catch(() => false);
+    assert(runningExists, "socket resume running-state guard: keeps task file in running state");
+    assertEqual(markStateDirtyCalls, 0, "socket resume running-state guard: does not mutate daemon tracking state");
+    assert(daemonState.activeTasks.includes("keep-active"), "socket resume running-state guard: keeps unrelated active task ids");
+    assert(!daemonState.activeTasks.includes(taskId), "socket resume running-state guard: does not add task to activeTasks");
+    assert(daemonState.suspendedTasks.includes("keep-suspended"), "socket resume running-state guard: keeps suspendedTasks unchanged");
+    assert(
+      !wsEvents.some((e) => e.event === "task:updated" && e.data?.taskId === taskId && e.data?.state === "running"),
+      "socket resume running-state guard: does not broadcast running transition"
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    try { await rm(runningPath, { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true }); } catch {}
+    forgeModule.ForgePipeline = originalForgePipeline;
+    forgeModule.resolveResumeProject = originalResolveResumeProject;
+    forgeModule.assertResumableDagStatus = originalAssertResumableDagStatus;
+    TaskDag.load = originalLoad;
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -6249,6 +6380,7 @@ async function main() {
   await testSocketResumeTransitionsTaskStateOnCompletion();
   await testSocketResumeCapacityFailureDoesNotMutateState();
   await testSocketResumeRejectsNonResumableTaskState();
+  await testSocketResumeRejectsUnsuspendedRunningTask();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
