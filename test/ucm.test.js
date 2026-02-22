@@ -3721,6 +3721,78 @@ async function testRefinementFinalizeRejectsConcurrentFinalization() {
   }
 }
 
+async function testRefinementFinalizeSetsRefinedFlagOutsidePendingState() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let questionIndex = 0;
+  const taskId = `refine-running-${Date.now()}`;
+  const runningTaskPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+
+  await writeFile(runningTaskPath, serializeTaskFile({
+    id: taskId,
+    title: "existing running refinement task",
+    status: "running",
+    priority: 0,
+  }, "seed body"));
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: taskId }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "refined flag outside pending",
+      description: "finalize should set refined even when task file is not pending",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const finalized = await ucmdRefinement.finalizeRefinement(sessionId);
+    assertEqual(finalized.taskId, taskId, "refinement refined flag fallback: finalize returns submitted task id");
+
+    const taskContent = await readFile(runningTaskPath, "utf-8");
+    const { meta } = parseTaskFile(taskContent);
+    assertEqual(meta.refined, true, "refinement refined flag fallback: sets refined=true outside pending state");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    try { await rm(runningTaskPath, { force: true }); } catch {}
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelRejectsDuringFinalization() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8548,6 +8620,7 @@ async function main() {
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementFinalizeRejectsConcurrentFinalization();
+  await testRefinementFinalizeSetsRefinedFlagOutsidePendingState();
   await testRefinementCancelRejectsDuringFinalization();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
