@@ -3188,6 +3188,55 @@ async function testRefinementStartPrefersDescriptionOverLegacyBody() {
   }
 }
 
+async function testRefinementStartNormalizesInvalidModeToInteractive() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "정규화 확인 질문",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "invalid mode normalization",
+      description: "invalid mode should not stall refinement session",
+      mode: "invalid-mode-value",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const startedEvent = events.find((e) => e.event === "refinement:started" && e.data?.sessionId === sessionId);
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    assert(startedEvent, "refinement mode normalization: emits started event");
+    assertEqual(startedEvent.data.mode, "interactive", "refinement mode normalization: invalid mode falls back to interactive");
+    assertEqual(questions.length, 1, "refinement mode normalization: emits interactive question");
+    assertEqual(progresses.length, 0, "refinement mode normalization: does not run autopilot progress");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7397,6 +7446,7 @@ async function main() {
   testFormatRefinedRequirementsSectionOrder();
   await testRefinementStartUsesBodyAsDescriptionFallback();
   await testRefinementStartPrefersDescriptionOverLegacyBody();
+  await testRefinementStartNormalizesInvalidModeToInteractive();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
