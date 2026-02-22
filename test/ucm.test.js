@@ -4049,6 +4049,100 @@ async function testRefinementFinalizeSurvivesFinalizedBroadcastFailure() {
   }
 }
 
+async function testRefinementCompletionSurvivesCompleteBroadcastFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let questionIndex = 0;
+  let submitCalls = 0;
+  let sessionId = null;
+  let answerErr = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if (event === "refinement:complete") {
+        throw new Error("complete event delivery failed intentionally");
+      }
+    },
+    submitTask: async () => {
+      submitCalls += 1;
+      return { id: "complete-broadcast-failure-task" };
+    },
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
+      }),
+    }),
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "complete broadcast failure tolerance",
+      description: "refinement should remain finalizable if complete broadcast throws",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      try {
+        await ucmdRefinement.handleRefinementAnswer(sessionId, {
+          area: answerPlan[i],
+          questionText: `q-${i + 1}`,
+          value: `a-${i + 1}`,
+        });
+      } catch (e) {
+        answerErr = e;
+        break;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let finalizeErr = null;
+    let finalized = null;
+    try {
+      finalized = await ucmdRefinement.finalizeRefinement(sessionId);
+    } catch (e) {
+      finalizeErr = e;
+    }
+
+    assertEqual(answerErr, null, "refinement complete broadcast failure: answering does not fail when complete broadcast throws");
+    assertEqual(submitCalls, 1, "refinement complete broadcast failure: submitTask called once");
+    assertEqual(finalizeErr, null, "refinement complete broadcast failure: finalize does not fail on complete broadcast error");
+    assertEqual(finalized?.taskId, "complete-broadcast-failure-task", "refinement complete broadcast failure: finalize returns task id");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(
+      cancelErr && cancelErr.message.includes("session not found"),
+      "refinement complete broadcast failure: session is cleaned after successful finalize",
+    );
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9114,6 +9208,7 @@ async function main() {
   await testRefinementFinalizeRetriesRefinedFlagUntilTaskFileAppears();
   await testRefinementCancelRejectsDuringFinalization();
   await testRefinementFinalizeSurvivesFinalizedBroadcastFailure();
+  await testRefinementCompletionSurvivesCompleteBroadcastFailure();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
