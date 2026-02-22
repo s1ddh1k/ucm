@@ -3272,6 +3272,68 @@ async function testRefinementFinalizePreventsLateQuestionEvent() {
   }
 }
 
+async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveInteractiveSpawn;
+  let interactiveSpawnStartedResolve;
+  const interactiveSpawnStarted = new Promise((resolve) => { interactiveSpawnStartedResolve = resolve; });
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async (_prompt, opts) => {
+      if (opts?.stage && String(opts.stage).startsWith("refinement-q-")) {
+        interactiveSpawnStartedResolve();
+        return new Promise((resolve) => { resolveInteractiveSpawn = resolve; });
+      }
+      return { status: "done", stdout: JSON.stringify({ done: true }) };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot switch race",
+      description: "autopilot switch race description",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await interactiveSpawnStarted;
+    await ucmdRefinement.switchToAutopilot(sessionId);
+
+    resolveInteractiveSpawn({
+      status: "done",
+      stdout: JSON.stringify({
+        question: "late interactive question",
+        options: [{ label: "a", reason: "r" }],
+        area: "기능 요구사항",
+        done: false,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const modeChanged = events.filter((e) => e.event === "refinement:mode_changed" && e.data?.sessionId === sessionId);
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    assertEqual(modeChanged.length, 1, "refinement autopilot switch race: emits mode_changed once");
+    assertEqual(completes.length, 1, "refinement autopilot switch race: emits complete once");
+    assertEqual(lateQuestions.length, 0, "refinement autopilot switch race: does not emit late interactive question");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 // ── (Chat tests removed — PTY bridge) ──
 
 // ── Structure Analysis Tests ──
@@ -6908,6 +6970,7 @@ async function main() {
   await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
+  await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
