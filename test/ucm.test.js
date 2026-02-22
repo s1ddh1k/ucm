@@ -4106,6 +4106,48 @@ async function testRefinementCleansSessionAfterRepeatedJsonParseFailure() {
   }
 }
 
+async function testRefinementCleansSessionAfterQuestionGenerationStatusFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({ status: "error", stdout: "" }),
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "question generation status failure cleanup",
+      description: "session should be cleaned when question generation returns non-done status",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(errors.length, 1, "refinement question generation status failure cleanup: emits refinement:error once");
+    assertEqual(errors[0]?.data?.error, "question generation failed", "refinement question generation status failure cleanup: error reason is question generation failed");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "refinement question generation status failure cleanup: session is auto-cleaned after terminal status failure");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCleansSessionAfterSpawnFailure() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7952,6 +7994,7 @@ async function main() {
   await testRefinementRejectsPrematureDoneWithoutCoverage();
   await testRefinementRetriesAfterJsonParseFailure();
   await testRefinementCleansSessionAfterRepeatedJsonParseFailure();
+  await testRefinementCleansSessionAfterQuestionGenerationStatusFailure();
   await testRefinementCleansSessionAfterSpawnFailure();
   await testRefinementCleansAutopilotSessionAfterSpawnFailure();
   console.log();
