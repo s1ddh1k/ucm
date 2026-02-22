@@ -3310,6 +3310,70 @@ async function testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion() {
   }
 }
 
+async function testRefinementInteractiveAnswerEmitsProgress() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "요구사항을 알려주세요",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "interactive progress event",
+      description: "interactive answers should emit refinement progress",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "기능 요구사항",
+      questionText: "요구사항을 알려주세요",
+      value: "진행 이벤트 확인 답변",
+      reason: "진행률 확인",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    assertEqual(progresses.length, 1, "refinement interactive progress: emits progress event after answer");
+
+    const progress = progresses[0]?.data || {};
+    const expectedCoverage = 1 / REFINEMENT_GREENFIELD["기능 요구사항"];
+    assertEqual(progress.round, 1, "refinement interactive progress: first answer uses round 1");
+    assertEqual(progress.decision?.area, "기능 요구사항", "refinement interactive progress: includes decision area");
+    assertEqual(progress.decision?.answer, "진행 이벤트 확인 답변", "refinement interactive progress: includes decision answer");
+    assert(
+      Math.abs(((progress.coverage && progress.coverage["기능 요구사항"]) || 0) - expectedCoverage) < 1e-9,
+      "refinement interactive progress: coverage reflects answered area",
+    );
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8351,6 +8415,7 @@ async function main() {
   await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementStartNormalizesInvalidModeToInteractive();
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
+  await testRefinementInteractiveAnswerEmitsProgress();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
