@@ -645,6 +645,65 @@ async function testRejectWithFeedbackRecoveryPreservesRunningTask() {
   }
 }
 
+async function testRejectWithoutFeedbackClearsDaemonTaskTracking() {
+  const taskId = generateTaskId();
+  const reviewPath = path.join(TASKS_DIR, "review", `${taskId}.md`);
+  const daemonState = {
+    daemonStatus: "running",
+    pausedAt: null,
+    pauseReason: null,
+    activeTasks: ["keep-active", taskId],
+    suspendedTasks: [taskId, "keep-suspended"],
+    stats: { totalSpawns: 0 },
+  };
+  let markedDirty = 0;
+
+  await writeFile(reviewPath, serializeTaskFile({
+    id: taskId,
+    title: "reject without feedback clears daemon tracking",
+    state: "review",
+    project: process.cwd(),
+    created: new Date().toISOString(),
+  }, "body"));
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    inflightTasks: new Set(),
+    taskQueue: [],
+    getResourcePressure: () => "normal",
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    setProbeIntervalMs: () => {},
+    requeueSuspendedTasks: async () => {},
+    markStateDirty: () => { markedDirty++; },
+    reloadConfig: async () => {},
+    log: () => {},
+    wakeProcessLoop: () => {},
+    broadcastWs: () => {},
+    activeForgePipelines: new Map(),
+    updateTaskMeta: async () => {},
+    QUOTA_PROBE_INITIAL_MS: 60_000,
+  });
+
+  try {
+    const result = await ucmdHandlers.handleReject({ taskId });
+    assertEqual(result.status, "failed", "reject no feedback: returns failed");
+    assert(!daemonState.activeTasks.includes(taskId), "reject no feedback: clears task from activeTasks");
+    assert(!daemonState.suspendedTasks.includes(taskId), "reject no feedback: clears task from suspendedTasks");
+    assert(daemonState.activeTasks.includes("keep-active"), "reject no feedback: keeps unrelated active task ids");
+    assert(daemonState.suspendedTasks.includes("keep-suspended"), "reject no feedback: keeps unrelated suspended task ids");
+    assert(markedDirty > 0, "reject no feedback: marks daemon state dirty when tracking is updated");
+
+    const task = await ucmdHandlers.loadTask(taskId);
+    assert(task && task.state === "failed", "reject no feedback: task moved to failed");
+  } finally {
+    ucmdHandlers.setDeps({});
+    try { await rm(path.join(TASKS_DIR, "review", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true }); } catch {}
+  }
+}
+
 async function testHandleRetryClearsDaemonTaskTracking() {
   const taskId = generateTaskId();
   const failedPath = path.join(TASKS_DIR, "failed", `${taskId}.md`);
@@ -6161,6 +6220,7 @@ async function main() {
   await testHandleListRejectsInvalidMinPriority();
   await testRejectWithFeedbackTracksActiveTaskState();
   await testRejectWithFeedbackRecoveryPreservesRunningTask();
+  await testRejectWithoutFeedbackClearsDaemonTaskTracking();
   await testHandleRetryClearsDaemonTaskTracking();
   await testHandleResumeRollsBackOnRequeueFailure();
   await testHandleStartTracksQueueIdsForDedup();
