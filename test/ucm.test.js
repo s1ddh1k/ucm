@@ -3446,6 +3446,61 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   }
 }
 
+async function testRefinementIgnoresLateAnswerAfterCompletion() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+  let submitted = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async (title, body, opts) => {
+      submitted = { title, body, opts };
+      return { id: "late-answer-finalize" };
+    },
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      return { status: "done", stdout: JSON.stringify({ done: true }) };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "late answer ignored",
+      description: "completed session should ignore stale answer",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "기능 요구사항",
+      questionText: "late question",
+      value: "late answer should be ignored",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ucmdRefinement.finalizeRefinement(sessionId);
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 1, "refinement late answer: complete emitted once");
+    assertEqual(spawnCalls, 1, "refinement late answer: does not spawn extra question generation");
+    assert(submitted !== null, "refinement late answer: submitTask called");
+    assert(!submitted.body.includes("late answer should be ignored"), "refinement late answer: late answer not included in finalized body");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 // ── (Chat tests removed — PTY bridge) ──
 
 // ── Structure Analysis Tests ──
@@ -7085,6 +7140,7 @@ async function main() {
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
+  await testRefinementIgnoresLateAnswerAfterCompletion();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
