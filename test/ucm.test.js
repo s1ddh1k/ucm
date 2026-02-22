@@ -4323,6 +4323,71 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   }
 }
 
+async function testAutopilotRejectsInvalidAreaWithoutRetryLoop() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCount = 0;
+  let terminalResolve;
+  const terminalPromise = new Promise((resolve) => { terminalResolve = resolve; });
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if ((event === "refinement:complete" || event === "refinement:error") && data?.sessionId === sessionId) {
+        terminalResolve();
+      }
+    },
+    submitTask: async () => ({ id: "autopilot-invalid-area" }),
+    spawnAgent: async () => {
+      spawnCount += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "which area?",
+          area: "알 수 없는 영역",
+          answer: "placeholder answer",
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot invalid area",
+      description: "autopilot should fail fast when answer area is outside expected coverage areas",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await terminalPromise;
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 0, "autopilot invalid area: does not emit complete");
+    assertEqual(spawnCount, 1, "autopilot invalid area: fails fast without max-round retry loop");
+    assert(errors.some((e) => String(e.data?.error || "").includes("invalid autopilot answer area")), "autopilot invalid area: emits invalid area error");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (err) {
+      cancelErr = err;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "autopilot invalid area: session is auto-cleaned");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testAutopilotCanCompleteWhenCoveragePlanIsSatisfied() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8902,6 +8967,7 @@ async function main() {
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
+  await testAutopilotRejectsInvalidAreaWithoutRetryLoop();
   await testAutopilotCanCompleteWhenCoveragePlanIsSatisfied();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
