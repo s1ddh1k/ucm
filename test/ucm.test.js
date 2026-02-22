@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const { execFileSync, spawn, spawnSync } = require("child_process");
 const {
-  readFile, writeFile, mkdir, rm, readdir, access, stat,
+  readFile, writeFile, mkdir, rm, readdir, access, stat, chmod,
 } = require("fs/promises");
 const fs = require("fs");
 const net = require("net");
@@ -379,6 +379,55 @@ async function testMoveTaskSerializesConcurrentTransitions() {
 
   const doneAfter = (await readdir(doneDir)).filter((f) => f.endsWith(".md")).length;
   assertEqual(doneAfter, doneBefore, "moveTask serializes concurrent transitions: cleanup restored done count");
+  ucmdHandlers.setDeps({});
+}
+
+async function testMoveTaskRollsBackWhenSourceCleanupFails() {
+  const taskId = generateTaskId();
+  const pendingPath = path.join(TASKS_DIR, "pending", `${taskId}.md`);
+  const runningPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  const pendingDir = path.join(TASKS_DIR, "pending");
+  const originalMode = (await stat(pendingDir)).mode & 0o777;
+  let threw = false;
+
+  await writeFile(
+    pendingPath,
+    serializeTaskFile({
+      id: taskId,
+      title: "rollback on source cleanup failure",
+      state: "pending",
+      created: new Date().toISOString(),
+    }, "body"),
+  );
+
+  ucmdHandlers.setDeps({
+    broadcastWs: () => {},
+  });
+
+  try {
+    await chmod(pendingDir, 0o555);
+    try {
+      await ucmdHandlers.moveTask(taskId, "pending", "running");
+    } catch {
+      threw = true;
+    }
+  } finally {
+    await chmod(pendingDir, originalMode);
+  }
+
+  const pendingExists = await access(pendingPath).then(() => true).catch(() => false);
+  const runningExists = await access(runningPath).then(() => true).catch(() => false);
+
+  assert(threw, "moveTask rollback: throws when source cleanup fails");
+  assert(pendingExists, "moveTask rollback: keeps source state file");
+  assert(!runningExists, "moveTask rollback: removes destination file to avoid duplicate states");
+
+  const loaded = await ucmdHandlers.loadTask(taskId);
+  assert(!!loaded && loaded.state === "pending", "moveTask rollback: task remains pending after rollback");
+
+  try { await rm(pendingPath, { force: true }); } catch {}
+  try { await rm(runningPath, { force: true }); } catch {}
+  try { await rm(runningPath + ".tmp", { force: true }); } catch {}
   ucmdHandlers.setDeps({});
 }
 
@@ -5116,6 +5165,7 @@ async function main() {
   await testCreateTempWorkspace();
   await testUpdateTaskProject();
   await testMoveTaskSerializesConcurrentTransitions();
+  await testMoveTaskRollsBackWhenSourceCleanupFails();
   await testHandleLogsTailAndLineLimits();
   await testHandleListRejectsInvalidMinPriority();
   await testRejectWithFeedbackTracksActiveTaskState();
