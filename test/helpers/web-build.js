@@ -1,25 +1,26 @@
 const { execFileSync } = require("child_process");
-const fs = require("fs");
 const path = require("path");
+const { validateWebDist } = require("../../lib/core/web-dist.js");
 
 const WEB_DIR = path.join(__dirname, "..", "..", "web");
-const DIST_INDEX = path.join(WEB_DIR, "dist", "index.html");
-
-let builtInProcess = false;
+const DIST_DIR = path.join(WEB_DIR, "dist");
 
 function ensureWebDistBuilt() {
-  if (builtInProcess) return;
-  if (fs.existsSync(DIST_INDEX)) {
-    builtInProcess = true;
-    return;
-  }
+  const initial = validateWebDist(DIST_DIR);
+  if (initial.ok) return;
 
   execFileSync("npm", ["run", "build"], {
     cwd: WEB_DIR,
     stdio: "inherit",
   });
-  builtInProcess = true;
+
+  const afterBuild = validateWebDist(DIST_DIR);
+  if (!afterBuild.ok) {
+    const suffix = afterBuild.missingAssets?.length
+      ? ` (missing: ${afterBuild.missingAssets.join(", ")})`
+      : "";
+    throw new Error(`web dist validation failed after build: ${afterBuild.reason}${suffix}`);
+  }
 }
 
 module.exports = { ensureWebDistBuilt };
-
