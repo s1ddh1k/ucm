@@ -514,6 +514,7 @@ async function testRejectWithFeedbackRecoveryPreservesRunningTask() {
     stats: { totalSpawns: 0 },
   };
   const activeForgePipelines = new Map();
+  let markedDirty = 0;
 
   await writeFile(reviewPath, serializeTaskFile({
     id: taskId,
@@ -533,7 +534,7 @@ async function testRejectWithFeedbackRecoveryPreservesRunningTask() {
     setProbeTimer: () => {},
     setProbeIntervalMs: () => {},
     requeueSuspendedTasks: async () => {},
-    markStateDirty: () => {},
+    markStateDirty: () => { markedDirty++; },
     reloadConfig: async () => {},
     log: () => {},
     wakeProcessLoop: () => {},
@@ -562,8 +563,10 @@ async function testRejectWithFeedbackRecoveryPreservesRunningTask() {
     assertEqual(runningTask.suspendedStage, "implement", "reject recovery: suspended stage recorded");
 
     inflightTasks.clear(); // simulate daemon restart: in-memory inflight markers are lost
+    const dirtyBeforeRecover = markedDirty;
     const recovered = await ucmdHandlers.recoverRunningTasks();
     assertEqual(recovered, 0, "reject recovery: recoverRunningTasks does not requeue suspended resumed task");
+    assert(markedDirty > dirtyBeforeRecover, "reject recovery: marks daemon state dirty when tracking suspended recovery task");
 
     const afterRecovery = await ucmdHandlers.loadTask(taskId);
     assert(afterRecovery && afterRecovery.state === "running", "reject recovery: task stays running after recovery");
