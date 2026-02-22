@@ -402,6 +402,16 @@ async function testHandleLogsTailAndLineLimits() {
   }
 }
 
+async function testHandleListRejectsInvalidMinPriority() {
+  let threw = false;
+  try {
+    await ucmdHandlers.handleList({ minPriority: "not-a-number", includeDag: false });
+  } catch (e) {
+    threw = e.message.includes("invalid minPriority filter");
+  }
+  assert(threw, "handleList: rejects non-numeric minPriority filter");
+}
+
 // ── Unit Tests: generateTaskId ──
 
 function testGenerateTaskId() {
@@ -1839,6 +1849,51 @@ function testUiServerResearchRoute() {
   const { PROXY_ROUTES } = require("../lib/ucm-ui-server.js");
   const found = PROXY_ROUTES.some(r => r.method === "research_project" && r.post === true);
   assert(found, "uiServer: PROXY_ROUTES has research_project POST route");
+}
+
+function testDashboardCommandPassesDevFlag() {
+  const src = fs.readFileSync(path.join(__dirname, "..", "bin", "ucm.js"), "utf-8");
+  assert(src.includes("await startUiServer({ port, dev: opts.dev });"), "dashboard cmd: passes --dev flag to UI server");
+}
+
+function testDashboardCommandUsesCrossPlatformOpen() {
+  const src = fs.readFileSync(path.join(__dirname, "..", "bin", "ucm.js"), "utf-8");
+  assert(src.includes("function tryOpenDashboard(url)"), "dashboard cmd: has URL opener helper");
+  assert(src.includes('process.platform === "darwin"'), "dashboard cmd: handles macOS open");
+  assert(src.includes('process.platform === "win32"'), "dashboard cmd: handles Windows open");
+  assert(src.includes('cmd = "xdg-open"'), "dashboard cmd: handles Linux open");
+  assert(!src.includes("exec(`open http://localhost:${port}`)"), "dashboard cmd: avoids macOS-only open command");
+}
+
+function testUiServerTaskIdRoutesAcceptForgeAndLegacyIds() {
+  const { PROXY_ROUTES, ARTIFACT_ROUTE_RE } = require("../lib/ucm-ui-server.js");
+  const forgeTaskId = "forge-20260222-deadbeef";
+  const legacyTaskId = "deadbeef";
+  const routeSpecs = [
+    { method: "status", path: (id) => `/api/status/${id}` },
+    { method: "diff", path: (id) => `/api/diff/${id}` },
+    { method: "logs", path: (id) => `/api/logs/${id}` },
+    { method: "start", path: (id) => `/api/start/${id}` },
+    { method: "approve", path: (id) => `/api/approve/${id}` },
+    { method: "reject", path: (id) => `/api/reject/${id}` },
+    { method: "cancel", path: (id) => `/api/cancel/${id}` },
+    { method: "retry", path: (id) => `/api/retry/${id}` },
+    { method: "delete", path: (id) => `/api/delete/${id}` },
+    { method: "update_priority", path: (id) => `/api/priority/${id}` },
+    { method: "stage_gate_approve", path: (id) => `/api/stage-gate/approve/${id}` },
+    { method: "stage_gate_reject", path: (id) => `/api/stage-gate/reject/${id}` },
+  ];
+
+  for (const spec of routeSpecs) {
+    const route = PROXY_ROUTES.find((r) => r.method === spec.method);
+    assert(!!route, `uiServer: route exists for ${spec.method}`);
+    if (!route) continue;
+    assert(route.pattern.test(spec.path(forgeTaskId)), `uiServer: ${spec.method} accepts forge task id`);
+    assert(route.pattern.test(spec.path(legacyTaskId)), `uiServer: ${spec.method} accepts legacy hex task id`);
+  }
+
+  assert(ARTIFACT_ROUTE_RE.test(`/api/artifacts/${forgeTaskId}`), "uiServer: artifacts route accepts forge task id");
+  assert(ARTIFACT_ROUTE_RE.test(`/api/artifacts/${legacyTaskId}`), "uiServer: artifacts route accepts legacy hex task id");
 }
 
 function testSocketHandlerMappings() {
@@ -4718,6 +4773,7 @@ async function main() {
   await testUpdateTaskProject();
   await testMoveTaskSerializesConcurrentTransitions();
   await testHandleLogsTailAndLineLimits();
+  await testHandleListRejectsInvalidMinPriority();
   testGenerateTaskId();
   console.log();
 
@@ -4821,6 +4877,9 @@ async function main() {
   testSocketHandlerMappings();
   testUiServerAnalyzeRoute();
   testUiServerResearchRoute();
+  testDashboardCommandPassesDevFlag();
+  testDashboardCommandUsesCrossPlatformOpen();
+  testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
   testUiRightPanelRefinementGuard();

@@ -89,6 +89,32 @@ Options:
   --force              강제 실행
   --help               도움말`;
 
+function tryOpenDashboard(url) {
+  let cmd = null;
+  let args = [];
+
+  if (process.platform === "darwin") {
+    cmd = "open";
+    args = [url];
+  } else if (process.platform === "win32") {
+    cmd = "cmd";
+    args = ["/c", "start", "", url];
+  } else {
+    cmd = "xdg-open";
+    args = [url];
+  }
+
+  try {
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+    child.on("error", () => {
+      console.error(`브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`);
+    });
+    child.unref();
+  } catch {
+    console.error(`브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`);
+  }
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const opts = {};
@@ -1206,9 +1232,8 @@ async function main() {
       }
       const { startUiServer } = require("../lib/ucm-ui-server.js");
       const port = opts.port || Number(process.env.UCM_UI_PORT) || 17172;
-      await startUiServer({ port });
-      const { exec } = require("child_process");
-      exec(`open http://localhost:${port}`);
+      await startUiServer({ port, dev: opts.dev });
+      tryOpenDashboard(`http://localhost:${port}`);
       break;
     }
     case "release": await cmdRelease(opts); break;
