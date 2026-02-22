@@ -4306,6 +4306,156 @@ async function testSocketResumeTransitionsTaskStateOnCompletion() {
   }
 }
 
+async function testSocketResumeMapsRejectedDagStatusToFailedTaskState() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  const forgeModule = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+
+  const originalForgePipeline = forgeModule.ForgePipeline;
+  const originalResolveResumeProject = forgeModule.resolveResumeProject;
+  const originalAssertResumableDagStatus = forgeModule.assertResumableDagStatus;
+  const originalLoad = TaskDag.load;
+
+  const taskId = "forge-20260222-baad";
+  const runningPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  const failedPath = path.join(TASKS_DIR, "failed", `${taskId}.md`);
+  const daemonState = {
+    daemonStatus: "running",
+    activeTasks: [],
+    suspendedTasks: [taskId],
+    stats: { totalSpawns: 0 },
+  };
+  const activeForgePipelines = new Map();
+  const wsEvents = [];
+  let resolveRun = null;
+
+  class FakePipeline {
+    constructor(options = {}) {
+      this.taskId = options.taskId;
+    }
+
+    on() {}
+
+    run() {
+      return new Promise((resolve) => {
+        resolveRun = resolve;
+      });
+    }
+  }
+
+  forgeModule.ForgePipeline = FakePipeline;
+  forgeModule.resolveResumeProject = async () => process.cwd();
+  forgeModule.assertResumableDagStatus = () => {};
+  TaskDag.load = async () => ({
+    id: taskId,
+    status: "failed",
+    pipeline: "small",
+    stageHistory: [{ stage: "verify", status: "fail" }],
+  });
+
+  await writeFile(runningPath, serializeTaskFile({
+    id: taskId,
+    title: "socket resume rejected completion transition",
+    state: "running",
+    created: new Date().toISOString(),
+    suspended: true,
+    suspendedStage: "implement",
+    suspendedReason: "reject_feedback",
+  }, "resume body"));
+
+  const applyTaskMetaUpdates = async (targetTaskId, updates) => {
+    for (const state of TASK_STATES) {
+      const taskPath = path.join(TASKS_DIR, state, `${targetTaskId}.md`);
+      try {
+        const content = await readFile(taskPath, "utf-8");
+        const { meta, body } = parseTaskFile(content);
+        for (const [key, value] of Object.entries(updates || {})) {
+          if (value === undefined || value === null) delete meta[key];
+          else meta[key] = value;
+        }
+        await writeFile(taskPath, serializeTaskFile(meta, body));
+        return;
+      } catch {}
+    }
+  };
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    log: () => {},
+    broadcastWs: (event, data) => wsEvents.push({ event, data }),
+    markStateDirty: () => {},
+    inflightTasks: new Set(),
+    taskQueue: [],
+    taskQueueIds: new Set(),
+    wakeProcessLoop: () => {},
+    getResourcePressure: () => "normal",
+    requeueSuspendedTasks: async () => {},
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    getProbeIntervalMs: () => 1000,
+    setProbeIntervalMs: () => {},
+    QUOTA_PROBE_INITIAL_MS: 1000,
+    activeForgePipelines,
+    updateTaskMeta: applyTaskMetaUpdates,
+    reloadConfig: async () => {},
+  });
+
+  ucmdServer.setDeps({
+    activeForgePipelines,
+    updateTaskMeta: applyTaskMetaUpdates,
+    loadTask: ucmdHandlers.loadTask,
+    moveTask: ucmdHandlers.moveTask,
+    daemonState: () => daemonState,
+    markStateDirty: () => {},
+    log: () => {},
+    gracefulShutdown: () => {},
+    handlers: () => ({
+      handleResume: () => ({ status: "running" }),
+    }),
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    await socketRequest({ method: "resume", params: { taskId, project: process.cwd() } });
+    resolveRun?.({ id: taskId, status: "rejected" });
+
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (!activeForgePipelines.has(taskId) && !daemonState.activeTasks.includes(taskId)) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const failedExists = await access(failedPath).then(() => true).catch(() => false);
+    const runningExists = await access(runningPath).then(() => true).catch(() => false);
+    assert(failedExists, "socket resume rejected completion: moves task file to failed after pipeline completes");
+    assertEqual(runningExists, false, "socket resume rejected completion: removes running task file after failed transition");
+
+    const resumedTask = await ucmdHandlers.loadTask(taskId);
+    assert(resumedTask && resumedTask.state === "failed", "socket resume rejected completion: persisted task state becomes failed");
+    assert(
+      wsEvents.some((e) => e.event === "task:updated" && e.data?.taskId === taskId && e.data?.state === "failed"),
+      "socket resume rejected completion: broadcasts final failed state"
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    try { await rm(runningPath, { force: true }); } catch {}
+    try { await rm(failedPath, { force: true }); } catch {}
+    forgeModule.ForgePipeline = originalForgePipeline;
+    forgeModule.resolveResumeProject = originalResolveResumeProject;
+    forgeModule.assertResumableDagStatus = originalAssertResumableDagStatus;
+    TaskDag.load = originalLoad;
+  }
+}
+
 async function testSocketResumeCapacityFailureDoesNotMutateState() {
   const ucmdServer = require("../lib/ucmd-server.js");
   const forgeModule = require("../lib/forge/index");
@@ -6468,6 +6618,7 @@ async function main() {
   await testForgeResumeUsesWorkspaceProjectFallback();
   await testSocketResumeDefaultsToLastFailedStage();
   await testSocketResumeTransitionsTaskStateOnCompletion();
+  await testSocketResumeMapsRejectedDagStatusToFailedTaskState();
   await testSocketResumeCapacityFailureDoesNotMutateState();
   await testSocketResumeRejectsNonResumableTaskState();
   await testSocketResumeRejectsUnsuspendedRunningTask();
