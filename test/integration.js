@@ -17,6 +17,7 @@ const DAEMON_DIR = path.join(UCM_DIR, "daemon");
 const SOCK_PATH = path.join(DAEMON_DIR, "ucm.sock");
 const TASKS_DIR = path.join(UCM_DIR, "tasks");
 const SEEDED_SUSPENDED_TASK_ID = "seeded-suspended-task";
+const STALE_SUSPENDED_TASK_ID = "stale-suspended-task";
 
 // ── Helpers ──
 
@@ -53,6 +54,19 @@ suspendedReason: reject_feedback
 seeded body
 `;
   fs.writeFileSync(path.join(TASKS_DIR, "running", `${SEEDED_SUSPENDED_TASK_ID}.md`), seededSuspendedTask);
+
+  // Seed daemon state with one valid + one stale suspended task id.
+  // Stale entries must not block daemon resume.
+  const seededState = {
+    dataVersion: 0,
+    daemonStatus: "running",
+    pausedAt: null,
+    pauseReason: null,
+    activeTasks: [],
+    suspendedTasks: [SEEDED_SUSPENDED_TASK_ID, STALE_SUSPENDED_TASK_ID],
+    stats: { tasksCompleted: 0, tasksFailed: 0, totalSpawns: 0 },
+  };
+  fs.writeFileSync(path.join(DAEMON_DIR, "state.json"), JSON.stringify(seededState, null, 2));
 
   // write minimal config
   const config = {
@@ -300,19 +314,41 @@ async function main() {
       assertEqual(res.status, 200, "pause status code");
     },
 
-    "POST /api/resume requeues suspended tasks and clears suspension markers": async () => {
+    "POST /api/resume requeues suspended tasks, clears suspension markers, and restarts processing": async () => {
       const res = await httpRequest("POST", "/api/resume");
       assertEqual(res.status, 200, "resume status code");
 
-      const listRes = await httpRequest("GET", "/api/list?status=pending");
-      assertEqual(listRes.status, 200, "pending list status code after resume");
+      const statsRes = await httpRequest("GET", "/api/stats");
+      assertEqual(statsRes.status, 200, "stats status code after resume");
+      const suspendedAfterResume = Array.isArray(statsRes.body?.suspendedTasks) ? statsRes.body.suspendedTasks : [];
+      assert(
+        !suspendedAfterResume.includes(STALE_SUSPENDED_TASK_ID),
+        "resume should prune stale suspended task ids instead of failing"
+      );
+
+      const listRes = await httpRequest("GET", "/api/list");
+      assertEqual(listRes.status, 200, "list status code after resume");
       const resumedTask = Array.isArray(listRes.body)
         ? listRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
         : null;
-      assert(!!resumedTask, "resume should requeue seeded suspended task to pending");
+      assert(!!resumedTask, "resume should requeue seeded suspended task");
       assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspended"), "resume should clear suspended flag");
       assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedStage"), "resume should clear suspendedStage");
       assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedReason"), "resume should clear suspendedReason");
+
+      // Resume must not leave task permanently pending; it should re-enter processing.
+      const deadline = Date.now() + 8_000;
+      let transitioned = resumedTask.state !== "pending";
+      while (!transitioned && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const pollRes = await httpRequest("GET", "/api/list");
+        assertEqual(pollRes.status, 200, "poll list status code after resume");
+        const polled = Array.isArray(pollRes.body)
+          ? pollRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
+          : null;
+        transitioned = !!polled && polled.state !== "pending";
+      }
+      assert(transitioned, "resume should restart seeded suspended task processing (state must leave pending)");
     },
 
     "GET /api/proposals returns array": async () => {
