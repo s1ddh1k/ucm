@@ -3237,6 +3237,79 @@ async function testRefinementStartNormalizesInvalidModeToInteractive() {
   }
 }
 
+async function testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "요구사항을 알려주세요",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "empty answer guard",
+      description: "empty answers must not advance refinement",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const questionsBefore = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId).length;
+    assertEqual(questionsBefore, 1, "refinement empty answer guard: first question emitted");
+
+    let emptyAnswerErr = null;
+    try {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: "기능 요구사항",
+        questionText: "요구사항 질문",
+        value: "   ",
+      });
+    } catch (e) {
+      emptyAnswerErr = e;
+    }
+    assert(
+      emptyAnswerErr && emptyAnswerErr.message.includes("answer value required"),
+      "refinement empty answer guard: rejects blank answer"
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const questionsAfterEmpty = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId).length;
+    assertEqual(questionsAfterEmpty, questionsBefore, "refinement empty answer guard: does not advance question on blank answer");
+
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "기능 요구사항",
+      questionText: "요구사항 질문",
+      value: "유효한 답변",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const questionsAfterValid = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId).length;
+    assertEqual(questionsAfterValid, questionsBefore + 1, "refinement empty answer guard: advances after valid answer");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8277,6 +8350,7 @@ async function main() {
   await testRefinementStartUsesBodyAsDescriptionFallback();
   await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementStartNormalizesInvalidModeToInteractive();
+  await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
