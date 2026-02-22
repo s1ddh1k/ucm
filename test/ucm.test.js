@@ -3095,6 +3095,78 @@ function testComputeCoverageWithRefinementBrownfield() {
   assertEqual(coverage["수용 조건"], 0, "refinement brownfield coverage: 수용 조건 = 0");
 }
 
+async function testRefinementStartUsesBodyAsDescriptionFallback() {
+  const state = { stats: { totalSpawns: 0 } };
+  let submitted = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: () => {},
+    submitTask: async (title, body, opts) => {
+      submitted = { title, body, opts };
+      return { id: "legacy-refinement-task" };
+    },
+    spawnAgent: async () => ({ status: "done", stdout: JSON.stringify({ done: true }) }),
+  });
+
+  try {
+    const legacyBody = "legacy refinement description";
+    const { sessionId } = await ucmdRefinement.startRefinement({
+      title: "legacy refinement title",
+      body: legacyBody,
+      mode: "interactive",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ucmdRefinement.finalizeRefinement(sessionId);
+
+    assert(submitted !== null, "refinement body fallback: submitTask called");
+    assert(submitted.body.startsWith(`${legacyBody}\n\n`), "refinement body fallback: body is used as description");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
+async function testRefinementStartPrefersDescriptionOverLegacyBody() {
+  const state = { stats: { totalSpawns: 0 } };
+  let submitted = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: () => {},
+    submitTask: async (title, body, opts) => {
+      submitted = { title, body, opts };
+      return { id: "description-priority-task" };
+    },
+    spawnAgent: async () => ({ status: "done", stdout: JSON.stringify({ done: true }) }),
+  });
+
+  try {
+    const explicitDescription = "explicit refinement description";
+    const legacyBody = "legacy body description";
+    const { sessionId } = await ucmdRefinement.startRefinement({
+      title: "description priority title",
+      description: explicitDescription,
+      body: legacyBody,
+      mode: "interactive",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ucmdRefinement.finalizeRefinement(sessionId);
+
+    assert(submitted !== null, "refinement description priority: submitTask called");
+    assert(submitted.body.startsWith(`${explicitDescription}\n\n`), "refinement description priority: explicit description wins");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -6832,6 +6904,8 @@ async function main() {
   testFormatRefinedRequirementsEmpty();
   testFormatRefinedRequirementsUnknownArea();
   testFormatRefinedRequirementsSectionOrder();
+  await testRefinementStartUsesBodyAsDescriptionFallback();
+  await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   console.log();

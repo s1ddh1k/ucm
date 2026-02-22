@@ -155,8 +155,21 @@ export const browse = {
 
 // Refinement
 export const refinement = {
-  start: (params: { taskId?: string; title: string; body: string; project?: string }) =>
-    post<unknown>("/api/refinement/start", params),
+  start: (params: {
+    taskId?: string;
+    title: string;
+    description?: string;
+    body?: string;
+    project?: string;
+    pipeline?: string;
+    mode?: "interactive" | "autopilot";
+  }) => {
+    const { description, body, ...rest } = params;
+    return post<unknown>("/api/refinement/start", {
+      ...rest,
+      description: description ?? body ?? "",
+    });
+  },
   finalize: (params: { sessionId: string; answers: Record<string, string> }) =>
     post<unknown>("/api/refinement/finalize", params),
   cancel: (params: { sessionId: string }) =>
