@@ -6970,6 +6970,62 @@ async function testSocketRefinementAnswerRejectsMissingSessionId() {
   }
 }
 
+async function testSocketRefinementControlMethodsRejectMissingSessionId() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let switchCalls = 0;
+  let finalizeCalls = 0;
+  let cancelCalls = 0;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      switchToAutopilot: async () => {
+        switchCalls += 1;
+        return { ok: true };
+      },
+      finalizeRefinement: async () => {
+        finalizeCalls += 1;
+        return { ok: true };
+      },
+      cancelRefinement: async () => {
+        cancelCalls += 1;
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    for (const method of ["refinement_autopilot", "finalize_refinement", "cancel_refinement"]) {
+      let caught = null;
+      try {
+        await socketRequest({ method, params: {} });
+      } catch (e) {
+        caught = e;
+      }
+      assert(caught !== null, `socket ${method} missing sessionId: rejects request`);
+      assert(
+        String(caught?.message || "").includes("sessionId required"),
+        `socket ${method} missing sessionId: returns missing sessionId error`,
+      );
+    }
+
+    assertEqual(switchCalls, 0, "socket refinement_autopilot missing sessionId: does not call handler");
+    assertEqual(finalizeCalls, 0, "socket finalize_refinement missing sessionId: does not call handler");
+    assertEqual(cancelCalls, 0, "socket cancel_refinement missing sessionId: does not call handler");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -8768,6 +8824,7 @@ async function main() {
   await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
   await testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias();
   await testSocketRefinementAnswerRejectsMissingSessionId();
+  await testSocketRefinementControlMethodsRejectMissingSessionId();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
