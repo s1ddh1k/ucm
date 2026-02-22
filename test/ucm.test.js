@@ -3349,6 +3349,72 @@ async function testCliLogsFollowStreamsNewLines() {
   }
 }
 
+async function testForgeResumeRejectsNonResumableStatus() {
+  const forgeModule = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+  const originalLoad = TaskDag.load;
+  const originalRun = forgeModule.ForgePipeline.prototype.run;
+  let runCalled = false;
+
+  TaskDag.load = async () => ({
+    id: "forge-20000101-dead",
+    status: "done",
+    pipeline: "small",
+    stageHistory: [],
+  });
+  forgeModule.ForgePipeline.prototype.run = async function runStub() {
+    runCalled = true;
+    return { id: this.taskId, status: "done" };
+  };
+
+  try {
+    let error = null;
+    try {
+      await forgeModule.resume("forge-20000101-dead", {
+        project: process.cwd(),
+        fromStage: "implement",
+      });
+    } catch (e) {
+      error = e;
+    }
+    assert(error && error.message.includes("cannot resume task in status"), "resume: rejects non-resumable task status");
+    assertEqual(runCalled, false, "resume: does not run pipeline when status is non-resumable");
+  } finally {
+    TaskDag.load = originalLoad;
+    forgeModule.ForgePipeline.prototype.run = originalRun;
+  }
+}
+
+async function testForgeResumeAllowsFailedStatus() {
+  const forgeModule = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+  const originalLoad = TaskDag.load;
+  const originalRun = forgeModule.ForgePipeline.prototype.run;
+  let runCalled = false;
+
+  TaskDag.load = async () => ({
+    id: "forge-20000101-beef",
+    status: "failed",
+    pipeline: "small",
+    stageHistory: [{ stage: "verify", status: "fail" }],
+  });
+  forgeModule.ForgePipeline.prototype.run = async function runStub() {
+    runCalled = true;
+    return { id: this.taskId, status: "in_progress" };
+  };
+
+  try {
+    await forgeModule.resume("forge-20000101-beef", {
+      project: process.cwd(),
+      fromStage: "implement",
+    });
+    assertEqual(runCalled, true, "resume: runs pipeline for failed status");
+  } finally {
+    TaskDag.load = originalLoad;
+    forgeModule.ForgePipeline.prototype.run = originalRun;
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -5074,6 +5140,8 @@ async function main() {
   testParseArgsCli();
   testCliRejectsInvalidNumericOptions();
   await testCliLogsFollowStreamsNewLines();
+  await testForgeResumeRejectsNonResumableStatus();
+  await testForgeResumeAllowsFailedStatus();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
