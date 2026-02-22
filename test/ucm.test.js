@@ -4388,6 +4388,75 @@ async function testAutopilotRejectsInvalidAreaWithoutRetryLoop() {
   }
 }
 
+async function testAutopilotProgressRoundTracksAcceptedDecisions() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCount = 0;
+  let sessionId = null;
+  let thirdRoundResolve = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "autopilot-progress-round" }),
+    spawnAgent: async () => {
+      spawnCount += 1;
+      if (spawnCount === 1) {
+        return { status: "done", stdout: "not-json" };
+      }
+      if (spawnCount === 2) {
+        return {
+          status: "done",
+          stdout: JSON.stringify({
+            done: false,
+            question: "valid question after parse retry",
+            area: "기능 요구사항",
+            answer: "first accepted decision",
+          }),
+        };
+      }
+      return new Promise((resolve) => { thirdRoundResolve = resolve; });
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot progress round consistency",
+      description: "progress round should follow accepted decisions, not raw loop count",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    const deadline = Date.now() + 500;
+    while (Date.now() < deadline) {
+      const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+      if (progresses.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    assertEqual(progresses.length, 1, "autopilot progress round consistency: emits one progress event after first accepted decision");
+    assertEqual(
+      progresses[0]?.data?.round,
+      1,
+      "autopilot progress round consistency: first accepted decision should emit round 1 even after parse skip",
+    );
+
+    ucmdRefinement.cancelRefinement(sessionId);
+  } finally {
+    if (thirdRoundResolve) {
+      thirdRoundResolve({ status: "done", stdout: JSON.stringify({ done: true }) });
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testAutopilotCanCompleteWhenCoveragePlanIsSatisfied() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8968,6 +9037,7 @@ async function main() {
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testAutopilotRejectsInvalidAreaWithoutRetryLoop();
+  await testAutopilotProgressRoundTracksAcceptedDecisions();
   await testAutopilotCanCompleteWhenCoveragePlanIsSatisfied();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
