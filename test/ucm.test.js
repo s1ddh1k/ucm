@@ -3509,6 +3509,92 @@ async function testRefinementFinalizeRejectsConcurrentFinalization() {
   }
 }
 
+async function testRefinementCancelRejectsDuringFinalization() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let submitResolve = null;
+  let submitSettled = false;
+  let finalizePromise = null;
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => new Promise((resolve) => {
+      submitResolve = (value) => {
+        submitSettled = true;
+        resolve(value);
+      };
+    }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "cancel during finalization",
+      description: "cancel should be blocked while finalization is running",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    finalizePromise = ucmdRefinement.finalizeRefinement(sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+
+    assert(cancelErr && cancelErr.message.includes("finalization in progress"), "refinement cancel during finalization: cancel is rejected");
+    const cancelledEvents = events.filter((e) => e.event === "refinement:cancelled" && e.data?.sessionId === sessionId);
+    assertEqual(cancelledEvents.length, 0, "refinement cancel during finalization: does not emit cancelled event");
+
+    if (submitResolve) submitResolve({ id: "cancel-during-finalization-task" });
+    const finalized = await finalizePromise;
+    assertEqual(finalized.taskId, "cancel-during-finalization-task", "refinement cancel during finalization: finalize succeeds");
+  } finally {
+    if (submitResolve && !submitSettled) {
+      submitResolve({ id: "cancel-during-finalization-cleanup" });
+    }
+    if (finalizePromise) {
+      await Promise.allSettled([finalizePromise]);
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7611,6 +7697,7 @@ async function main() {
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementFinalizeRejectsConcurrentFinalization();
+  await testRefinementCancelRejectsDuringFinalization();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
