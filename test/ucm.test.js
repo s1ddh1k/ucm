@@ -3795,6 +3795,96 @@ async function testRefinementSwitchToAutopilotRejectsCompletedSession() {
   }
 }
 
+async function testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveInteractiveSpawn = null;
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async (_prompt, opts) => {
+      const stage = String(opts?.stage || "");
+      if (stage.startsWith("refinement-q-")) {
+        return new Promise((resolve) => { resolveInteractiveSpawn = resolve; });
+      }
+      if (stage.startsWith("refinement-auto-")) {
+        throw new Error("switch autopilot spawn failed intentionally");
+      }
+      return { status: "done", stdout: JSON.stringify({ done: true }) };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "switch autopilot spawn failure cleanup",
+      description: "switched autopilot session should be cleaned when spawn throws",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ucmdRefinement.switchToAutopilot(sessionId);
+
+    if (resolveInteractiveSpawn) {
+      resolveInteractiveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "late interactive question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+        }),
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(errors.length, 1, "refinement switched autopilot spawn failure cleanup: emits refinement:error once");
+    assert(
+      String(errors[0]?.data?.error || "").includes("switch autopilot spawn failed intentionally"),
+      "refinement switched autopilot spawn failure cleanup: includes spawn error message",
+    );
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(
+      cancelErr && cancelErr.message.includes("session not found"),
+      "refinement switched autopilot spawn failure cleanup: session is auto-cleaned after error",
+    );
+
+    const cancelledEvents = events.filter((e) => e.event === "refinement:cancelled" && e.data?.sessionId === sessionId);
+    assertEqual(cancelledEvents.length, 0, "refinement switched autopilot spawn failure cleanup: does not emit cancelled after auto-clean");
+  } finally {
+    if (resolveInteractiveSpawn) {
+      resolveInteractiveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "cleanup interactive question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+        }),
+      });
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -8195,6 +8285,7 @@ async function main() {
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
+  await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
