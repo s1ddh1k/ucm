@@ -3097,7 +3097,7 @@ function testComputeCoverageWithRefinementBrownfield() {
 
 async function testRefinementStartUsesBodyAsDescriptionFallback() {
   const state = { stats: { totalSpawns: 0 } };
-  let submitted = null;
+  let firstPrompt = "";
 
   ucmdRefinement.setDeps({
     config: () => DEFAULT_CONFIG,
@@ -3105,34 +3105,44 @@ async function testRefinementStartUsesBodyAsDescriptionFallback() {
     markStateDirty: () => {},
     log: () => {},
     broadcastWs: () => {},
-    submitTask: async (title, body, opts) => {
-      submitted = { title, body, opts };
-      return { id: "legacy-refinement-task" };
+    submitTask: async () => ({ id: "legacy-refinement-task" }),
+    spawnAgent: async (prompt) => {
+      firstPrompt = prompt;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "요구사항 질문",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
     },
-    spawnAgent: async () => ({ status: "done", stdout: JSON.stringify({ done: true }) }),
   });
 
+  let sessionId = null;
   try {
     const legacyBody = "legacy refinement description";
-    const { sessionId } = await ucmdRefinement.startRefinement({
+    const started = await ucmdRefinement.startRefinement({
       title: "legacy refinement title",
       body: legacyBody,
       mode: "interactive",
     });
+    sessionId = started.sessionId;
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await ucmdRefinement.finalizeRefinement(sessionId);
-
-    assert(submitted !== null, "refinement body fallback: submitTask called");
-    assert(submitted.body.startsWith(`${legacyBody}\n\n`), "refinement body fallback: body is used as description");
+    assert(firstPrompt.includes(`## 태스크 설명\n\n${legacyBody}`), "refinement body fallback: body is used as description");
   } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
     ucmdRefinement.setDeps({});
   }
 }
 
 async function testRefinementStartPrefersDescriptionOverLegacyBody() {
   const state = { stats: { totalSpawns: 0 } };
-  let submitted = null;
+  let firstPrompt = "";
 
   ucmdRefinement.setDeps({
     config: () => DEFAULT_CONFIG,
@@ -3140,29 +3150,40 @@ async function testRefinementStartPrefersDescriptionOverLegacyBody() {
     markStateDirty: () => {},
     log: () => {},
     broadcastWs: () => {},
-    submitTask: async (title, body, opts) => {
-      submitted = { title, body, opts };
-      return { id: "description-priority-task" };
+    submitTask: async () => ({ id: "description-priority-task" }),
+    spawnAgent: async (prompt) => {
+      firstPrompt = prompt;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "요구사항 질문",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
     },
-    spawnAgent: async () => ({ status: "done", stdout: JSON.stringify({ done: true }) }),
   });
 
+  let sessionId = null;
   try {
     const explicitDescription = "explicit refinement description";
     const legacyBody = "legacy body description";
-    const { sessionId } = await ucmdRefinement.startRefinement({
+    const started = await ucmdRefinement.startRefinement({
       title: "description priority title",
       description: explicitDescription,
       body: legacyBody,
       mode: "interactive",
     });
+    sessionId = started.sessionId;
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await ucmdRefinement.finalizeRefinement(sessionId);
-
-    assert(submitted !== null, "refinement description priority: submitTask called");
-    assert(submitted.body.startsWith(`${explicitDescription}\n\n`), "refinement description priority: explicit description wins");
+    assert(firstPrompt.includes(`## 태스크 설명\n\n${explicitDescription}`), "refinement description priority: explicit description wins");
+    assert(!firstPrompt.includes(legacyBody), "refinement description priority: legacy body is ignored");
   } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
     ucmdRefinement.setDeps({});
   }
 }
@@ -3222,9 +3243,10 @@ async function testRefinementCancelPreventsLateQuestionEvent() {
 async function testRefinementFinalizePreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
-  let resolveSpawn;
-  let spawnStartedResolve;
-  const spawnStarted = new Promise((resolve) => { spawnStartedResolve = resolve; });
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
 
   ucmdRefinement.setDeps({
     config: () => DEFAULT_CONFIG,
@@ -3234,37 +3256,60 @@ async function testRefinementFinalizePreventsLateQuestionEvent() {
     broadcastWs: (event, data) => events.push({ event, data }),
     submitTask: async () => ({ id: "late-finalize-task" }),
     spawnAgent: async () => {
-      spawnStartedResolve();
-      return new Promise((resolve) => { resolveSpawn = resolve; });
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "다음 요구사항?",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
     },
   });
 
+  let sessionId = null;
   try {
-    const { sessionId } = await ucmdRefinement.startRefinement({
+    const started = await ucmdRefinement.startRefinement({
       title: "finalize race",
       description: "finalize race description",
       mode: "interactive",
     });
+    sessionId = started.sessionId;
 
-    await spawnStarted;
-    resolveSpawn({
-      status: "done",
-      stdout: JSON.stringify({ done: true }),
-    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const finalized = await ucmdRefinement.finalizeRefinement(sessionId);
     assertEqual(finalized.taskId, "late-finalize-task", "refinement finalize race: finalize returns taskId");
 
+    const questionCountBeforeLateAnswer = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId).length;
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "기능 요구사항",
+      questionText: "late question",
+      value: "late answer should be ignored",
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    const questionCountAfterLateAnswer = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId).length;
 
-    const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
     const finalizedEvents = events.filter((e) => e.event === "refinement:finalized" && e.data?.sessionId === sessionId);
     const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
     assertEqual(completes.length, 1, "refinement finalize race: emits complete once");
     assertEqual(finalizedEvents.length, 1, "refinement finalize race: emits finalized once");
-    assertEqual(lateQuestions.length, 0, "refinement finalize race: does not emit late question");
+    assertEqual(questionCountAfterLateAnswer, questionCountBeforeLateAnswer, "refinement finalize race: does not emit late question after finalize");
   } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
     ucmdRefinement.setDeps({});
   }
 }
@@ -3310,7 +3355,15 @@ async function testRefinementFinalizeRequiresCompletion() {
     assertEqual(finalizedEvents.length, 0, "refinement finalize guard: does not emit finalized before complete");
   } finally {
     if (resolveSpawn) {
-      resolveSpawn({ status: "done", stdout: JSON.stringify({ done: true }) });
+      resolveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "cleanup",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+        }),
+      });
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     if (sessionId) {
@@ -3370,9 +3423,7 @@ async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
 
     const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
     const modeChanged = events.filter((e) => e.event === "refinement:mode_changed" && e.data?.sessionId === sessionId);
-    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
     assertEqual(modeChanged.length, 1, "refinement autopilot switch race: emits mode_changed once");
-    assertEqual(completes.length, 1, "refinement autopilot switch race: emits complete once");
     assertEqual(lateQuestions.length, 0, "refinement autopilot switch race: does not emit late interactive question");
   } finally {
     if (sessionId) {
@@ -3449,6 +3500,10 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
 async function testRefinementIgnoresLateAnswerAfterCompletion() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
   let spawnCalls = 0;
   let submitted = null;
 
@@ -3464,7 +3519,15 @@ async function testRefinementIgnoresLateAnswerAfterCompletion() {
     },
     spawnAgent: async () => {
       spawnCalls += 1;
-      return { status: "done", stdout: JSON.stringify({ done: true }) };
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "다음 요구사항?",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
     },
   });
 
@@ -3478,6 +3541,18 @@ async function testRefinementIgnoresLateAnswerAfterCompletion() {
     sessionId = started.sessionId;
 
     await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const spawnCallsBeforeLateAnswer = spawnCalls;
 
     await ucmdRefinement.handleRefinementAnswer(sessionId, {
       area: "기능 요구사항",
@@ -3490,9 +3565,71 @@ async function testRefinementIgnoresLateAnswerAfterCompletion() {
 
     const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
     assertEqual(completes.length, 1, "refinement late answer: complete emitted once");
-    assertEqual(spawnCalls, 1, "refinement late answer: does not spawn extra question generation");
+    assertEqual(spawnCalls, spawnCallsBeforeLateAnswer, "refinement late answer: does not spawn extra question generation");
     assert(submitted !== null, "refinement late answer: submitTask called");
     assert(!submitted.body.includes("late answer should be ignored"), "refinement late answer: late answer not included in finalized body");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
+async function testRefinementRejectsPrematureDoneWithoutCoverage() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "should-not-finalize-premature-done" }),
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      if (spawnCalls === 1) {
+        return { status: "done", stdout: JSON.stringify({ done: true }) };
+      }
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "요구사항 상세?",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "premature done should be rejected",
+      description: "coverage not full but done true",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 0, "refinement premature done: should not emit complete before coverage");
+    assertEqual(questions.length, 1, "refinement premature done: should continue asking questions");
+    assertEqual(spawnCalls, 2, "refinement premature done: retries question generation");
+
+    let finalizeErr = null;
+    try {
+      await ucmdRefinement.finalizeRefinement(sessionId);
+    } catch (e) {
+      finalizeErr = e;
+    }
+    assert(finalizeErr && finalizeErr.message.includes("refinement not complete"), "refinement premature done: finalize remains blocked");
   } finally {
     if (sessionId) {
       try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
@@ -7141,6 +7278,7 @@ async function main() {
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testRefinementIgnoresLateAnswerAfterCompletion();
+  await testRefinementRejectsPrematureDoneWithoutCoverage();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
