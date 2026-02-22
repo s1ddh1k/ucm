@@ -16,6 +16,7 @@ const UCM_DIR = path.join(os.tmpdir(), `ucm-integration-${Date.now()}`);
 const DAEMON_DIR = path.join(UCM_DIR, "daemon");
 const SOCK_PATH = path.join(DAEMON_DIR, "ucm.sock");
 const TASKS_DIR = path.join(UCM_DIR, "tasks");
+const SEEDED_SUSPENDED_TASK_ID = "seeded-suspended-task";
 
 // ── Helpers ──
 
@@ -38,6 +39,20 @@ function setupDirs() {
     mkdirp(path.join(UCM_DIR, "proposals", sub));
   }
   mkdirp(path.join(UCM_DIR, "snapshots"));
+
+  const seededSuspendedTask = `---
+id: ${SEEDED_SUSPENDED_TASK_ID}
+title: seeded suspended task
+state: running
+created: 2026-01-01T00:00:00.000Z
+suspended: true
+suspendedStage: implement
+suspendedReason: reject_feedback
+---
+
+seeded body
+`;
+  fs.writeFileSync(path.join(TASKS_DIR, "running", `${SEEDED_SUSPENDED_TASK_ID}.md`), seededSuspendedTask);
 
   // write minimal config
   const config = {
@@ -285,9 +300,19 @@ async function main() {
       assertEqual(res.status, 200, "pause status code");
     },
 
-    "POST /api/resume resumes daemon": async () => {
+    "POST /api/resume requeues suspended tasks and clears suspension markers": async () => {
       const res = await httpRequest("POST", "/api/resume");
       assertEqual(res.status, 200, "resume status code");
+
+      const listRes = await httpRequest("GET", "/api/list?status=pending");
+      assertEqual(listRes.status, 200, "pending list status code after resume");
+      const resumedTask = Array.isArray(listRes.body)
+        ? listRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
+        : null;
+      assert(!!resumedTask, "resume should requeue seeded suspended task to pending");
+      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspended"), "resume should clear suspended flag");
+      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedStage"), "resume should clear suspendedStage");
+      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedReason"), "resume should clear suspendedReason");
     },
 
     "GET /api/proposals returns array": async () => {
