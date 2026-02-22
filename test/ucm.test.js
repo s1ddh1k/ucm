@@ -4058,6 +4058,63 @@ async function testRefinementRetriesAfterJsonParseFailure() {
   }
 }
 
+async function testRefinementCleansSessionAfterRepeatedInvalidQuestionFormat() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "invalid format question",
+          area: "기능 요구사항",
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "invalid question format cleanup",
+      description: "session should be cleaned when question format retries are exhausted",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(spawnCalls, 2, "refinement invalid question cleanup: retries exactly once");
+    assertEqual(questions.length, 0, "refinement invalid question cleanup: does not emit question when format stays invalid");
+    assertEqual(errors.length, 1, "refinement invalid question cleanup: emits refinement:error once");
+    assertEqual(errors[0]?.data?.error, "invalid question format after retry", "refinement invalid question cleanup: error reason is invalid question format");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "refinement invalid question cleanup: session is auto-cleaned after terminal invalid format failure");
+  } finally {
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCleansSessionAfterRepeatedJsonParseFailure() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7993,6 +8050,7 @@ async function main() {
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
   await testRefinementRetriesAfterJsonParseFailure();
+  await testRefinementCleansSessionAfterRepeatedInvalidQuestionFormat();
   await testRefinementCleansSessionAfterRepeatedJsonParseFailure();
   await testRefinementCleansSessionAfterQuestionGenerationStatusFailure();
   await testRefinementCleansSessionAfterSpawnFailure();
