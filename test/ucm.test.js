@@ -3382,6 +3382,70 @@ async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   }
 }
 
+async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCount = 0;
+  let finishedResolve;
+  const finishedPromise = new Promise((resolve) => { finishedResolve = resolve; });
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if ((event === "refinement:complete" || event === "refinement:error") && data?.sessionId === sessionId) {
+        finishedResolve();
+      }
+    },
+    submitTask: async () => ({ id: "autopilot-max-rounds" }),
+    spawnAgent: async () => {
+      spawnCount += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "which feature?",
+          area: "기능 요구사항",
+          answer: "placeholder answer",
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot max rounds",
+      description: "should not finalize when coverage is incomplete",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await finishedPromise;
+    assertEqual(spawnCount, 15, "autopilot should stop after maxRounds");
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 0, "autopilot should not emit complete when coverage is incomplete");
+    assert(errors.some((e) => String(e.data?.error || "").includes("max rounds")), "autopilot should report max rounds coverage failure");
+
+    let finalizeErr = null;
+    try {
+      await ucmdRefinement.finalizeRefinement(sessionId);
+    } catch (err) {
+      finalizeErr = err;
+    }
+    assert(finalizeErr && finalizeErr.message.includes("refinement not complete"), "finalize should reject incomplete coverage");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 // ── (Chat tests removed — PTY bridge) ──
 
 // ── Structure Analysis Tests ──
@@ -7020,6 +7084,7 @@ async function main() {
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
+  await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
