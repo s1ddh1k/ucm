@@ -496,6 +496,103 @@ async function testRejectWithFeedbackTracksActiveTaskState() {
   }
 }
 
+async function testRejectWithFeedbackRecoveryPreservesRunningTask() {
+  const { ForgePipeline } = require("../lib/forge/index");
+  const originalRun = ForgePipeline.prototype.run;
+  const taskId = generateTaskId();
+  const reviewPath = path.join(TASKS_DIR, "review", `${taskId}.md`);
+  const inflightTasks = new Set();
+  let resolveRun;
+  let runPromiseSettled = false;
+
+  const daemonState = {
+    daemonStatus: "running",
+    pausedAt: null,
+    pauseReason: null,
+    activeTasks: [],
+    suspendedTasks: [],
+    stats: { totalSpawns: 0 },
+  };
+  const activeForgePipelines = new Map();
+
+  await writeFile(reviewPath, serializeTaskFile({
+    id: taskId,
+    title: "reject feedback recovery",
+    state: "review",
+    project: process.cwd(),
+    created: new Date().toISOString(),
+  }, "body"));
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    inflightTasks,
+    taskQueue: [],
+    getResourcePressure: () => "normal",
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    setProbeIntervalMs: () => {},
+    requeueSuspendedTasks: async () => {},
+    markStateDirty: () => {},
+    reloadConfig: async () => {},
+    log: () => {},
+    wakeProcessLoop: () => {},
+    broadcastWs: () => {},
+    activeForgePipelines,
+    updateTaskMeta: async () => {},
+    QUOTA_PROBE_INITIAL_MS: 60_000,
+  });
+
+  ForgePipeline.prototype.run = function runStub() {
+    return new Promise((resolve) => {
+      resolveRun = resolve;
+    }).finally(() => {
+      runPromiseSettled = true;
+    });
+  };
+
+  try {
+    const result = await ucmdHandlers.handleReject({ taskId, feedback: "resume safely" });
+    assertEqual(result.status, "running", "reject recovery: returns running");
+    assert(inflightTasks.has(taskId), "reject recovery: marks resumed task as inflight");
+
+    const runningTask = await ucmdHandlers.loadTask(taskId);
+    assert(runningTask && runningTask.state === "running", "reject recovery: task moved to running");
+    assert(runningTask && runningTask.suspended === true, "reject recovery: running task marked suspended for recovery");
+    assertEqual(runningTask.suspendedStage, "implement", "reject recovery: suspended stage recorded");
+
+    inflightTasks.clear(); // simulate daemon restart: in-memory inflight markers are lost
+    const recovered = await ucmdHandlers.recoverRunningTasks();
+    assertEqual(recovered, 0, "reject recovery: recoverRunningTasks does not requeue suspended resumed task");
+
+    const afterRecovery = await ucmdHandlers.loadTask(taskId);
+    assert(afterRecovery && afterRecovery.state === "running", "reject recovery: task stays running after recovery");
+    assert(daemonState.suspendedTasks.includes(taskId), "reject recovery: task added to suspendedTasks list");
+
+    resolveRun({ status: "review" });
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const loaded = await ucmdHandlers.loadTask(taskId);
+      const restoredToReview = loaded && loaded.state === "review";
+      if (restoredToReview && runPromiseSettled && !inflightTasks.has(taskId) && !activeForgePipelines.has(taskId)) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const finalTask = await ucmdHandlers.loadTask(taskId);
+    assert(finalTask && finalTask.state === "review", "reject recovery: resumed task finishes back in review");
+    assert(!Object.prototype.hasOwnProperty.call(finalTask, "suspended"), "reject recovery: suspended flag cleared after completion");
+  } finally {
+    ForgePipeline.prototype.run = originalRun;
+    ucmdHandlers.setDeps({});
+    try { await rm(path.join(TASKS_DIR, "running", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "review", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "pending", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true }); } catch {}
+  }
+}
+
 // ── Unit Tests: generateTaskId ──
 
 function testGenerateTaskId() {
@@ -5019,6 +5116,7 @@ async function main() {
   await testHandleLogsTailAndLineLimits();
   await testHandleListRejectsInvalidMinPriority();
   await testRejectWithFeedbackTracksActiveTaskState();
+  await testRejectWithFeedbackRecoveryPreservesRunningTask();
   testGenerateTaskId();
   console.log();
 
