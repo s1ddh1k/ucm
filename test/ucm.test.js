@@ -412,6 +412,90 @@ async function testHandleListRejectsInvalidMinPriority() {
   assert(threw, "handleList: rejects non-numeric minPriority filter");
 }
 
+async function testRejectWithFeedbackTracksActiveTaskState() {
+  const { ForgePipeline } = require("../lib/forge/index");
+  const originalRun = ForgePipeline.prototype.run;
+  const taskId = generateTaskId();
+  const reviewPath = path.join(TASKS_DIR, "review", `${taskId}.md`);
+  let resolveRun;
+  let runPromiseSettled = false;
+
+  const daemonState = {
+    daemonStatus: "running",
+    pausedAt: null,
+    pauseReason: null,
+    activeTasks: [],
+    suspendedTasks: [],
+    stats: { totalSpawns: 0 },
+  };
+  const activeForgePipelines = new Map();
+
+  await writeFile(reviewPath, serializeTaskFile({
+    id: taskId,
+    title: "reject feedback active task tracking",
+    state: "review",
+    project: process.cwd(),
+    created: new Date().toISOString(),
+  }, "body"));
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    inflightTasks: new Set(),
+    taskQueue: [],
+    getResourcePressure: () => "normal",
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    setProbeIntervalMs: () => {},
+    requeueSuspendedTasks: async () => {},
+    markStateDirty: () => {},
+    reloadConfig: async () => {},
+    log: () => {},
+    wakeProcessLoop: () => {},
+    broadcastWs: () => {},
+    activeForgePipelines,
+    updateTaskMeta: async () => {},
+    QUOTA_PROBE_INITIAL_MS: 60_000,
+  });
+
+  ForgePipeline.prototype.run = function runStub() {
+    return new Promise((resolve) => {
+      resolveRun = resolve;
+    }).finally(() => {
+      runPromiseSettled = true;
+    });
+  };
+
+  try {
+    const result = await ucmdHandlers.handleReject({ taskId, feedback: "retry please" });
+    assertEqual(result.status, "running", "reject feedback: returns running");
+    assert(daemonState.activeTasks.includes(taskId), "reject feedback: adds task to activeTasks while resumed");
+    assert(activeForgePipelines.has(taskId), "reject feedback: tracks active forge pipeline");
+
+    resolveRun({ status: "review" });
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const loaded = await ucmdHandlers.loadTask(taskId);
+      const restoredToReview = loaded && loaded.state === "review";
+      if (restoredToReview && runPromiseSettled && !daemonState.activeTasks.includes(taskId) && !activeForgePipelines.has(taskId)) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const finalTask = await ucmdHandlers.loadTask(taskId);
+    assert(finalTask && finalTask.state === "review", "reject feedback: task returns to review after resumed run");
+    assert(!daemonState.activeTasks.includes(taskId), "reject feedback: clears activeTasks after resumed run ends");
+    assert(!activeForgePipelines.has(taskId), "reject feedback: clears active forge pipeline after resumed run ends");
+  } finally {
+    ForgePipeline.prototype.run = originalRun;
+    ucmdHandlers.setDeps({});
+    try { await rm(path.join(TASKS_DIR, "running", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "review", `${taskId}.md`), { force: true }); } catch {}
+    try { await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true }); } catch {}
+  }
+}
+
 // ── Unit Tests: generateTaskId ──
 
 function testGenerateTaskId() {
@@ -4934,6 +5018,7 @@ async function main() {
   await testMoveTaskSerializesConcurrentTransitions();
   await testHandleLogsTailAndLineLimits();
   await testHandleListRejectsInvalidMinPriority();
+  await testRejectWithFeedbackTracksActiveTaskState();
   testGenerateTaskId();
   console.log();
 
