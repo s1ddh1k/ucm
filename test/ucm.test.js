@@ -6144,6 +6144,52 @@ async function testSocketRefinementAnswerAcceptsFlatPayload() {
   }
 }
 
+async function testSocketRefinementAnswerAcceptsLegacyAnswerAlias() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let captured = null;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleRefinementAnswer: async (sessionId, answer) => {
+        captured = { sessionId, answer };
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    await socketRequest({
+      method: "refinement_answer",
+      params: {
+        sessionId: "refinement-legacy-answer",
+        area: "기능 요구사항",
+        questionText: "레거시 질문",
+        answer: "레거시 답변 필드",
+        reason: "레거시 사유",
+      },
+    });
+
+    assert(captured !== null, "socket refinement answer legacy alias: handler called");
+    assertEqual(captured?.sessionId, "refinement-legacy-answer", "socket refinement answer legacy alias: sessionId forwarded");
+    assertEqual(captured?.answer?.area, "기능 요구사항", "socket refinement answer legacy alias: area forwarded");
+    assertEqual(captured?.answer?.questionText, "레거시 질문", "socket refinement answer legacy alias: questionText forwarded");
+    assertEqual(captured?.answer?.reason, "레거시 사유", "socket refinement answer legacy alias: reason forwarded");
+    assertEqual(captured?.answer?.value, "레거시 답변 필드", "socket refinement answer legacy alias: maps answer string to value");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -7928,6 +7974,7 @@ async function main() {
   await testSocketResumeRejectsUnsuspendedRunningTask();
   await testSocketResumeRollbackRestoresSuspendedTracking();
   await testSocketRefinementAnswerAcceptsFlatPayload();
+  await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
