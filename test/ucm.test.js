@@ -3482,6 +3482,79 @@ async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   }
 }
 
+async function testRefinementSwitchToAutopilotRejectsDuplicateSwitch() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveInteractiveSpawn = null;
+  const autopilotResolvers = [];
+  let autopilotSpawnCalls = 0;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async (_prompt, opts) => {
+      const stage = String(opts?.stage || "");
+      if (stage.startsWith("refinement-q-")) {
+        return new Promise((resolve) => { resolveInteractiveSpawn = resolve; });
+      }
+      if (stage.startsWith("refinement-auto-")) {
+        autopilotSpawnCalls += 1;
+        return new Promise((resolve) => { autopilotResolvers.push(resolve); });
+      }
+      return { status: "done", stdout: JSON.stringify({ done: true }) };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot duplicate switch guard",
+      description: "duplicate switch should not start a second autopilot loop",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ucmdRefinement.switchToAutopilot(sessionId);
+
+    let duplicateErr = null;
+    try {
+      await ucmdRefinement.switchToAutopilot(sessionId);
+    } catch (e) {
+      duplicateErr = e;
+    }
+
+    assert(duplicateErr && duplicateErr.message.includes("autopilot"), "refinement duplicate autopilot switch: rejects duplicate switch");
+    assertEqual(autopilotSpawnCalls, 1, "refinement duplicate autopilot switch: starts one autopilot loop");
+    const modeChanged = events.filter((e) => e.event === "refinement:mode_changed" && e.data?.sessionId === sessionId);
+    assertEqual(modeChanged.length, 1, "refinement duplicate autopilot switch: emits mode_changed once");
+  } finally {
+    if (resolveInteractiveSpawn) {
+      resolveInteractiveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          question: "late interactive question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+          done: false,
+        }),
+      });
+    }
+    for (const resolve of autopilotResolvers) {
+      resolve({ status: "error", stdout: "" });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementSwitchToAutopilotRejectsCompletedSession() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7451,6 +7524,7 @@ async function main() {
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
+  await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testRefinementIgnoresLateAnswerAfterCompletion();
