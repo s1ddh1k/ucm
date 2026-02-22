@@ -6,7 +6,7 @@ const { browserAgentBatch } = require("../../lib/core/browser-agent");
 class GeminiRunner {
   constructor(opts = {}) {
     this.systemPrompt = null;
-    this.provider = opts.provider || process.env.UCM_BROWSER_AGENT_PROVIDER || "gemini";
+    this.provider = opts.provider || process.env.UCM_BROWSER_AGENT_PROVIDER || "codex";
     this.model = opts.model || process.env.UCM_BROWSER_AGENT_MODEL
       || (this.provider === "codex" ? "low" : undefined);
     this.perTaskTimeoutMs = Number(process.env.UCM_BROWSER_AGENT_PER_TASK_TIMEOUT_MS)

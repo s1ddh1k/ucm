@@ -91,8 +91,8 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 
 | 프로바이더 | CLI | 용도 |
 |-----------|-----|------|
-| `claude` | `claude` | 코드/브라우저 에이전트 (기본) |
-| `codex` | `codex` | 코드/브라우저 에이전트 |
+| `claude` | `claude` | 코드 에이전트 (기본), 브라우저 에이전트 |
+| `codex` | `codex` | 코드/브라우저 에이전트 (브라우저 기본) |
 | `gemini` | `gemini` | 브라우저 에이전트 |
 
 ## 개발

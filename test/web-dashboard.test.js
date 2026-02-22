@@ -212,7 +212,7 @@ Options:
   --help                                   Show help
 
 Env:
-  UCM_BROWSER_AGENT_PROVIDER=gemini|claude|codex (default: gemini)
+  UCM_BROWSER_AGENT_PROVIDER=gemini|claude|codex (default: codex)
 `);
   console.log(`API groups: ${apiGroupNames.join(", ")}`);
   console.log(`Browser groups: ${browserGroupNames.join(", ")}`);
@@ -249,7 +249,7 @@ async function main() {
     process.exit(1);
   }
 
-  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "gemini").toLowerCase();
+  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "codex").toLowerCase();
   const basePlan = initial.plan;
   const suiteTimeoutMs = raw.watch
     ? null

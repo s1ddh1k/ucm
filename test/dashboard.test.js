@@ -369,7 +369,7 @@ async function main() {
     process.exit(1);
   }
 
-  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "gemini").toLowerCase();
+  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "codex").toLowerCase();
   const basePlan = initial.plan;
   const suiteTimeoutMs = raw.watch
     ? null
