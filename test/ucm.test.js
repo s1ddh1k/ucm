@@ -4186,6 +4186,22 @@ async function testSocketResumeTransitionsTaskStateOnCompletion() {
     suspendedReason: "reject_feedback",
   }, "resume body"));
 
+  const applyTaskMetaUpdates = async (targetTaskId, updates) => {
+    for (const state of TASK_STATES) {
+      const taskPath = path.join(TASKS_DIR, state, `${targetTaskId}.md`);
+      try {
+        const content = await readFile(taskPath, "utf-8");
+        const { meta, body } = parseTaskFile(content);
+        for (const [key, value] of Object.entries(updates || {})) {
+          if (value === undefined || value === null) delete meta[key];
+          else meta[key] = value;
+        }
+        await writeFile(taskPath, serializeTaskFile(meta, body));
+        return;
+      } catch {}
+    }
+  };
+
   ucmdHandlers.setDeps({
     config: () => DEFAULT_CONFIG,
     daemonState: () => daemonState,
@@ -4204,13 +4220,13 @@ async function testSocketResumeTransitionsTaskStateOnCompletion() {
     setProbeIntervalMs: () => {},
     QUOTA_PROBE_INITIAL_MS: 1000,
     activeForgePipelines,
-    updateTaskMeta: async () => {},
+    updateTaskMeta: applyTaskMetaUpdates,
     reloadConfig: async () => {},
   });
 
   ucmdServer.setDeps({
     activeForgePipelines,
-    updateTaskMeta: async () => {},
+    updateTaskMeta: applyTaskMetaUpdates,
     loadTask: ucmdHandlers.loadTask,
     moveTask: ucmdHandlers.moveTask,
     daemonState: () => daemonState,
@@ -4227,6 +4243,20 @@ async function testSocketResumeTransitionsTaskStateOnCompletion() {
     await ucmdServer.startSocketServer();
 
     await socketRequest({ method: "resume", params: { taskId, project: process.cwd() } });
+    const resumedBeforeCompletion = await ucmdHandlers.loadTask(taskId);
+    assert(resumedBeforeCompletion && resumedBeforeCompletion.state === "running", "socket resume completion: task remains running before pipeline settles");
+    assert(
+      resumedBeforeCompletion && !Object.prototype.hasOwnProperty.call(resumedBeforeCompletion, "suspended"),
+      "socket resume completion: clears suspended flag immediately on resume start"
+    );
+    assert(
+      resumedBeforeCompletion && !Object.prototype.hasOwnProperty.call(resumedBeforeCompletion, "suspendedStage"),
+      "socket resume completion: clears suspendedStage immediately on resume start"
+    );
+    assert(
+      resumedBeforeCompletion && !Object.prototype.hasOwnProperty.call(resumedBeforeCompletion, "suspendedReason"),
+      "socket resume completion: clears suspendedReason immediately on resume start"
+    );
     resolveRun?.({ id: taskId, status: "review" });
 
     const deadline = Date.now() + 2000;
