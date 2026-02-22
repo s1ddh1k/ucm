@@ -6791,6 +6791,55 @@ async function testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias() {
   }
 }
 
+async function testSocketRefinementAnswerRejectsMissingSessionId() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let callCount = 0;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleRefinementAnswer: async () => {
+        callCount += 1;
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caught = null;
+    try {
+      await socketRequest({
+        method: "refinement_answer",
+        params: {
+          area: "기능 요구사항",
+          questionText: "세션 ID 없는 질문",
+          value: "세션 ID 없는 답변",
+        },
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    assert(caught !== null, "socket refinement answer missing sessionId: rejects request");
+    assert(
+      String(caught?.message || "").includes("sessionId required"),
+      "socket refinement answer missing sessionId: returns missing sessionId error",
+    );
+    assertEqual(callCount, 0, "socket refinement answer missing sessionId: does not call handler");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -8586,6 +8635,7 @@ async function main() {
   await testSocketRefinementAnswerAcceptsFlatPayload();
   await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
   await testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias();
+  await testSocketRefinementAnswerRejectsMissingSessionId();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
