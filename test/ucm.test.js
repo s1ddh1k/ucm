@@ -3638,6 +3638,64 @@ async function testRefinementRejectsPrematureDoneWithoutCoverage() {
   }
 }
 
+async function testRefinementRetriesAfterJsonParseFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      if (spawnCalls === 1) {
+        return {
+          status: "done",
+          stdout: "not valid json",
+        };
+      }
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "재시도 질문",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "json parse retry",
+      description: "parse failure should retry",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(spawnCalls, 2, "refinement parse retry: retries question generation once after parse failure");
+    assertEqual(questions.length, 1, "refinement parse retry: emits question after retry");
+    assertEqual(errors.length, 0, "refinement parse retry: does not emit error when retry succeeds");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 // ── (Chat tests removed — PTY bridge) ──
 
 // ── Structure Analysis Tests ──
@@ -7279,6 +7337,7 @@ async function main() {
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
+  await testRefinementRetriesAfterJsonParseFailure();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
