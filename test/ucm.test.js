@@ -3793,6 +3793,88 @@ async function testRefinementFinalizeSetsRefinedFlagOutsidePendingState() {
   }
 }
 
+async function testRefinementFinalizeRetriesRefinedFlagUntilTaskFileAppears() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let questionIndex = 0;
+  const taskId = `refine-delayed-${Date.now()}`;
+  const runningTaskPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  let createTaskFilePromise = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => {
+      createTaskFilePromise = new Promise((resolve, reject) => {
+        setTimeout(() => {
+          writeFile(runningTaskPath, serializeTaskFile({
+            id: taskId,
+            title: "delayed refined flag task",
+            status: "running",
+            priority: 0,
+          }, "seed body"))
+            .then(resolve)
+            .catch(reject);
+        }, 25);
+      });
+      return { id: taskId };
+    },
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "다음 요구사항?",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: answerPlan[Math.min(questionIndex++, answerPlan.length - 1)] || "기능 요구사항",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "refined flag delayed task file",
+      description: "finalize should mark refined even when task file appears shortly after submit",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let i = 0; i < answerPlan.length; i++) {
+      await ucmdRefinement.handleRefinementAnswer(sessionId, {
+        area: answerPlan[i],
+        questionText: `q-${i + 1}`,
+        value: `a-${i + 1}`,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const finalized = await ucmdRefinement.finalizeRefinement(sessionId);
+    assertEqual(finalized.taskId, taskId, "refinement refined flag delayed file: finalize returns submitted task id");
+    if (createTaskFilePromise) await createTaskFilePromise;
+
+    const taskContent = await readFile(runningTaskPath, "utf-8");
+    const { meta } = parseTaskFile(taskContent);
+    assertEqual(meta.refined, true, "refinement refined flag delayed file: sets refined=true after delayed task file creation");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    try { await createTaskFilePromise; } catch {}
+    try { await rm(runningTaskPath, { force: true }); } catch {}
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelRejectsDuringFinalization() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9029,6 +9111,7 @@ async function main() {
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementFinalizeRejectsConcurrentFinalization();
   await testRefinementFinalizeSetsRefinedFlagOutsidePendingState();
+  await testRefinementFinalizeRetriesRefinedFlagUntilTaskFileAppears();
   await testRefinementCancelRejectsDuringFinalization();
   await testRefinementFinalizeSurvivesFinalizedBroadcastFailure();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
