@@ -3844,13 +3844,13 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
     assertEqual(completes.length, 0, "autopilot should not emit complete when coverage is incomplete");
     assert(errors.some((e) => String(e.data?.error || "").includes("max rounds")), "autopilot should report max rounds coverage failure");
 
-    let finalizeErr = null;
+    let cancelErr = null;
     try {
-      await ucmdRefinement.finalizeRefinement(sessionId);
+      ucmdRefinement.cancelRefinement(sessionId);
     } catch (err) {
-      finalizeErr = err;
+      cancelErr = err;
     }
-    assert(finalizeErr && finalizeErr.message.includes("refinement not complete"), "finalize should reject incomplete coverage");
+    assert(cancelErr && cancelErr.message.includes("session not found"), "autopilot max rounds should auto-clean session");
   } finally {
     if (sessionId) {
       try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
