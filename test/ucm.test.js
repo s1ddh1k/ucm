@@ -5992,6 +5992,70 @@ async function testSocketResumeRollbackRestoresSuspendedTracking() {
   }
 }
 
+async function testSocketRefinementAnswerAcceptsFlatPayload() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let captured = null;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleRefinementAnswer: async (sessionId, answer) => {
+        captured = { sessionId, answer };
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    const params = {
+      sessionId: "refinement-flat",
+      area: "기능 요구사항",
+      questionText: "질문",
+      value: "답변",
+      reason: "사유",
+    };
+    await socketRequest({ method: "refinement_answer", params });
+
+    assert(captured !== null, "socket refinement answer flat payload: handler called");
+    assertEqual(captured?.sessionId, "refinement-flat", "socket refinement answer flat payload: sessionId forwarded");
+    assertDeepEqual(captured?.answer, {
+      area: "기능 요구사항",
+      questionText: "질문",
+      value: "답변",
+      reason: "사유",
+    }, "socket refinement answer flat payload: answer fields forwarded");
+
+    await socketRequest({
+      method: "refinement_answer",
+      params: {
+        sessionId: "refinement-nested",
+        answer: {
+          area: "수용 조건",
+          questionText: "중첩 질문",
+          value: "중첩 답변",
+        },
+      },
+    });
+    assertEqual(captured?.sessionId, "refinement-nested", "socket refinement answer nested payload: sessionId forwarded");
+    assertDeepEqual(captured?.answer, {
+      area: "수용 조건",
+      questionText: "중첩 질문",
+      value: "중첩 답변",
+    }, "socket refinement answer nested payload: answer fields forwarded");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -7773,6 +7837,7 @@ async function main() {
   await testSocketResumeRejectsNonResumableTaskState();
   await testSocketResumeRejectsUnsuspendedRunningTask();
   await testSocketResumeRollbackRestoresSuspendedTracking();
+  await testSocketRefinementAnswerAcceptsFlatPayload();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();
