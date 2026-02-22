@@ -29,6 +29,7 @@ const {
   checkResources, getResourcePressure,
   broadcastWs,
   mapPipelineToForge, loadProjectPreferences,
+  mergeStateStats,
   defaultState,
   generateProposalId, computeDedupHash, serializeProposal, parseProposalFile,
   saveProposal, loadProposal, listProposals,
@@ -37,7 +38,7 @@ const {
   getLanguageFamily, countFunctions, getSizeCategory, analyzeFile, getChangedFiles,
   formatChangedFilesMetrics, formatProjectStructureMetrics,
   isGitRepo, validateGitProjects,
-  analyzeCommitHistory, emptyCommitMetrics, formatCommitHistory, LARGE_COMMIT_THRESHOLD,
+  analyzeCommitHistory, emptyCommitMetrics, formatCommitHistory, LARGE_COMMIT_THRESHOLD, parseShortstatTotalLines,
   DOC_EXTENSIONS, DOC_DIRS, scanDocumentation, formatDocumentation, analyzeDocCoverage,
   generateProjectContext, formatProjectContext,
   saveSnapshot, loadLatestSnapshot, loadAllSnapshots, cleanupOldSnapshots,
@@ -46,6 +47,7 @@ const {
 } = require("../lib/ucmd.js");
 
 const ucmdAutopilot = require("../lib/ucmd-autopilot.js");
+const ucmdHandlers = require("../lib/ucmd-handlers.js");
 const ucmdSandbox = require("../lib/ucmd-sandbox.js");
 const {
   EXPECTED_GREENFIELD, EXPECTED_BROWNFIELD,
@@ -166,6 +168,21 @@ url: https://example.com
   assertEqual(meta.url, "https://example.com", "parse: url preserved");
 }
 
+function testParseTaskFileTaggedJson() {
+  const content = `---
+projects: !!json [{"path":"/a","name":"a","role":"primary"},{"path":"/b","name":"b","role":"secondary"}]
+context: !!json {"retry":3,"enabled":true}
+---
+
+Body.`;
+
+  const { meta } = parseTaskFile(content);
+  assertEqual(Array.isArray(meta.projects), true, "parse: tagged json array parsed");
+  assertEqual(meta.projects[0].path, "/a", "parse: tagged json array item");
+  assertEqual(meta.context.retry, 3, "parse: tagged json object number");
+  assertEqual(meta.context.enabled, true, "parse: tagged json object boolean");
+}
+
 // ── Unit Tests: serializeTaskFile ──
 
 function testSerializeTaskFile() {
@@ -189,6 +206,22 @@ function testSerializeRoundtrip() {
   assertEqual(parsed.title, meta.title, "roundtrip: title");
   assertEqual(parsed.priority, meta.priority, "roundtrip: priority");
   assertEqual(parsedBody, body, "roundtrip: body");
+}
+
+function testSerializeRoundtripComplexMeta() {
+  const meta = {
+    id: "abc",
+    title: "Complex Task",
+    projects: [{ path: "/a", name: "a", role: "primary" }],
+    context: { risk: "low", retries: 2 },
+  };
+  const serialized = serializeTaskFile(meta, "Body");
+  const { meta: parsed } = parseTaskFile(serialized);
+
+  assert(serialized.includes("projects: !!json"), "serialize: complex array uses tagged json");
+  assert(serialized.includes("context: !!json"), "serialize: object uses tagged json");
+  assertDeepEqual(parsed.projects, meta.projects, "roundtrip: projects preserved");
+  assertDeepEqual(parsed.context, meta.context, "roundtrip: object preserved");
 }
 
 // ── Unit Tests: extractMeta ──
@@ -227,6 +260,33 @@ function testNormalizeProjectsArray() {
   assertEqual(projects[0].name, "a", "normalize: array first name");
 }
 
+function testNormalizeProjectsInvalidEntriesFallback() {
+  const fallbackProject = "/tmp/ucm-fallback-project";
+  const projects = normalizeProjects({
+    projects: ["[object Object]", "", null],
+    project: fallbackProject,
+  });
+  assertEqual(projects.length, 1, "normalize: invalid array falls back to project");
+  assertEqual(projects[0].path, path.resolve(fallbackProject), "normalize: fallback project path resolved");
+  assertEqual(projects[0].role, "primary", "normalize: fallback project role");
+}
+
+function testNormalizeProjectsDedupAndDefaults() {
+  const relPath = "tmp/ucm-normalize-rel";
+  const absPath = path.resolve(relPath);
+  const projects = normalizeProjects({
+    projects: [
+      relPath,
+      { path: absPath, name: "duplicate", role: "secondary" },
+      { path: "/tmp/ucm-second" },
+    ],
+  });
+  assertEqual(projects.length, 2, "normalize: deduplicates by resolved path");
+  assertEqual(projects[0].path, absPath, "normalize: keeps resolved path");
+  assertEqual(projects[0].role, "primary", "normalize: first project defaults to primary");
+  assertEqual(projects[1].role, "secondary", "normalize: subsequent project defaults to secondary");
+}
+
 function testNormalizeProjectsEmpty() {
   const projects = normalizeProjects({});
   assertEqual(projects.length, 0, "normalize: empty returns []");
@@ -250,12 +310,96 @@ async function testCreateTempWorkspace() {
 async function testUpdateTaskProject() {
   const taskId = generateTaskId();
   const taskPath = path.join(TASKS_DIR, "pending", `${taskId}.md`);
-  await writeFile(taskPath, serializeTaskFile({ id: taskId, title: "test", status: "pending" }, "body"));
+  await writeFile(taskPath, serializeTaskFile({
+    id: taskId,
+    title: "test",
+    status: "pending",
+    projects: [{ path: "/tmp/old-project", name: "old-project", role: "primary" }],
+  }, "body"));
   await updateTaskProject(taskId, "/tmp/my-project");
   const content = await readFile(taskPath, "utf-8");
   const { meta } = parseTaskFile(content);
   assertEqual(meta.project, "/tmp/my-project", "updateTaskProject: project field updated");
+  assertEqual(meta.projects, undefined, "updateTaskProject: legacy projects cleared");
   await rm(taskPath);
+}
+
+async function testMoveTaskSerializesConcurrentTransitions() {
+  const taskId = generateTaskId();
+  const doneDir = path.join(TASKS_DIR, "done");
+  const doneBefore = (await readdir(doneDir)).filter((f) => f.endsWith(".md")).length;
+  const pendingPath = path.join(TASKS_DIR, "pending", `${taskId}.md`);
+  await writeFile(
+    pendingPath,
+    serializeTaskFile({
+      id: taskId,
+      title: "concurrent move test",
+      state: "pending",
+      created: new Date().toISOString(),
+    }, "body"),
+  );
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => ({ daemonStatus: "running", pausedAt: null, pauseReason: null, activeTasks: [], suspendedTasks: [], stats: { totalSpawns: 0 } }),
+    inflightTasks: new Set(),
+    taskQueue: [],
+    getResourcePressure: () => "normal",
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    setProbeIntervalMs: () => {},
+    requeueSuspendedTasks: async () => {},
+    markStateDirty: () => {},
+    reloadConfig: async () => {},
+    log: () => {},
+    wakeProcessLoop: () => {},
+    broadcastWs: () => {},
+    activeForgePipelines: new Map(),
+    updateTaskMeta: () => {},
+    QUOTA_PROBE_INITIAL_MS: 60_000,
+  });
+
+  await Promise.all([
+    ucmdHandlers.moveTask(taskId, "pending", "running"),
+    ucmdHandlers.moveTask(taskId, "running", "done"),
+  ]);
+
+  const donePath = path.join(TASKS_DIR, "done", `${taskId}.md`);
+  const doneContent = await readFile(donePath, "utf-8");
+  const { meta } = parseTaskFile(doneContent);
+  assertEqual(meta.state, "done", "moveTask serializes concurrent transitions: final state done");
+  assert(typeof meta.completedAt === "string", "moveTask serializes concurrent transitions: completedAt set");
+
+  for (const state of TASK_STATES) {
+    const taskPath = path.join(TASKS_DIR, state, `${taskId}.md`);
+    const tmpPath = taskPath + ".tmp";
+    try { await rm(taskPath, { force: true }); } catch {}
+    try { await rm(tmpPath, { force: true }); } catch {}
+  }
+
+  const doneAfter = (await readdir(doneDir)).filter((f) => f.endsWith(".md")).length;
+  assertEqual(doneAfter, doneBefore, "moveTask serializes concurrent transitions: cleanup restored done count");
+  ucmdHandlers.setDeps({});
+}
+
+async function testHandleLogsTailAndLineLimits() {
+  const taskId = `logtail-${crypto.randomBytes(4).toString("hex")}`;
+  const logPath = path.join(LOGS_DIR, `${taskId}.log`);
+  const lines = Array.from({ length: 2200 }, (_, i) => `line-${i + 1}`);
+  await writeFile(logPath, lines.join("\n"));
+
+  try {
+    const tail5 = await ucmdHandlers.handleLogs({ taskId, lines: 5 });
+    assertEqual(tail5, lines.slice(-5).join("\n"), "handleLogs: returns last N lines");
+
+    const defaulted = await ucmdHandlers.handleLogs({ taskId, lines: -7 });
+    assertEqual(defaulted.split("\n").length, 100, "handleLogs: invalid line count falls back to default");
+
+    const capped = await ucmdHandlers.handleLogs({ taskId, lines: 999999 });
+    assertEqual(capped.split("\n").length, 2000, "handleLogs: line count capped to max");
+  } finally {
+    try { await rm(logPath, { force: true }); } catch {}
+  }
 }
 
 // ── Unit Tests: generateTaskId ──
@@ -1267,6 +1411,18 @@ function testDefaultStateDataVersion() {
   assertEqual(state.dataVersion, DATA_VERSION, "defaultState: dataVersion matches DATA_VERSION");
 }
 
+function testMergeStateStats() {
+  const merged = mergeStateStats({ stats: { tasksCompleted: 7 } });
+  assertEqual(merged.tasksCompleted, 7, "mergeStateStats: keeps saved tasksCompleted");
+  assertEqual(merged.tasksFailed, 0, "mergeStateStats: fills missing tasksFailed");
+  assertEqual(merged.totalSpawns, 0, "mergeStateStats: fills missing totalSpawns");
+
+  const invalid = mergeStateStats({ stats: { tasksCompleted: "bad", tasksFailed: NaN, totalSpawns: 3 } });
+  assertEqual(invalid.tasksCompleted, 0, "mergeStateStats: invalid tasksCompleted fallback");
+  assertEqual(invalid.tasksFailed, 0, "mergeStateStats: invalid tasksFailed fallback");
+  assertEqual(invalid.totalSpawns, 3, "mergeStateStats: preserves valid totalSpawns");
+}
+
 function testSourceRoot() {
   // SOURCE_ROOT should be an actual git repo
   try {
@@ -1730,6 +1886,41 @@ async function testSaveAndLoadSnapshot() {
 
   const all = await loadAllSnapshots();
   assert(all.length >= 1, "loadAllSnapshots: at least 1");
+}
+
+async function testSaveSnapshotCollisionSafeNames() {
+  const RealDate = Date;
+  const fixedIso = "2099-01-01T00:00:00.000Z";
+  class FixedDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(fixedIso);
+      else super(...args);
+    }
+    static now() {
+      return new RealDate(fixedIso).getTime();
+    }
+    static parse(value) {
+      return RealDate.parse(value);
+    }
+    static UTC(...args) {
+      return RealDate.UTC(...args);
+    }
+  }
+
+  global.Date = FixedDate;
+  try {
+    const firstPath = await saveSnapshot({ taskCount: 101, successRate: 0.4 });
+    const secondPath = await saveSnapshot({ taskCount: 102, successRate: 0.5 });
+
+    assert(firstPath !== secondPath, "saveSnapshot collision: unique file paths");
+    assert(path.basename(firstPath).endsWith("-000.json"), "saveSnapshot collision: first file has -000 suffix");
+    assert(path.basename(secondPath).endsWith("-001.json"), "saveSnapshot collision: second file has -001 suffix");
+
+    const latest = await loadLatestSnapshot();
+    assertEqual(latest.metrics.taskCount, 102, "saveSnapshot collision: latest snapshot is the newest sequence");
+  } finally {
+    global.Date = RealDate;
+  }
 }
 
 async function testCleanupOldSnapshots() {
@@ -2513,6 +2704,34 @@ function testAnalyzeCommitHistoryNonexistent() {
   assertEqual(result.avgDiffLines, 0, "commitHistory nonexistent avgDiffLines");
 }
 
+async function testAnalyzeCommitHistorySingleRootCommit() {
+  const repoPath = path.join(os.tmpdir(), `ucm-commit-history-${process.pid}-${Date.now()}`);
+  await mkdir(repoPath, { recursive: true });
+
+  try {
+    execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repoPath, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoPath, stdio: "ignore" });
+    await writeFile(path.join(repoPath, "index.js"), "console.log('root commit');\n");
+    execFileSync("git", ["add", "index.js"], { cwd: repoPath, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: repoPath, stdio: "ignore" });
+
+    const result = analyzeCommitHistory(repoPath, { windowDays: 3650 });
+    assertEqual(result.commitCount, 1, "commitHistory root commit count");
+    assert(result.avgDiffLines >= 1, "commitHistory root commit avgDiffLines includes insertions");
+    assert(result.maxDiffLines >= 1, "commitHistory root commit maxDiffLines includes insertions");
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+}
+
+function testParseShortstatTotalLines() {
+  assertEqual(parseShortstatTotalLines(" 1 file changed, 5 insertions(+), 2 deletions(-)"), 7, "parseShortstat insertions+deletions");
+  assertEqual(parseShortstatTotalLines(" 1 file changed, 3 insertions(+)"), 3, "parseShortstat insertions only");
+  assertEqual(parseShortstatTotalLines(" 1 file changed, 4 deletions(-)"), 4, "parseShortstat deletions only");
+  assertEqual(parseShortstatTotalLines(""), 0, "parseShortstat empty string");
+}
+
 function testEmptyCommitMetrics() {
   const result = emptyCommitMetrics(14);
   assertEqual(result.commitCount, 0, "emptyCommitMetrics commitCount");
@@ -2787,6 +3006,28 @@ function testCheckRequiredArtifactsLogic() {
   assert(STAGE_ARTIFACTS.implement.requires.includes("design.md"), "STAGE_ARTIFACTS: implement requires design.md");
 }
 
+async function testCheckRequiredArtifactsCustomPipelineEnforced() {
+  const { ForgePipeline } = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+
+  const taskId = `forge-artifacts-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const pipeline = new ForgePipeline({ taskId, input: "custom pipeline test", pipeline: "design,implement,deliver" });
+  pipeline.dag = new TaskDag({ id: taskId, status: "in_progress", pipeline: "design,implement,deliver" });
+  pipeline.stages = ["design", "implement", "deliver"];
+
+  let threw = false;
+  let message = "";
+  try {
+    await pipeline.checkRequiredArtifacts("implement");
+  } catch (e) {
+    threw = true;
+    message = e.message;
+  }
+
+  assert(threw, "checkRequiredArtifacts: custom pipeline enforces missing artifact check");
+  assert(message.includes("design.md"), "checkRequiredArtifacts: reports missing design.md");
+}
+
 function testCustomPipelineParsing() {
   const { FORGE_PIPELINES, STAGE_ARTIFACTS } = require("../lib/core/constants");
 
@@ -2811,6 +3052,55 @@ function testCustomPipelineParsing() {
   const badInvalid = badStages.filter((s) => !validStages.has(s));
   assertEqual(badInvalid.length, 1, "custom pipeline: detects invalid stage");
   assertEqual(badInvalid[0], "foobar", "custom pipeline: identifies foobar");
+}
+
+async function testSubtaskStagesApplyStageGates() {
+  const { ForgePipeline } = require("../lib/forge/index");
+  const { TaskDag } = require("../lib/core/task");
+
+  const taskId = `forge-gate-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const pipeline = new ForgePipeline({
+    taskId,
+    input: "gate test",
+    pipeline: "design,implement,verify,polish,deliver",
+    stageApproval: { design: false, polish: false },
+  });
+  const dag = new TaskDag({ id: taskId, status: "in_progress", pipeline: "design,implement,verify,polish,deliver" });
+  dag.addTask({ id: "st-1", title: "subtask-1", description: "test subtask", blockedBy: [] });
+  dag.save = async () => {};
+  pipeline.dag = dag;
+
+  const calls = [];
+  pipeline.runStage = async (stageName) => {
+    calls.push(`run:${stageName}`);
+    return { passed: true };
+  };
+  pipeline.runImplementVerifyLoop = async () => {
+    calls.push("run:implement-verify-loop");
+  };
+  pipeline.waitForStageGate = async (stageName) => {
+    calls.push(`gate:${stageName}`);
+  };
+
+  await pipeline.runSubtaskStages();
+
+  assert(calls.includes("run:design"), "subtask gates: design stage executed");
+  assert(calls.includes("gate:design"), "subtask gates: waits for design gate");
+  assert(calls.includes("run:polish"), "subtask gates: polish stage executed");
+  assert(calls.includes("gate:polish"), "subtask gates: waits for polish gate");
+}
+
+function testImplementVerifyLoopIncludesStageGates() {
+  const forgeSource = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "lib", "forge", "index.js"), "utf-8"
+  );
+  const loopSection = forgeSource.slice(
+    forgeSource.indexOf("async runImplementVerifyLoop"),
+    forgeSource.indexOf("async learnToHivemind")
+  );
+  assert(loopSection.includes('waitForStageGate("implement")'), "implement loop: waits for implement gate");
+  assert(loopSection.includes('waitForStageGate("verify")'), "implement loop: waits for verify gate");
+  assert(loopSection.includes('waitForStageGate("ux-review")'), "implement loop: waits for ux-review gate");
 }
 
 function testSanitizeContentPatterns() {
@@ -3002,6 +3292,23 @@ function testServerTaskIdValidation() {
   // path traversal 방지: logs, diff, abort, approve, reject에 모두 적용
   const validateCalls = (serverSource.match(/validateTaskId/g) || []).length;
   assert(validateCalls >= 7, `server: validateTaskId called ${validateCalls} times (expect >=7)`);
+}
+
+function testUcmdHandlersUsesBoundedDagSummaryConcurrency() {
+  const handlersSource = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "lib", "ucmd-handlers.js"), "utf-8"
+  );
+  assert(handlersSource.includes("LIST_DAG_SUMMARY_CONCURRENCY"), "handlers: has DAG summary concurrency constant");
+  assert(handlersSource.includes("mapWithConcurrency(dagSummaryTargets"), "handlers: DAG summary uses bounded concurrency");
+}
+
+function testUcmdServerForgeSafetyChecks() {
+  const serverSource = require("fs").readFileSync(
+    require("path").join(__dirname, "..", "lib", "ucmd-server.js"), "utf-8"
+  );
+  assert(serverSource.includes("ensureForgeCapacity"), "socket: forge capacity guard exists");
+  assert(serverSource.includes("resume requires project"), "socket: resume validates project");
+  assert(serverSource.includes("pipeline:error"), "socket: forge errors broadcast to subscribers");
 }
 
 function testWireEventsIncludesAbort() {
@@ -3446,6 +3753,7 @@ function testBrowserModuleExports() {
   assertEqual(typeof browser.extractPortFromScript, "function", "browser: exports extractPortFromScript");
   assertEqual(typeof browser.pickDevScript, "function", "browser: exports pickDevScript");
   assertEqual(typeof browser.scriptLooksLikeWebServer, "function", "browser: exports scriptLooksLikeWebServer");
+  assertEqual(typeof browser.splitCommandString, "function", "browser: exports splitCommandString");
 }
 
 function testBrowserResolvePort() {
@@ -3480,6 +3788,15 @@ function testScriptLooksLikeWebServer() {
   assertEqual(scriptLooksLikeWebServer("react-scripts start"), true, "scriptWebServer: react-scripts");
   assertEqual(scriptLooksLikeWebServer("jest --coverage"), false, "scriptWebServer: jest");
   assertEqual(scriptLooksLikeWebServer("tsc && node dist/index.js"), false, "scriptWebServer: tsc");
+}
+
+function testSplitCommandString() {
+  const { splitCommandString } = require("../lib/core/browser");
+  assertDeepEqual(splitCommandString("npm run dev"), ["npm", "run", "dev"], "splitCommand: simple split");
+  assertDeepEqual(splitCommandString("node --label \"my app\""), ["node", "--label", "my app"], "splitCommand: quoted argument");
+  assertDeepEqual(splitCommandString("npm run dev\\ server"), ["npm", "run", "dev server"], "splitCommand: escaped space");
+  assertDeepEqual(splitCommandString("   npm   run   dev   "), ["npm", "run", "dev"], "splitCommand: extra whitespace");
+  assertDeepEqual(splitCommandString(""), [], "splitCommand: empty input");
 }
 
 function testFrameworkSignatures() {
@@ -4357,14 +4674,20 @@ async function main() {
   testParseTaskFileBooleans();
   testParseTaskFileNoFrontmatter();
   testParseTaskFileColonInValue();
+  testParseTaskFileTaggedJson();
   testSerializeTaskFile();
   testSerializeRoundtrip();
+  testSerializeRoundtripComplexMeta();
   testExtractMeta();
   testNormalizeProjectsSingle();
   testNormalizeProjectsArray();
+  testNormalizeProjectsInvalidEntriesFallback();
+  testNormalizeProjectsDedupAndDefaults();
   testNormalizeProjectsEmpty();
   await testCreateTempWorkspace();
   await testUpdateTaskProject();
+  await testMoveTaskSerializesConcurrentTransitions();
+  await testHandleLogsTailAndLineLimits();
   testGenerateTaskId();
   console.log();
 
@@ -4388,6 +4711,7 @@ async function main() {
   console.log("Self-Update Tests:");
   testDataVersion();
   testDefaultStateDataVersion();
+  testMergeStateStats();
   testSourceRoot();
   console.log();
 
@@ -4410,6 +4734,8 @@ async function main() {
   console.log("Commit History Tests:");
   testAnalyzeCommitHistory();
   testAnalyzeCommitHistoryNonexistent();
+  await testAnalyzeCommitHistorySingleRootCommit();
+  testParseShortstatTotalLines();
   testEmptyCommitMetrics();
   testFormatCommitHistory();
   testFormatCommitHistoryEmpty();
@@ -4516,6 +4842,7 @@ async function main() {
   testCompareSnapshotsRegressed();
   testCompareSnapshotsNeutral();
   await testSaveAndLoadSnapshot();
+  await testSaveSnapshotCollisionSafeNames();
   await testCleanupOldSnapshots();
   await testFindProposalByTaskId();
   console.log();
@@ -4555,7 +4882,10 @@ async function main() {
   testBuildCommandProviders();
   testStageModelsProxy();
   testCheckRequiredArtifactsLogic();
+  await testCheckRequiredArtifactsCustomPipelineEnforced();
   testCustomPipelineParsing();
+  await testSubtaskStagesApplyStageGates();
+  testImplementVerifyLoopIncludesStageGates();
   testSanitizeContentPatterns();
   testParseArgsCli();
   testGetNextAction();
@@ -4566,6 +4896,8 @@ async function main() {
   testAgentCodexJsonParsing();
   testRsaClassifySkipPermissions();
   testServerTaskIdValidation();
+  testUcmdHandlersUsesBoundedDagSummaryConcurrency();
+  testUcmdServerForgeSafetyChecks();
   testWireEventsIncludesAbort();
   testSubtasksRunSequentially();
   testParallelTokenUsage();
@@ -4605,6 +4937,7 @@ async function main() {
   testExtractPortFromScript();
   testPickDevScript();
   testScriptLooksLikeWebServer();
+  testSplitCommandString();
   testFrameworkSignatures();
   console.log();
 
