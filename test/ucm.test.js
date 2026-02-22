@@ -1851,6 +1851,14 @@ function testUiServerResearchRoute() {
   assert(found, "uiServer: PROXY_ROUTES has research_project POST route");
 }
 
+function testUiServerResolveHomePath() {
+  const { resolveHomePath } = require("../lib/ucm-ui-server.js");
+  const home = os.homedir();
+  assertEqual(resolveHomePath("~"), home, "uiServer resolveHomePath: expands bare ~");
+  assertEqual(resolveHomePath("~/ucm-test"), path.join(home, "ucm-test"), "uiServer resolveHomePath: expands ~/ prefix");
+  assertEqual(resolveHomePath("  ~/trimmed  "), path.join(home, "trimmed"), "uiServer resolveHomePath: trims and expands");
+}
+
 function testDashboardCommandPassesDevFlag() {
   const src = fs.readFileSync(path.join(__dirname, "..", "bin", "ucm.js"), "utf-8");
   assert(src.includes("await startUiServer({ port, dev: opts.dev });"), "dashboard cmd: passes --dev flag to UI server");
@@ -3253,6 +3261,92 @@ function testCliRejectsInvalidNumericOptions() {
   });
   assertEqual(invalidLines.status, 1, "cli option validation: invalid --lines exits with code 1");
   assert((invalidLines.stderr || "").includes("--lines 옵션은 1 이상이어야 합니다"), "cli option validation: invalid --lines message");
+}
+
+async function testCliLogsFollowStreamsNewLines() {
+  const cliPath = path.join(__dirname, "..", "bin", "ucm.js");
+  const tempRoot = path.join("/tmp", `ucf-${process.pid}-${crypto.randomBytes(2).toString("hex")}`);
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  let logCalls = 0;
+  let statusCalls = 0;
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(JSON.stringify({ id: null, ok: false, error: "invalid request" }) + "\n");
+        return;
+      }
+
+      let data = null;
+      if (request.method === "stats") {
+        data = { daemonStatus: "running" };
+      } else if (request.method === "logs") {
+        logCalls += 1;
+        if (logCalls === 1) data = "line-1";
+        else if (logCalls === 2) data = "line-1\nline-2";
+        else data = "line-1\nline-2\nline-3";
+      } else if (request.method === "status") {
+        statusCalls += 1;
+        data = { taskId: request.params?.taskId, state: statusCalls >= 3 ? "done" : "running" };
+      } else {
+        conn.end(JSON.stringify({ id: request.id || null, ok: false, error: `unknown method: ${request.method}` }) + "\n");
+        return;
+      }
+
+      conn.end(JSON.stringify({ id: request.id || null, ok: true, data }) + "\n");
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const child = spawn(process.execPath, [cliPath, "logs", "task-follow", "--follow", "--lines", "20"], {
+      env: { ...process.env, UCM_DIR: tempRoot, UCM_LOG_FOLLOW_INTERVAL_MS: "20" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf-8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf-8"); });
+
+    const result = await Promise.race([
+      new Promise((resolve, reject) => {
+        child.on("close", (code, signal) => resolve({ code, signal }));
+        child.on("error", reject);
+      }),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          try { child.kill("SIGTERM"); } catch {}
+          reject(new Error(`cli logs --follow timed out. stdout=${JSON.stringify(stdout)} stderr=${JSON.stringify(stderr)}`));
+        }, 5000);
+      }),
+    ]);
+
+    assertEqual(result.code, 0, "cli logs --follow: exits with code 0");
+    assert(stdout.includes("line-1"), "cli logs --follow: prints initial line");
+    assert(stdout.includes("line-2"), "cli logs --follow: prints appended line");
+    assert(stdout.includes("line-3"), "cli logs --follow: prints final appended line");
+    const line1Count = (stdout.match(/line-1/g) || []).length;
+    assertEqual(line1Count, 1, "cli logs --follow: does not duplicate already printed lines");
+    assert(statusCalls >= 3, "cli logs --follow: polls until task leaves running state");
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try { await rm(tempRoot, { recursive: true, force: true }); } catch {}
+  }
 }
 
 function testGetNextAction() {
@@ -4880,6 +4974,7 @@ async function main() {
   testDashboardCommandPassesDevFlag();
   testDashboardCommandUsesCrossPlatformOpen();
   testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();
+  testUiServerResolveHomePath();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
   testUiRightPanelRefinementGuard();
@@ -4978,6 +5073,7 @@ async function main() {
   testSanitizeContentPatterns();
   testParseArgsCli();
   testCliRejectsInvalidNumericOptions();
+  await testCliLogsFollowStreamsNewLines();
   testGetNextAction();
   testDetectOrphanLogic();
   testTaskDagSaveChaining();

@@ -309,6 +309,16 @@ const apiTestGroups = [
         },
       },
       {
+        name: "GET /api/browse?path=~ → 200, resolves to home directory",
+        fn: async (env) => {
+          const os = require("os");
+          const res = await env.httpRequest("GET", `/api/browse?path=${encodeURIComponent("~")}`);
+          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.body?.current !== os.homedir()) return { pass: false, reason: `unexpected current: ${res.body?.current}` };
+          return { pass: true };
+        },
+      },
+      {
         name: "GET /api/artifacts/:taskId → 200, has files key",
         fn: async (env, ctx) => {
           const id = ctx.taskId || "0000000000";

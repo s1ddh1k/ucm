@@ -14,6 +14,11 @@ const {
 const { createSocketClient } = require("../lib/socket-client.js");
 
 const DAEMON_DIR = path.join(UCM_DIR, "daemon");
+const LOG_FOLLOW_INTERVAL_MS = (() => {
+  const raw = Number(process.env.UCM_LOG_FOLLOW_INTERVAL_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return 1000;
+  return Math.floor(raw);
+})();
 
 const USAGE = `ucm — Unified CLI
 
@@ -203,6 +208,40 @@ function readStdin() {
     process.stdin.on("end", () => resolve(data.trim()));
     process.stdin.on("error", reject);
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function splitLogLines(logText) {
+  if (!logText || logText === "(no logs)") return [];
+  const lines = String(logText).replace(/\r\n/g, "\n").split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+function appendedLogLines(previousLines, nextLines) {
+  if (previousLines.length === 0) return nextLines.slice();
+  const maxOverlap = Math.min(previousLines.length, nextLines.length);
+  for (let overlap = maxOverlap; overlap >= 0; overlap--) {
+    let matched = true;
+    for (let i = 0; i < overlap; i++) {
+      if (previousLines[previousLines.length - overlap + i] !== nextLines[i]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return nextLines.slice(overlap);
+    }
+  }
+  return nextLines.slice();
+}
+
+function isTaskActive(task) {
+  const state = String(task?.state || task?.status || "").toLowerCase();
+  return state === "pending" || state === "running" || state === "in_progress";
 }
 
 // ── Socket Communication ──
@@ -455,6 +494,27 @@ async function cmdLogs(opts) {
     params: { taskId, lines: opts.lines },
   });
   console.log(logs);
+
+  if (!opts.follow) return;
+
+  let lastLines = splitLogLines(logs);
+  while (true) {
+    await sleep(LOG_FOLLOW_INTERVAL_MS);
+
+    const [status, currentLogs] = await Promise.all([
+      socketRequest({ method: "status", params: { taskId } }),
+      socketRequest({ method: "logs", params: { taskId, lines: opts.lines } }),
+    ]);
+
+    const currentLines = splitLogLines(currentLogs);
+    const newLines = appendedLogLines(lastLines, currentLines);
+    if (newLines.length > 0) {
+      process.stdout.write(newLines.join("\n") + "\n");
+    }
+    lastLines = currentLines;
+
+    if (!isTaskActive(status)) break;
+  }
 }
 
 async function cmdRetry(opts) {
