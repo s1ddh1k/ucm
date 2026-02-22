@@ -4261,6 +4261,7 @@ async function testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails() {
 async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
+  const expectedMaxRounds = Math.max(15, Object.values(REFINEMENT_GREENFIELD).reduce((sum, count) => sum + count, 0));
   let spawnCount = 0;
   let finishedResolve;
   const finishedPromise = new Promise((resolve) => { finishedResolve = resolve; });
@@ -4301,7 +4302,7 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
     sessionId = started.sessionId;
 
     await finishedPromise;
-    assertEqual(spawnCount, 15, "autopilot should stop after maxRounds");
+    assertEqual(spawnCount, expectedMaxRounds, "autopilot should stop after maxRounds");
     const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
     const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
     assertEqual(completes.length, 0, "autopilot should not emit complete when coverage is incomplete");
@@ -4314,6 +4315,78 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
       cancelErr = err;
     }
     assert(cancelErr && cancelErr.message.includes("session not found"), "autopilot max rounds should auto-clean session");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
+async function testAutopilotCanCompleteWhenCoveragePlanIsSatisfied() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let spawnCount = 0;
+  let sessionId = null;
+  let terminalResolve;
+  const terminalPromise = new Promise((resolve) => { terminalResolve = resolve; });
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if ((event === "refinement:complete" || event === "refinement:error") && data?.sessionId === sessionId) {
+        terminalResolve();
+      }
+    },
+    submitTask: async () => ({ id: "autopilot-complete-coverage" }),
+    spawnAgent: async () => {
+      const area = answerPlan[Math.min(spawnCount, answerPlan.length - 1)] || "기능 요구사항";
+      spawnCount += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: `autopilot question ${spawnCount}`,
+          area,
+          answer: `autopilot answer ${spawnCount}`,
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot complete with full coverage",
+      description: "autopilot should complete when all expected coverage slots are answered",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await terminalPromise;
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 1, "autopilot completion coverage: emits complete when plan satisfies expected coverage");
+    assertEqual(errors.length, 0, "autopilot completion coverage: does not emit error when coverage is complete");
+    assertEqual(spawnCount, answerPlan.length, "autopilot completion coverage: runs enough rounds to satisfy expected coverage");
+
+    let finalizeErr = null;
+    let finalized = null;
+    try {
+      finalized = await ucmdRefinement.finalizeRefinement(sessionId);
+    } catch (e) {
+      finalizeErr = e;
+    }
+    assertEqual(finalizeErr, null, "autopilot completion coverage: finalize is allowed after complete");
+    assertEqual(finalized?.taskId, "autopilot-complete-coverage", "autopilot completion coverage: finalize returns submitted task id");
   } finally {
     if (sessionId) {
       try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
@@ -8829,6 +8902,7 @@ async function main() {
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
+  await testAutopilotCanCompleteWhenCoveragePlanIsSatisfied();
   await testRefinementIgnoresLateAnswerAfterCompletion();
   await testRefinementRejectsPrematureDoneWithoutCoverage();
   await testRefinementCleansSessionAfterRepeatedPrematureDoneWithoutCoverage();
