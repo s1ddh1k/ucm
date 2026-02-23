@@ -4451,6 +4451,111 @@ async function testRefinementSwitchToAutopilotSuppressesLateQuestionEvent() {
   }
 }
 
+async function testRefinementSwitchToAutopilotSurvivesModeChangedBroadcastFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveInteractiveSpawn = null;
+  let autopilotSpawnCalls = 0;
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      if (event === "refinement:mode_changed" && data?.sessionId === sessionId) {
+        throw new Error("mode changed broadcast failed intentionally");
+      }
+      events.push({ event, data });
+    },
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async (_prompt, opts) => {
+      const stage = String(opts?.stage || "");
+      if (stage.startsWith("refinement-q-")) {
+        return new Promise((resolve) => { resolveInteractiveSpawn = resolve; });
+      }
+      if (stage.startsWith("refinement-auto-")) {
+        autopilotSpawnCalls += 1;
+        throw new Error("autopilot spawn failed intentionally");
+      }
+      return { status: "done", stdout: JSON.stringify({ done: true }) };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot mode_changed broadcast failure",
+      description: "autopilot should still start even if mode_changed broadcast fails",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let switchErr = null;
+    try {
+      await ucmdRefinement.switchToAutopilot(sessionId);
+    } catch (e) {
+      switchErr = e;
+    }
+
+    if (resolveInteractiveSpawn) {
+      resolveInteractiveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          question: "late interactive question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+          done: false,
+        }),
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assertEqual(switchErr, null, "refinement autopilot mode_changed broadcast failure: switch should not throw");
+    assertEqual(autopilotSpawnCalls, 1, "refinement autopilot mode_changed broadcast failure: autopilot loop starts once");
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(errors.length, 1, "refinement autopilot mode_changed broadcast failure: emits refinement:error once");
+    assert(
+      String(errors[0]?.data?.error || "").includes("autopilot spawn failed intentionally"),
+      "refinement autopilot mode_changed broadcast failure: includes autopilot error",
+    );
+
+    const lateQuestions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    assertEqual(lateQuestions.length, 0, "refinement autopilot mode_changed broadcast failure: does not emit late question");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+    assert(
+      cancelErr && cancelErr.message.includes("session not found"),
+      "refinement autopilot mode_changed broadcast failure: session is cleaned after autopilot error",
+    );
+  } finally {
+    if (resolveInteractiveSpawn) {
+      resolveInteractiveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          question: "cleanup interactive question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+          done: false,
+        }),
+      });
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementSwitchToAutopilotRejectsDuplicateSwitch() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9737,6 +9842,7 @@ async function main() {
   await testRefinementFinalizeSurvivesFinalizedBroadcastFailure();
   await testRefinementCompletionSurvivesCompleteBroadcastFailure();
   await testRefinementSwitchToAutopilotSuppressesLateQuestionEvent();
+  await testRefinementSwitchToAutopilotSurvivesModeChangedBroadcastFailure();
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
