@@ -2989,6 +2989,63 @@ function testQnaCliRejectsFeedbackAndFeedbackFileTogether() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
+function testSpecCliFailsOnValidationErrors() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "spec-validate-fail-"));
+  const decisionsPath = path.join(tmpDir, "decisions.md");
+  const llmStubPath = path.join(tmpDir, "claude");
+  fs.writeFileSync(
+    decisionsPath,
+    [
+      "### 인증",
+      "",
+      "- **Q:** 인증 방식은 무엇인가?",
+      "  - **A:** 이메일/비밀번호 기반 로그인",
+      "  - **이유:** 기본 인증이 필요함",
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    llmStubPath,
+    [
+      "#!/bin/sh",
+      "count_file=\"$0.count\"",
+      "count=0",
+      "if [ -f \"$count_file\" ]; then count=$(cat \"$count_file\"); fi",
+      "count=$((count+1))",
+      "echo \"$count\" > \"$count_file\"",
+      "if [ \"$count\" -eq 1 ]; then",
+      "  echo '## Requirements'",
+      "  echo '- WHEN user saves THE SYSTEM SHALL persist draft.'",
+      "else",
+      "  echo 'this is not json output'",
+      "fi",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(llmStubPath, 0o755);
+
+  const specPath = path.join(__dirname, "..", "lib", "spec.js");
+  const result = spawnSync(
+    "node",
+    [specPath, "--decisions", decisionsPath, "--provider", "claude"],
+    {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        PATH: `${tmpDir}${path.delimiter}${process.env.PATH || ""}`,
+      },
+    },
+  );
+
+  assert(result.status !== 0, "spec cli: validation failure exits non-zero");
+  assert(
+    result.stderr.includes("검증 실패:"),
+    "spec cli: validation error message is shown",
+  );
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 function testParseDecisionsFileBasic() {
   const content = `### 제품 정의
 
@@ -10211,6 +10268,7 @@ async function main() {
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
+  testSpecCliFailsOnValidationErrors();
   testParseDecisionsFileBasic();
   testParseDecisionsFileEmpty();
   testParseDecisionsFileNoReason();
