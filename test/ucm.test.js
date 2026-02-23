@@ -2744,6 +2744,19 @@ function testComputeCoverageRefinement() {
   assertEqual(Object.keys(coverage).length, 6, "computeCoverage refinement: 6 areas");
 }
 
+function testComputeCoverageContradictoryAnswersDoNotInflateCoverage() {
+  const decisions = [
+    { area: "작업 목표", question: "어떤 모듈을 변경하나요?", answer: "lib/qna.js" },
+    { area: "작업 목표", question: "어떤 모듈을 변경하나요?", answer: "lib/spec.js" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_BROWNFIELD);
+  assertEqual(
+    coverage["작업 목표"],
+    0.5,
+    "computeCoverage contradiction: same question with conflicting answers counts as one covered slot",
+  );
+}
+
 function testIsFullyCovered() {
   assert(isFullyCovered({ a: 1.0, b: 1.0, c: 1.0 }), "isFullyCovered all 1.0");
   assert(!isFullyCovered({ a: 1.0, b: 0.5, c: 1.0 }), "isFullyCovered not all 1.0");
@@ -10018,6 +10031,7 @@ async function main() {
   testComputeCoverageBrownfield();
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
+  testComputeCoverageContradictoryAnswersDoNotInflateCoverage();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testShouldStopQnaForCoverage();
