@@ -3077,6 +3077,61 @@ function testReqBuildQnaArgsUsesFeedbackFile() {
   assert(!args.includes("--feedback"), "req qna args: does not inline feedback text");
 }
 
+function testQnaCliConsumesLlmJsonDataEnvelope() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-json-envelope-"));
+  const outputDir = path.join(tmpDir, "output");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const codexStubPath = path.join(tmpDir, "codex");
+  fs.writeFileSync(
+    codexStubPath,
+    [
+      "#!/bin/sh",
+      "count_file=\"$0.count\"",
+      "count=0",
+      "if [ -f \"$count_file\" ]; then count=$(cat \"$count_file\"); fi",
+      "count=$((count+1))",
+      "echo \"$count\" > \"$count_file\"",
+      "if [ \"$count\" -eq 1 ]; then",
+      "  cat <<'EOF'",
+      "{\"question\":\"핵심 기능 우선순위는?\",\"options\":[{\"label\":\"로그인\",\"reason\":\"기본 사용자 흐름\"},{\"label\":\"대시보드\",\"reason\":\"핵심 가치 노출\"}],\"area\":\"핵심 기능\",\"done\":false}",
+      "EOF",
+      "else",
+      "  cat <<'EOF'",
+      "{\"question\":\"성능 목표는?\",\"options\":[{\"label\":\"응답 1초\",\"reason\":\"체감 성능 향상\"},{\"label\":\"응답 3초\",\"reason\":\"구현 복잡도 절충\"}],\"area\":\"설계 결정\",\"done\":false}",
+      "EOF",
+      "fi",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(codexStubPath, 0o755);
+
+  const qnaPath = path.join(__dirname, "..", "lib", "qna.js");
+  const result = spawnSync(
+    "node",
+    [qnaPath, "--provider", "codex", "--output", outputDir],
+    {
+      encoding: "utf-8",
+      input: "1\n",
+      env: {
+        ...process.env,
+        PATH: `${tmpDir}${path.delimiter}${process.env.PATH || ""}`,
+      },
+    },
+  );
+
+  assertEqual(result.status, 0, "qna cli json envelope: process exits successfully");
+  const decisionsPath = result.stdout.trim();
+  const decisionsContent = fs.readFileSync(decisionsPath, "utf-8");
+  const decisions = parseDecisionsFile(decisionsContent);
+  assertEqual(decisions.length, 1, "qna cli json envelope: records first answered decision");
+  assertEqual(decisions[0].area, "핵심 기능", "qna cli json envelope: preserves response area");
+  assertEqual(decisions[0].question, "핵심 기능 우선순위는?", "qna cli json envelope: preserves response question");
+  assertEqual(decisions[0].answer, "로그인", "qna cli json envelope: stores selected option label");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 function testQnaCliRejectsFeedbackAndFeedbackFileTogether() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-feedback-"));
   const feedbackPath = path.join(tmpDir, "gap-report.md");
@@ -10382,6 +10437,7 @@ async function main() {
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
+  testQnaCliConsumesLlmJsonDataEnvelope();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testSpecCliFailsOnValidationErrors();
   testParseDecisionsFileBasic();
