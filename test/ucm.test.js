@@ -3134,6 +3134,28 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: rejects done when follow-up only overlaps generic gap keyword",
   );
+
+  const criterionKeywordOverlapFollowups = [
+    { area: "제품 정의", question: "무엇을 만드나요?", answer: "B2B 대시보드" },
+    { area: "핵심 기능", question: "핵심 기능은?", answer: "실시간 분석" },
+    { area: "기술 스택", question: "언어는?", answer: "TypeScript" },
+    { area: "설계 결정", question: "배포 방식은?", answer: "Docker" },
+    { area: "설계 결정", question: "테스트 명세 구조는?", answer: "회귀 테스트 명세 구조를 정리한다" },
+    { area: "핵심 기능", question: "성공/실패 기준은?", answer: "성공은 2초 이내 200, 실패는 3회 재시도 후 500" },
+  ];
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: `# Gap Report
+
+- **인터페이스 명세**: 입력/출력 데이터 구조를 구체화하세요.
+- **테스트 가능성**: 성공/실패 기준을 명확히 정의하세요.`,
+      decisionsCount: criterionKeywordOverlapFollowups.length,
+      feedbackStartDecisionsCount: 4,
+      decisions: criterionKeywordOverlapFollowups,
+    }),
+    "qna done gate: rejects done when follow-up only overlaps generic criterion keyword",
+  );
 }
 
 function testReqBuildQnaArgsUsesFeedbackFile() {
