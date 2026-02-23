@@ -53,7 +53,7 @@ const ucmdSandbox = require("../lib/ucmd-sandbox.js");
 const {
   EXPECTED_GREENFIELD, EXPECTED_BROWNFIELD,
   REFINEMENT_GREENFIELD, REFINEMENT_BROWNFIELD,
-  computeCoverage, isFullyCovered,
+  computeCoverage, isFullyCovered, hasUnresolvedContradictions,
   shouldStopQnaForCoverage, shouldAcceptDoneResponse,
   buildQuestionPrompt, formatDecisions, parseDecisionsFile,
   buildRefinementPrompt, buildAutopilotRefinementPrompt, formatRefinedRequirements,
@@ -2784,19 +2784,52 @@ function testIsFullyCovered() {
   assert(isFullyCovered({ x: 1.5 }), "isFullyCovered > 1.0 counts as covered");
 }
 
+function testHasUnresolvedContradictions() {
+  const contradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+  ];
+  assert(
+    hasUnresolvedContradictions(contradictory),
+    "hasUnresolvedContradictions: detects conflicting answers for same area/question",
+  );
+
+  const nonContradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "백엔드는?", answer: "Node.js" },
+    { area: "제품 정의", question: "목표 사용자는?", answer: "개발자" },
+  ];
+  assert(
+    !hasUnresolvedContradictions(nonContradictory),
+    "hasUnresolvedContradictions: ignores unrelated answers",
+  );
+}
+
 function testShouldStopQnaForCoverage() {
   const fullCoverage = { a: 1.0, b: 1.0 };
   const partialCoverage = { a: 1.0, b: 0.5 };
+  const contradictoryDecisions = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+  ];
 
-  assert(shouldStopQnaForCoverage(fullCoverage, null), "qna coverage stop: full coverage without feedback");
-  assert(shouldStopQnaForCoverage(fullCoverage, "   "), "qna coverage stop: full coverage with blank feedback");
-  assert(!shouldStopQnaForCoverage(fullCoverage, "gap-report: 수용 조건 상세화 필요"), "qna coverage stop: feedback keeps interview running");
-  assert(!shouldStopQnaForCoverage(partialCoverage, "gap-report"), "qna coverage stop: partial coverage never stops");
+  assert(shouldStopQnaForCoverage(fullCoverage, null, []), "qna coverage stop: full coverage without feedback");
+  assert(shouldStopQnaForCoverage(fullCoverage, "   ", []), "qna coverage stop: full coverage with blank feedback");
+  assert(!shouldStopQnaForCoverage(fullCoverage, "gap-report: 수용 조건 상세화 필요", []), "qna coverage stop: feedback keeps interview running");
+  assert(!shouldStopQnaForCoverage(partialCoverage, "gap-report", []), "qna coverage stop: partial coverage never stops");
+  assert(
+    !shouldStopQnaForCoverage(fullCoverage, null, contradictoryDecisions),
+    "qna coverage stop: unresolved contradictions keep interview running",
+  );
 }
 
 function testShouldAcceptDoneResponse() {
   const fullCoverage = { a: 1.0, b: 1.0 };
   const partialCoverage = { a: 1.0, b: 0.5 };
+  const contradictoryDecisions = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+  ];
 
   assert(
     !shouldAcceptDoneResponse({
@@ -2804,6 +2837,7 @@ function testShouldAcceptDoneResponse() {
       feedback: "gap-report: 테스트 가능성 보강 필요",
       decisionsCount: 4,
       feedbackStartDecisionsCount: 4,
+      decisions: [],
     }),
     "qna done gate: rejects done when feedback exists but no follow-up decision",
   );
@@ -2814,6 +2848,7 @@ function testShouldAcceptDoneResponse() {
       feedback: "gap-report: 테스트 가능성 보강 필요",
       decisionsCount: 5,
       feedbackStartDecisionsCount: 4,
+      decisions: [],
     }),
     "qna done gate: accepts done after at least one follow-up decision",
   );
@@ -2824,6 +2859,7 @@ function testShouldAcceptDoneResponse() {
       feedback: null,
       decisionsCount: 3,
       feedbackStartDecisionsCount: null,
+      decisions: [],
     }),
     "qna done gate: accepts done without feedback when fully covered",
   );
@@ -2834,6 +2870,7 @@ function testShouldAcceptDoneResponse() {
       feedback: null,
       decisionsCount: 3,
       feedbackStartDecisionsCount: null,
+      decisions: [],
     }),
     "qna done gate: rejects done when coverage is partial",
   );
@@ -2849,6 +2886,7 @@ function testShouldAcceptDoneResponse() {
       feedback: multiGapFeedback,
       decisionsCount: 5,
       feedbackStartDecisionsCount: 4,
+      decisions: [],
     }),
     "qna done gate: rejects done when multi-gap feedback is only partially addressed",
   );
@@ -2859,8 +2897,20 @@ function testShouldAcceptDoneResponse() {
       feedback: multiGapFeedback,
       decisionsCount: 6,
       feedbackStartDecisionsCount: 4,
+      decisions: [],
     }),
     "qna done gate: accepts done after enough follow-up decisions for all gaps",
+  );
+
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: null,
+      decisionsCount: contradictoryDecisions.length,
+      feedbackStartDecisionsCount: null,
+      decisions: contradictoryDecisions,
+    }),
+    "qna done gate: rejects done when unresolved contradictions exist",
   );
 }
 
@@ -10054,6 +10104,7 @@ async function main() {
   testComputeCoverageContradictoryAnswersDoNotInflateCoverage();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
+  testHasUnresolvedContradictions();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testParseDecisionsFileBasic();
