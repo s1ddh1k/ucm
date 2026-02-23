@@ -4903,6 +4903,77 @@ async function testAutopilotCanCompleteWhenCoveragePlanIsSatisfied() {
   }
 }
 
+async function testAutopilotParseFailureDoesNotConsumeCoverageRoundBudget() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  let spawnCount = 0;
+  let acceptedIndex = 0;
+  let sessionId = null;
+  let terminalResolve;
+  const terminalPromise = new Promise((resolve) => { terminalResolve = resolve; });
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if ((event === "refinement:complete" || event === "refinement:error") && data?.sessionId === sessionId) {
+        terminalResolve();
+      }
+    },
+    submitTask: async () => ({ id: "autopilot-parse-round-budget" }),
+    spawnAgent: async () => {
+      spawnCount += 1;
+      if (spawnCount === 1) {
+        return { status: "done", stdout: "not-json" };
+      }
+      const area = answerPlan[Math.min(acceptedIndex, answerPlan.length - 1)] || "기능 요구사항";
+      acceptedIndex += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: `autopilot parse budget question ${spawnCount}`,
+          area,
+          answer: `autopilot parse budget answer ${spawnCount}`,
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot parse failure round budget",
+      description: "transient parse failure should not consume coverage round budget",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await terminalPromise;
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    assertEqual(completes.length, 1, "autopilot parse budget: emits complete after recovering from parse failure");
+    assertEqual(errors.length, 0, "autopilot parse budget: does not emit error on transient parse failure");
+    assertEqual(
+      spawnCount,
+      answerPlan.length + 1,
+      "autopilot parse budget: allows one extra attempt without consuming coverage round budget",
+    );
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementIgnoresLateAnswerAfterCompletion() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9544,6 +9615,7 @@ async function main() {
   await testRefinementSwitchToAutopilotRejectsDuplicateSwitch();
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
+  await testAutopilotParseFailureDoesNotConsumeCoverageRoundBudget();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
   await testAutopilotIgnoresWhitespaceOnlyAnswersForCoverage();
   await testAutopilotRejectsInvalidAreaWithoutRetryLoop();
