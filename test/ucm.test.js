@@ -3188,6 +3188,53 @@ async function testRefinementStartPrefersDescriptionOverLegacyBody() {
   }
 }
 
+async function testRefinementStartFallsBackToBodyWhenDescriptionBlank() {
+  const state = { stats: { totalSpawns: 0 } };
+  let firstPrompt = "";
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: () => {},
+    submitTask: async () => ({ id: "blank-description-fallback-task" }),
+    spawnAgent: async (prompt) => {
+      firstPrompt = prompt;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "요구사항 질문",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
+    },
+  });
+
+  let sessionId = null;
+  try {
+    const explicitDescription = "   ";
+    const legacyBody = "legacy body fallback when description is blank";
+    const started = await ucmdRefinement.startRefinement({
+      title: "blank description fallback title",
+      description: explicitDescription,
+      body: legacyBody,
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert(firstPrompt.includes(`## 태스크 설명\n\n${legacyBody}`), "refinement blank description fallback: body is used when description is blank");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementStartNormalizesInvalidModeToInteractive() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9458,6 +9505,7 @@ async function main() {
   testFormatRefinedRequirementsSectionOrder();
   await testRefinementStartUsesBodyAsDescriptionFallback();
   await testRefinementStartPrefersDescriptionOverLegacyBody();
+  await testRefinementStartFallsBackToBodyWhenDescriptionBlank();
   await testRefinementStartNormalizesInvalidModeToInteractive();
   await testRefinementStartRejectsMissingOrBlankTitle();
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();

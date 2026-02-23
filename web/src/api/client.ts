@@ -165,9 +165,15 @@ export const refinement = {
     mode?: "interactive" | "autopilot";
   }) => {
     const { description, body, ...rest } = params;
+    const normalizedDescription = typeof description === "string"
+      ? description.trim()
+      : description == null ? "" : String(description).trim();
+    const normalizedBody = typeof body === "string"
+      ? body.trim()
+      : body == null ? "" : String(body).trim();
     return post<unknown>("/api/refinement/start", {
       ...rest,
-      description: description ?? body ?? "",
+      description: normalizedDescription || normalizedBody,
     });
   },
   finalize: (params: { sessionId: string; answers: Record<string, string> }) =>
