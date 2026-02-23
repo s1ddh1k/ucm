@@ -2792,6 +2792,19 @@ function testComputeCoverageContradictoryAnswersDoNotInflateCoverage() {
   );
 }
 
+function testComputeCoverageNormalizesEquivalentQuestionSignals() {
+  const decisions = [
+    { area: "기술 스택", question: "데이터베이스는 무엇인가요?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "데이터베이스는?", answer: "MySQL" },
+  ];
+  const coverage = computeCoverage(decisions, { "기술 스택": 2 });
+  assertEqual(
+    coverage["기술 스택"],
+    0.5,
+    "computeCoverage question normalization: equivalent questions count as one covered slot",
+  );
+}
+
 function testIsFullyCovered() {
   assert(isFullyCovered({ a: 1.0, b: 1.0, c: 1.0 }), "isFullyCovered all 1.0");
   assert(!isFullyCovered({ a: 1.0, b: 0.5, c: 1.0 }), "isFullyCovered not all 1.0");
@@ -2830,6 +2843,17 @@ function testHasUnresolvedContradictionsResolvedByReaffirmedAnswer() {
   assert(
     !hasUnresolvedContradictions(resolved),
     "hasUnresolvedContradictions: treats contradiction as resolved when final answer is reaffirmed",
+  );
+}
+
+function testHasUnresolvedContradictionsWithEquivalentQuestionSignals() {
+  const contradictory = [
+    { area: "기술 스택", question: "데이터베이스는 무엇인가요?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "데이터베이스는?", answer: "MySQL" },
+  ];
+  assert(
+    hasUnresolvedContradictions(contradictory),
+    "hasUnresolvedContradictions: detects conflicting answers for equivalent question phrasing",
   );
 }
 
@@ -10349,10 +10373,12 @@ async function main() {
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
   testComputeCoverageContradictoryAnswersDoNotInflateCoverage();
+  testComputeCoverageNormalizesEquivalentQuestionSignals();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testHasUnresolvedContradictions();
   testHasUnresolvedContradictionsResolvedByReaffirmedAnswer();
+  testHasUnresolvedContradictionsWithEquivalentQuestionSignals();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
