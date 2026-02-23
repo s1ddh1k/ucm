@@ -58,6 +58,7 @@ const {
   buildQuestionPrompt, formatDecisions, parseDecisionsFile,
   buildRefinementPrompt, buildAutopilotRefinementPrompt, formatRefinedRequirements,
 } = require("../lib/qna-core.js");
+const { buildQnaArgs } = require("../lib/req.js");
 
 let passed = 0;
 let failed = 0;
@@ -2947,6 +2948,45 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: rejects done when post-feedback decision only repeats pre-feedback decision",
   );
+}
+
+function testReqBuildQnaArgsUsesFeedbackFile() {
+  const args = buildQnaArgs({
+    round: 1,
+    opts: { project: "/tmp/project" },
+    decisionsPath: "/tmp/output/decisions.md",
+    feedbackFilePath: "/tmp/output/gap-report.md",
+    provider: "claude",
+    outputDir: "/tmp/output",
+  });
+
+  const feedbackFileIndex = args.indexOf("--feedback-file");
+  assert(feedbackFileIndex >= 0, "req qna args: includes --feedback-file on follow-up rounds");
+  assertEqual(args[feedbackFileIndex + 1], path.resolve("/tmp/output/gap-report.md"), "req qna args: uses resolved gap-report path");
+  assert(!args.includes("--feedback"), "req qna args: does not inline feedback text");
+}
+
+function testQnaCliRejectsFeedbackAndFeedbackFileTogether() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-feedback-"));
+  const feedbackPath = path.join(tmpDir, "gap-report.md");
+  fs.writeFileSync(feedbackPath, "gap-report");
+  const qnaPath = path.join(__dirname, "..", "lib", "qna.js");
+
+  const result = spawnSync("node", [
+    qnaPath,
+    "--feedback",
+    "inline feedback",
+    "--feedback-file",
+    feedbackPath,
+  ], { encoding: "utf-8" });
+
+  assertEqual(result.status, 1, "qna cli: rejects --feedback with --feedback-file");
+  assert(
+    result.stderr.includes("--feedback 과 --feedback-file 동시 사용 불가"),
+    "qna cli: conflict error message is shown",
+  );
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
 function testParseDecisionsFileBasic() {
@@ -10169,6 +10209,8 @@ async function main() {
   testHasUnresolvedContradictions();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
+  testReqBuildQnaArgsUsesFeedbackFile();
+  testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testParseDecisionsFileBasic();
   testParseDecisionsFileEmpty();
   testParseDecisionsFileNoReason();
