@@ -2902,6 +2902,25 @@ function testShouldAcceptDoneResponse() {
     "qna done gate: accepts done after enough follow-up decisions for all gaps",
   );
 
+  const duplicateFollowupDecisions = [
+    { area: "제품 정의", question: "무엇을 만드나요?", answer: "B2B 대시보드" },
+    { area: "핵심 기능", question: "핵심 기능은?", answer: "실시간 분석" },
+    { area: "기술 스택", question: "언어는?", answer: "TypeScript" },
+    { area: "설계 결정", question: "배포 방식은?", answer: "Docker" },
+    { area: "핵심 기능", question: "실패 시 동작은?", answer: "재시도 3회 후 에러 코드를 반환한다" },
+    { area: "핵심 기능", question: "실패 시 동작은?", answer: "재시도 3회 후 에러 코드를 반환한다" },
+  ];
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: multiGapFeedback,
+      decisionsCount: duplicateFollowupDecisions.length,
+      feedbackStartDecisionsCount: 4,
+      decisions: duplicateFollowupDecisions,
+    }),
+    "qna done gate: rejects done when follow-up decisions are duplicate and not meaningful",
+  );
+
   assert(
     !shouldAcceptDoneResponse({
       coverage: fullCoverage,
