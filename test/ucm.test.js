@@ -2820,6 +2820,19 @@ function testComputeCoverageNormalizesEquivalentQuestionSignals() {
   );
 }
 
+function testComputeCoverageDropsWhenAnswerRegressesToUncertainty() {
+  const decisions = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "모름" },
+  ];
+  const coverage = computeCoverage(decisions, { "기술 스택": 1 });
+  assertEqual(
+    coverage["기술 스택"],
+    0,
+    "computeCoverage regression: later uncertain answer invalidates prior covered slot",
+  );
+}
+
 function testIsFullyCovered() {
   assert(isFullyCovered({ a: 1.0, b: 1.0, c: 1.0 }), "isFullyCovered all 1.0");
   assert(!isFullyCovered({ a: 1.0, b: 0.5, c: 1.0 }), "isFullyCovered not all 1.0");
@@ -2872,6 +2885,17 @@ function testHasUnresolvedContradictionsWithEquivalentQuestionSignals() {
   );
 }
 
+function testHasUnresolvedContradictionsWhenAnswerRegressesToUncertainty() {
+  const contradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "모름" },
+  ];
+  assert(
+    hasUnresolvedContradictions(contradictory),
+    "hasUnresolvedContradictions: detects unresolved state when answer regresses to uncertainty",
+  );
+}
+
 function testShouldSkipDuplicateQuestion() {
   const decisions = [
     { area: "핵심 기능", question: "핵심 기능 우선순위는?", answer: "로그인" },
@@ -2909,6 +2933,20 @@ function testShouldSkipDuplicateQuestionWhenPriorAnswerIsUninformative() {
       question: "어떤 제품을 만드나요?",
     }),
     "shouldSkipDuplicateQuestion: allows repeating question when prior answer is non-informative",
+  );
+}
+
+function testShouldSkipDuplicateQuestionAllowsUncertaintyRegressionResolution() {
+  const contradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "모름" },
+  ];
+  assert(
+    !shouldSkipDuplicateQuestion(contradictory, {
+      area: "기술 스택",
+      question: "DB는?",
+    }),
+    "shouldSkipDuplicateQuestion: allows duplicate question when prior answer regressed to uncertainty",
   );
 }
 
@@ -10842,14 +10880,17 @@ async function main() {
   testComputeCoverageRefinement();
   testComputeCoverageContradictoryAnswersDoNotInflateCoverage();
   testComputeCoverageNormalizesEquivalentQuestionSignals();
+  testComputeCoverageDropsWhenAnswerRegressesToUncertainty();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testHasUnresolvedContradictions();
   testHasUnresolvedContradictionsResolvedByReaffirmedAnswer();
   testHasUnresolvedContradictionsWithEquivalentQuestionSignals();
+  testHasUnresolvedContradictionsWhenAnswerRegressesToUncertainty();
   testShouldSkipDuplicateQuestion();
   testShouldSkipDuplicateQuestionAllowsContradictionResolution();
   testShouldSkipDuplicateQuestionWhenPriorAnswerIsUninformative();
+  testShouldSkipDuplicateQuestionAllowsUncertaintyRegressionResolution();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
