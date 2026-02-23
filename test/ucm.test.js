@@ -2742,6 +2742,20 @@ function testComputeCoverageIgnoresGenericNonActionableSignals() {
   assertEqual(coverage["설계 결정"], 0, "computeCoverage generic signals: 설계 결정 stays 0");
 }
 
+function testComputeCoverageIgnoresUncertainSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "모르겠습니다" },
+    { area: "제품 정의", question: "q2", answer: "아직 모르겠어요" },
+    { area: "제품 정의", question: "q3", answer: "모르겠음" },
+    { area: "제품 정의", question: "q4", answer: "나중에 정할게요" },
+    { area: "핵심 기능", question: "q5", answer: "not sure yet" },
+    { area: "핵심 기능", question: "q6", answer: "i don't know" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(coverage["제품 정의"], 0, "computeCoverage uncertain signals: 제품 정의 stays 0");
+  assertEqual(coverage["핵심 기능"], 0, "computeCoverage uncertain signals: 핵심 기능 stays 0");
+}
+
 function testComputeCoverageBrownfield() {
   const decisions = [
     { area: "작업 목표", question: "q1", answer: "a1" },
@@ -10800,6 +10814,7 @@ async function main() {
   testComputeCoverageIgnoresPartiallyUnresolvedSignals();
   testComputeCoverageIgnoresVagueAffirmativeSignals();
   testComputeCoverageIgnoresGenericNonActionableSignals();
+  testComputeCoverageIgnoresUncertainSignals();
   testComputeCoverageBrownfield();
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
