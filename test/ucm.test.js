@@ -3374,6 +3374,68 @@ function testQnaCliSkipsDuplicateQuestionSuggestion() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
+function testQnaCliRejectsOutOfDomainAreaResponse() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-invalid-area-"));
+  const outputDir = path.join(tmpDir, "output");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const codexStubPath = path.join(tmpDir, "codex");
+  fs.writeFileSync(
+    codexStubPath,
+    [
+      "#!/bin/sh",
+      "count_file=\"$0.count\"",
+      "count=0",
+      "if [ -f \"$count_file\" ]; then count=$(cat \"$count_file\"); fi",
+      "count=$((count+1))",
+      "echo \"$count\" > \"$count_file\"",
+      "if [ \"$count\" -eq 1 ]; then",
+      "  cat <<'EOF'",
+      "{\"question\":\"요구사항 우선순위는?\",\"options\":[{\"label\":\"로그인\",\"reason\":\"핵심 경로\"},{\"label\":\"검색\",\"reason\":\"탐색 경로\"}],\"area\":\"임의 영역\",\"done\":false}",
+      "EOF",
+      "elif [ \"$count\" -eq 2 ]; then",
+      "  cat <<'EOF'",
+      "{\"question\":\"핵심 기능 우선순위는?\",\"options\":[{\"label\":\"로그인\",\"reason\":\"기본 사용자 흐름\"},{\"label\":\"대시보드\",\"reason\":\"핵심 가치 노출\"}],\"area\":\"핵심 기능\",\"done\":false}",
+      "EOF",
+      "else",
+      "  cat <<'EOF'",
+      "{\"question\":\"성능 목표는?\",\"options\":[{\"label\":\"응답 1초\",\"reason\":\"체감 성능 향상\"},{\"label\":\"응답 3초\",\"reason\":\"구현 복잡도 절충\"}],\"area\":\"설계 결정\",\"done\":false}",
+      "EOF",
+      "fi",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(codexStubPath, 0o755);
+
+  const qnaPath = path.join(__dirname, "..", "lib", "qna.js");
+  const result = spawnSync(
+    "node",
+    [qnaPath, "--provider", "codex", "--output", outputDir],
+    {
+      encoding: "utf-8",
+      input: "1\n",
+      env: {
+        ...process.env,
+        PATH: `${tmpDir}${path.delimiter}${process.env.PATH || ""}`,
+      },
+    },
+  );
+
+  assertEqual(result.status, 0, "qna cli invalid area: process exits successfully");
+  assert(
+    result.stderr.includes("허용되지 않은 영역"),
+    "qna cli invalid area: logs out-of-domain area warning",
+  );
+
+  const decisionsPath = result.stdout.trim();
+  const decisions = parseDecisionsFile(fs.readFileSync(decisionsPath, "utf-8"));
+  assertEqual(decisions.length, 1, "qna cli invalid area: stores only valid-area decision");
+  assertEqual(decisions[0].area, "핵심 기능", "qna cli invalid area: ignores invalid area and records allowed area");
+  assertEqual(decisions[0].question, "핵심 기능 우선순위는?", "qna cli invalid area: records follow-up valid question");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 function testQnaCliRejectsFeedbackAndFeedbackFileTogether() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-feedback-"));
   const feedbackPath = path.join(tmpDir, "gap-report.md");
@@ -10686,6 +10748,7 @@ async function main() {
   testReqCliKeepsGapReportForFollowupQna();
   testQnaCliConsumesLlmJsonDataEnvelope();
   testQnaCliSkipsDuplicateQuestionSuggestion();
+  testQnaCliRejectsOutOfDomainAreaResponse();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testSpecCliFailsOnValidationErrors();
   testParseDecisionsFileBasic();
