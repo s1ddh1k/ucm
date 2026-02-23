@@ -87,30 +87,14 @@ export default function ProjectOverviewPage() {
         <SummaryCard label="Open Proposals" value={proposedCount} />
       </div>
 
-      <Card className="border-dashed">
-        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Recommended Next Step</p>
-            <p className="text-xs text-muted-foreground">
-              Start by scanning the current state, then create or prioritize tasks from the proposal board.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => navigate("proposals?kickoff=analyze")}>
-              Analyze Project
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate("proposals?kickoff=research")}>
-              Run Research
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate("tasks")}>
-              Task Board
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate("proposals")}>
-              Proposal Board
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <RecommendationCard
+        reviewCount={reviewCount}
+        pendingCount={pendingCount}
+        runningCount={runningCount}
+        taskCount={projectTasks.length}
+        proposalCount={projectProposals.length}
+        onNavigate={(path) => navigate(path)}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Card>
@@ -188,6 +172,68 @@ function SummaryCard({ label, value, highlight }: { label: string; value: number
         <p className={["text-2xl font-semibold", highlight ? "text-amber-400" : ""].join(" ")}>
           {value}
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getRecommendation(reviewCount: number, pendingCount: number, runningCount: number, taskCount: number, proposalCount: number) {
+  if (reviewCount > 0) {
+    return {
+      message: `${reviewCount} task${reviewCount > 1 ? 's' : ''} ready for review`,
+      primary: { label: "Review Now", action: "tasks" },
+    };
+  }
+  if (taskCount === 0 && proposalCount === 0) {
+    return {
+      message: "Start by analyzing this project for improvement ideas",
+      primary: { label: "Analyze Project", action: "proposals?kickoff=analyze" },
+    };
+  }
+  if (pendingCount > 0) {
+    return {
+      message: `${pendingCount} task${pendingCount > 1 ? 's' : ''} queued and ready to start`,
+      primary: { label: "View Queue", action: "tasks" },
+    };
+  }
+  if (runningCount > 0) {
+    return {
+      message: `${runningCount} task${runningCount > 1 ? 's' : ''} in progress`,
+      primary: { label: "View Progress", action: "tasks" },
+    };
+  }
+  return {
+    message: "Analyze this project for improvement suggestions",
+    primary: { label: "Analyze Project", action: "proposals?kickoff=analyze" },
+  };
+}
+
+function RecommendationCard({
+  reviewCount,
+  pendingCount,
+  runningCount,
+  taskCount,
+  proposalCount,
+  onNavigate,
+}: {
+  reviewCount: number;
+  pendingCount: number;
+  runningCount: number;
+  taskCount: number;
+  proposalCount: number;
+  onNavigate: (path: string) => void;
+}) {
+  const rec = getRecommendation(reviewCount, pendingCount, runningCount, taskCount, proposalCount);
+  return (
+    <Card className="border-dashed">
+      <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Recommended Next Step</p>
+          <p className="text-xs text-muted-foreground">{rec.message}</p>
+        </div>
+        <Button size="sm" onClick={() => onNavigate(rec.primary.action)}>
+          {rec.primary.label}
+        </Button>
       </CardContent>
     </Card>
   );

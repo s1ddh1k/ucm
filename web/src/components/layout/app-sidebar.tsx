@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { NavLink } from "react-router";
 import {
-  LayoutDashboard, FolderTree, ListTodo, Lightbulb, Bot, Terminal, Settings,
+  LayoutDashboard, FolderTree, ListTodo, Lightbulb, Bot, Terminal, BarChart3, Settings,
   PanelLeftClose, PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -8,6 +9,14 @@ import { useUiStore } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { useTasksQuery } from "@/queries/tasks";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useAutopilotStatusQuery } from "@/queries/autopilot";
+
+interface BadgeInfo {
+  count: number;
+  color: string; // tailwind bg class
+}
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -16,15 +25,50 @@ const navItems = [
   { to: "/proposals", icon: Lightbulb, label: "Proposal Inbox" },
   { to: "/autopilot", icon: Bot, label: "Autopilot" },
   { to: "/terminal", icon: Terminal, label: "Terminal" },
+  { to: "/analytics", icon: BarChart3, label: "Analytics" },
 ];
 
 const bottomItems = [
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
+function useAttentionBadges(): Record<string, BadgeInfo> {
+  const { data: tasks } = useTasksQuery();
+  const { data: proposals } = useProposalsQuery();
+  const { data: sessions } = useAutopilotStatusQuery();
+
+  return useMemo(() => {
+    const badges: Record<string, BadgeInfo> = {};
+
+    const reviewCount = Array.isArray(tasks)
+      ? tasks.filter((t) => t.state === "review").length
+      : 0;
+    if (reviewCount > 0) {
+      badges["/tasks"] = { count: reviewCount, color: "bg-purple-500" };
+    }
+
+    const proposedCount = Array.isArray(proposals)
+      ? proposals.filter((p) => p.status === "proposed").length
+      : 0;
+    if (proposedCount > 0) {
+      badges["/proposals"] = { count: proposedCount, color: "bg-amber-500" };
+    }
+
+    const awaitingCount = Array.isArray(sessions)
+      ? sessions.filter((s) => s.status === "awaiting_review").length
+      : 0;
+    if (awaitingCount > 0) {
+      badges["/autopilot"] = { count: awaitingCount, color: "bg-purple-500" };
+    }
+
+    return badges;
+  }, [tasks, proposals, sessions]);
+}
+
 export function AppSidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const badges = useAttentionBadges();
 
   return (
     <aside
@@ -46,7 +90,12 @@ export function AppSidebar() {
       {/* Nav Items */}
       <nav className="flex-1 px-2 py-4 space-y-1">
         {navItems.map((item) => (
-          <SidebarNavLink key={item.to} {...item} collapsed={collapsed} />
+          <SidebarNavLink
+            key={item.to}
+            {...item}
+            collapsed={collapsed}
+            badge={badges[item.to]}
+          />
         ))}
       </nav>
 
@@ -75,9 +124,9 @@ export function AppSidebar() {
 }
 
 function SidebarNavLink({
-  to, icon: Icon, label, collapsed,
+  to, icon: Icon, label, collapsed, badge,
 }: {
-  to: string; icon: typeof LayoutDashboard; label: string; collapsed: boolean;
+  to: string; icon: typeof LayoutDashboard; label: string; collapsed: boolean; badge?: BadgeInfo;
 }) {
   const link = (
     <NavLink
@@ -94,8 +143,34 @@ function SidebarNavLink({
         )
       }
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span>{label}</span>}
+      {collapsed ? (
+        <span className="relative">
+          <Icon className="h-4 w-4 shrink-0" />
+          {badge && (
+            <span
+              className={cn(
+                "absolute -top-1 -right-1 h-2 w-2 rounded-full",
+                badge.color
+              )}
+            />
+          )}
+        </span>
+      ) : (
+        <>
+          <Icon className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{label}</span>
+          {badge && (
+            <span
+              className={cn(
+                "min-w-5 h-5 rounded-full text-white text-[10px] font-medium flex items-center justify-center px-1",
+                badge.color
+              )}
+            >
+              {badge.count}
+            </span>
+          )}
+        </>
+      )}
     </NavLink>
   );
 
@@ -103,7 +178,17 @@ function SidebarNavLink({
     return (
       <Tooltip>
         <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="right">{label}</TooltipContent>
+        <TooltipContent side="right">
+          {label}
+          {badge && (
+            <span className={cn(
+              "ml-2 inline-flex min-w-4 h-4 rounded-full text-white text-[10px] font-medium items-center justify-center px-1",
+              badge.color
+            )}>
+              {badge.count}
+            </span>
+          )}
+        </TooltipContent>
       </Tooltip>
     );
   }

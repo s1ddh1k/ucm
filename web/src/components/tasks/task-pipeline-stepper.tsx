@@ -35,7 +35,7 @@ export function TaskPipelineStepper({ pipeline, currentStage, state, stageGate }
                 className={cn(
                   "flex h-5 w-5 items-center justify-center rounded-full text-xs",
                   isDone && "bg-emerald-400/20 text-emerald-400",
-                  isCurrent && "bg-blue-400/20 text-blue-400",
+                  isCurrent && "bg-blue-400/20 text-blue-400 animate-pulse ring-2 ring-blue-400/30",
                   isGateWaiting && "bg-amber-400/20 text-amber-400",
                   isPending && "bg-muted text-muted-foreground"
                 )}

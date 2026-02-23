@@ -16,6 +16,7 @@ import { formatDate } from "@/lib/format";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { EmptyState } from "@/components/shared/empty-state";
 import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
+import { PIPELINES, type PipelineName } from "@/lib/constants";
 
 interface TaskDetailProps {
   taskId: string;
@@ -81,13 +82,57 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             stageGate={task.stageGate}
           />
         )}
+        {task.state === "running" && task.startedAt && (
+          <ElapsedTimer startedAt={task.startedAt} currentStage={task.currentStage} />
+        )}
+        {task.state === "running" && task.pipeline && (
+          <StageProgressBar pipeline={task.pipeline} currentStage={task.currentStage} state={task.state} />
+        )}
       </div>
+
+      {/* Review Banner */}
+      {task.state === "review" && (
+        <div className="px-4 py-3 border-b bg-purple-500/5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-purple-400">Ready for Review</span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => setConfirmApprove(true)}>
+                <Check className="h-4 w-4" /> Approve & Merge
+              </Button>
+              <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmDiscard(true)}>
+                <Trash2 className="h-4 w-4" /> Discard
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Feedback for retry..."
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              className="h-8 text-sm flex-1"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { rejectTask.mutate({ taskId, feedback: feedbackText }); setFeedbackText(""); }}
+              disabled={!feedbackText || rejectTask.isPending}
+            >
+              <RotateCw className="h-3 w-3" /> Retry
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TaskDetailTab)} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="mx-4 mt-2 justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="logs" className="relative">
+            Logs
+            {task.state === "running" && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            )}
+          </TabsTrigger>
           <TabsTrigger value="diff">Diff</TabsTrigger>
           <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
         </TabsList>
@@ -130,70 +175,41 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             {startTask.isPending ? "Starting..." : "Start"}
           </Button>
         )}
-        {task.state === "review" && (
-          <>
-            <Button size="sm" variant="default" onClick={() => setConfirmApprove(true)} disabled={approveTask.isPending}>
-              <Check className="h-4 w-4" /> Approve & Merge
-            </Button>
-            <div className="flex items-center gap-1 flex-1 min-w-0">
-              <Input
-                placeholder="Feedback for retry..."
-                value={feedbackText}
-                onChange={(e) => setFeedbackText(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  rejectTask.mutate({ taskId, feedback: feedbackText });
-                  setFeedbackText("");
-                }}
-                disabled={!feedbackText || rejectTask.isPending}
-              >
-                <RotateCw className="h-3 w-3" /> Retry
+        {/* Confirmation dialogs for review actions (triggered from banner) */}
+        <Dialog open={confirmApprove} onOpenChange={setConfirmApprove}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Approve & Merge Changes?</DialogTitle>
+              <DialogDescription>
+                This will merge the changes into your repository. This action cannot be easily undone.
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-sm font-medium truncate">{task.title}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmApprove(false)}>Cancel</Button>
+              <Button onClick={() => { approveTask.mutate({ taskId }); setConfirmApprove(false); }}>
+                <Check className="h-4 w-4" /> Confirm Merge
               </Button>
             </div>
-            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmDiscard(true)} disabled={rejectTask.isPending}>
-              <Trash2 className="h-4 w-4" /> Discard
-            </Button>
+          </DialogContent>
+        </Dialog>
 
-            <Dialog open={confirmApprove} onOpenChange={setConfirmApprove}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Approve & Merge Changes?</DialogTitle>
-                  <DialogDescription>
-                    This will merge the changes into your repository. This action cannot be easily undone.
-                  </DialogDescription>
-                </DialogHeader>
-                <p className="text-sm font-medium truncate">{task.title}</p>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setConfirmApprove(false)}>Cancel</Button>
-                  <Button onClick={() => { approveTask.mutate({ taskId }); setConfirmApprove(false); }}>
-                    <Check className="h-4 w-4" /> Confirm Merge
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Discard Task?</DialogTitle>
-                  <DialogDescription>
-                    This will permanently move the task to failed state and discard all changes. Use &quot;Retry with feedback&quot; instead if you want the AI to try again.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setConfirmDiscard(false)}>Cancel</Button>
-                  <Button variant="destructive" onClick={() => { rejectTask.mutate({ taskId }); setConfirmDiscard(false); }}>
-                    <Trash2 className="h-4 w-4" /> Discard
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </>
-        )}
+        <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Discard Task?</DialogTitle>
+              <DialogDescription>
+                This will permanently move the task to failed state and discard all changes. Use &quot;Retry with feedback&quot; instead if you want the AI to try again.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmDiscard(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => { rejectTask.mutate({ taskId }); setConfirmDiscard(false); }}>
+                <Trash2 className="h-4 w-4" /> Discard
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         {task.state === "pending" && (
           <div className="flex items-center gap-1">
             <Button
@@ -233,6 +249,57 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+function ElapsedTimer({ startedAt, currentStage }: { startedAt: string; currentStage?: string }) {
+  const [elapsed, setElapsed] = useState("");
+
+  useEffect(() => {
+    const start = new Date(startedAt).getTime();
+    function update() {
+      const diff = Date.now() - start;
+      const sec = Math.floor(diff / 1000);
+      const min = Math.floor(sec / 60);
+      const hrs = Math.floor(min / 60);
+      if (hrs > 0) {
+        setElapsed(`${hrs}h ${min % 60}m`);
+      } else if (min > 0) {
+        setElapsed(`${min}m ${sec % 60}s`);
+      } else {
+        setElapsed(`${sec}s`);
+      }
+    }
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+      <span>
+        Running{currentStage ? `: ${currentStage}` : ""} — {elapsed}
+      </span>
+    </div>
+  );
+}
+
+function StageProgressBar({ pipeline, currentStage, state }: { pipeline: string; currentStage?: string; state: string }) {
+  const stages = PIPELINES[(pipeline || "small") as PipelineName] || PIPELINES.small;
+  const currentIndex = currentStage ? stages.indexOf(currentStage as never) : -1;
+
+  if (state !== "running" || currentIndex < 0) return null;
+
+  const progress = ((currentIndex + 0.5) / stages.length) * 100;
+
+  return (
+    <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+      <div
+        className="h-full bg-blue-400 transition-all duration-500 rounded-full"
+        style={{ width: `${Math.min(progress, 100)}%` }}
+      />
     </div>
   );
 }
@@ -319,34 +386,20 @@ function OverviewTab({ task }: { task: Task }) {
       {task.stageHistory && task.stageHistory.length > 0 && (
         <div>
           <span className="text-xs text-muted-foreground">Stage History</span>
-          <div className="mt-1 space-y-1">
-            {task.stageHistory.map((s, i) => {
-              // Count iterations: how many times this stage appears up to index i
-              const iteration = task.stageHistory!.slice(0, i + 1).filter((h) => h.stage === s.stage).length;
-              const totalForStage = task.stageHistory!.filter((h) => h.stage === s.stage).length;
-              const stageTokens = s.tokenUsage ? (s.tokenUsage.input || 0) + (s.tokenUsage.output || 0) : 0;
-
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className={`w-2 h-2 rounded-full ${
-                    s.status === "pass" ? "bg-emerald-400" :
-                    s.status === "fail" ? "bg-red-400" :
-                    "bg-blue-400"
-                  }`} />
-                  <span className="font-mono w-20">{s.stage}</span>
-                  {totalForStage > 1 && (
-                    <span className="text-muted-foreground/60">{iteration}/{totalForStage}</span>
-                  )}
-                  <span className="text-muted-foreground">{s.status}</span>
-                  {s.durationMs != null && (
-                    <span className="text-muted-foreground/60">{formatDuration(s.durationMs)}</span>
-                  )}
-                  {stageTokens > 0 && (
-                    <span className="text-muted-foreground/40">{formatTokenCount(stageTokens)} tok</span>
-                  )}
+          <div className="flex items-center gap-1 flex-wrap mt-1">
+            {task.stageHistory.map((s, i) => (
+              <div key={i} className="flex items-center gap-1" title={`${s.stage}: ${s.status}${s.durationMs ? ` (${formatDuration(s.durationMs)})` : ''}`}>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold
+                  ${s.status === "pass" ? "bg-emerald-500/20 text-emerald-400" :
+                    s.status === "fail" ? "bg-red-500/20 text-red-400" :
+                    "bg-blue-500/20 text-blue-400"}`}>
+                  {s.stage.slice(0, 2).toUpperCase()}
                 </div>
-              );
-            })}
+                {i < task.stageHistory!.length - 1 && (
+                  <div className={`w-3 h-0.5 ${s.status === "pass" ? "bg-emerald-400/40" : s.status === "fail" ? "bg-red-400/40" : "bg-blue-400/40"}`} />
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -411,7 +464,7 @@ function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
   );
 }
 
-function DiffLine({ line }: { line: string }) {
+function DiffLine({ line, id }: { line: string; id?: string }) {
   if (line.startsWith("+++") || line.startsWith("---")) {
     return <div className="text-muted-foreground font-bold">{line}</div>;
   }
@@ -425,33 +478,201 @@ function DiffLine({ line }: { line: string }) {
     return <div className="text-red-400 bg-red-400/10">{line}</div>;
   }
   if (line.startsWith("diff --git")) {
-    return <div className="text-muted-foreground font-bold border-t border-border pt-2 mt-2">{line}</div>;
+    return <div id={id} className="text-muted-foreground font-bold border-t border-border pt-2 mt-2">{line}</div>;
   }
   return <div className="text-muted-foreground">{line}</div>;
 }
 
+interface SplitLine {
+  left: { num: number | null; content: string; type: "context" | "removed" | "empty" };
+  right: { num: number | null; content: string; type: "context" | "added" | "empty" };
+}
+
+function parseSplitDiff(diffText: string): SplitLine[] {
+  const lines = diffText.split("\n");
+  const result: SplitLine[] = [];
+  let leftNum = 0;
+  let rightNum = 0;
+
+  for (const line of lines) {
+    // Skip diff headers
+    if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
+      continue;
+    }
+
+    // Hunk header
+    if (line.startsWith("@@")) {
+      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)/);
+      if (match) {
+        leftNum = parseInt(match[1]) - 1;
+        rightNum = parseInt(match[2]) - 1;
+      }
+      result.push({
+        left: { num: null, content: line, type: "context" },
+        right: { num: null, content: "", type: "empty" },
+      });
+      continue;
+    }
+
+    if (line.startsWith("-")) {
+      leftNum++;
+      result.push({
+        left: { num: leftNum, content: line.slice(1), type: "removed" },
+        right: { num: null, content: "", type: "empty" },
+      });
+    } else if (line.startsWith("+")) {
+      rightNum++;
+      result.push({
+        left: { num: null, content: "", type: "empty" },
+        right: { num: rightNum, content: line.slice(1), type: "added" },
+      });
+    } else {
+      leftNum++;
+      rightNum++;
+      const content = line.startsWith(" ") ? line.slice(1) : line;
+      result.push({
+        left: { num: leftNum, content, type: "context" },
+        right: { num: rightNum, content, type: "context" },
+      });
+    }
+  }
+
+  return result;
+}
+
+function SplitDiffView({ diff }: { diff: string }) {
+  const splitLines = useMemo(() => parseSplitDiff(diff), [diff]);
+
+  return (
+    <div className="text-xs font-mono overflow-auto">
+      {splitLines.map((line, i) => (
+        <div key={i} className="grid grid-cols-2 divide-x border-b border-border/30">
+          <SplitDiffCell side={line.left} />
+          <SplitDiffCell side={line.right} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SplitDiffCell({ side }: { side: SplitLine["left"] | SplitLine["right"] }) {
+  const bgColor = side.type === "removed" ? "bg-red-400/10" :
+    side.type === "added" ? "bg-emerald-400/10" :
+    side.type === "empty" ? "bg-muted/30" : "";
+  const textColor = side.type === "removed" ? "text-red-400" :
+    side.type === "added" ? "text-emerald-400" :
+    "text-muted-foreground";
+
+  return (
+    <div className={`flex ${bgColor} min-h-[1.5em]`}>
+      <span className="w-10 text-right pr-2 text-muted-foreground/50 select-none shrink-0 py-0.5">
+        {side.num ?? ""}
+      </span>
+      <span className={`flex-1 whitespace-pre py-0.5 pl-1 ${textColor}`}>
+        {side.content}
+      </span>
+    </div>
+  );
+}
+
 function DiffTab({ taskId }: { taskId: string }) {
   const { data: diffs, isLoading } = useTaskDiffQuery(taskId);
+  const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
+
+  // Extract file list from diffs for navigation
+  const fileList = useMemo(() => {
+    if (!diffs) return [];
+    return diffs.flatMap(d => {
+      if (!d.diff) return [];
+      return d.diff.split('\n')
+        .filter(line => line.startsWith('diff --git'))
+        .map(line => {
+          const match = line.match(/b\/(.+)$/);
+          return match ? match[1] : line;
+        });
+    });
+  }, [diffs]);
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading diff...</div>;
   if (!diffs?.length) return <EmptyState icon={FileText} title="No diff available" className="h-full" />;
 
+  // Build a global file index tracker across all diffs
+  let globalFileIndex = 0;
+
   return (
-    <div className="p-4 space-y-4">
-      {diffs.map((d, i) => (
-        <div key={i}>
-          <h3 className="text-sm font-medium mb-2">{d.project}</h3>
-          {d.diff ? (
-            <div className="text-xs font-mono p-3 rounded bg-muted overflow-auto whitespace-pre">
-              {d.diff.split("\n").map((line, j) => (
-                <DiffLine key={j} line={line} />
-              ))}
-            </div>
-          ) : (
-            <pre className="text-xs font-mono p-3 rounded bg-muted">(empty)</pre>
-          )}
+    <div className="relative">
+      {fileList.length > 1 && (
+        <div className="sticky top-0 bg-background border-b px-4 py-2 flex flex-wrap gap-1.5 z-10">
+          {fileList.map((file, i) => (
+            <button
+              key={i}
+              className="text-xs font-mono px-2 py-0.5 rounded bg-muted hover:bg-accent transition-colors"
+              onClick={() => {
+                const el = document.getElementById(`diff-file-${i}`);
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            >
+              {file.split('/').pop()}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
+      <div className="flex items-center gap-2 px-4 py-2 border-b">
+        <span className="text-xs text-muted-foreground">View:</span>
+        <div className="flex items-center rounded-md border divide-x">
+          <button
+            className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+              diffMode === "unified" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"
+            }`}
+            onClick={() => setDiffMode("unified")}
+          >
+            Unified
+          </button>
+          <button
+            className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+              diffMode === "split" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50"
+            }`}
+            onClick={() => setDiffMode("split")}
+          >
+            Split
+          </button>
+        </div>
+      </div>
+      <div className="p-4 space-y-4">
+        {diffs.map((d, i) => {
+          const lines = d.diff ? d.diff.split("\n") : [];
+          const startFileIndex = globalFileIndex;
+          const fileCount = lines.filter(l => l.startsWith("diff --git")).length;
+          globalFileIndex += fileCount;
+
+          return (
+            <div key={i}>
+              <h3 className="text-sm font-medium mb-2">{d.project}</h3>
+              {d.diff ? (
+                diffMode === "split" ? (
+                  <SplitDiffView diff={d.diff} />
+                ) : (
+                  <div className="text-xs font-mono p-3 rounded bg-muted overflow-auto whitespace-pre">
+                    {(() => {
+                      let fileIdx = startFileIndex;
+                      return lines.map((line, j) => {
+                        if (line.startsWith("diff --git")) {
+                          const currentId = `diff-file-${fileIdx}`;
+                          fileIdx++;
+                          return <DiffLine key={j} line={line} id={currentId} />;
+                        }
+                        return <DiffLine key={j} line={line} />;
+                      });
+                    })()}
+                  </div>
+                )
+              ) : (
+                <pre className="text-xs font-mono p-3 rounded bg-muted">(empty)</pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

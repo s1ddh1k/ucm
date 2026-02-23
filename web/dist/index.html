@@ -1,11 +1,20 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UCM Dashboard</title>
-    <script type="module" crossorigin src="/assets/index-CneRwyl_.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BhylCmUC.css">
+    <script>
+      (function() {
+        var t = localStorage.getItem("ucm-theme") || "dark";
+        var d = t === "system"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          : t !== "light";
+        if (d) document.documentElement.classList.add("dark");
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BVkpkLqd.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D6g51-NG.css">
   </head>
   <body class="min-h-screen bg-background text-foreground antialiased">
     <div id="root"></div>

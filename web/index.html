@@ -1,9 +1,18 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UCM Dashboard</title>
+    <script>
+      (function() {
+        var t = localStorage.getItem("ucm-theme") || "dark";
+        var d = t === "system"
+          ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          : t !== "light";
+        if (d) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body class="min-h-screen bg-background text-foreground antialiased">
     <div id="root"></div>

@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { FolderTree, ListTodo, Lightbulb, FilterX, Plus, Search, Trash2 } from "lucide-react";
+import { FolderTree, ListTodo, Lightbulb, FilterX, Plus, Search, Trash2, MoreVertical } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { useTasksQuery } from "@/queries/tasks";
@@ -217,54 +218,55 @@ export default function ProjectsPage() {
           {projectSummaries.map((project) => {
             const isUnknown = project.key === UNKNOWN_PROJECT_KEY;
             return (
-              <Card key={project.key} className={project.key === activeProjectKey ? "ring-1 ring-primary/60" : ""}>
+              <Card
+                key={project.key}
+                className={`cursor-pointer hover:bg-accent/50 transition-colors ${project.key === activeProjectKey ? "ring-1 ring-primary/60" : ""}`}
+                onClick={() => openWorkspace(project)}
+              >
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center justify-between gap-2">
                     <span className="truncate">{project.label}</span>
-                    {project.key === activeProjectKey && (
-                      <Badge variant="secondary" className="text-[10px]">Active</Badge>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {project.key === activeProjectKey && (
+                        <Badge variant="secondary" className="text-[10px]">Active</Badge>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => e.stopPropagation()}>
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openProjectTasks(project); }}>
+                            <ListTodo className="h-4 w-4 mr-2" /> Tasks
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openProjectProposals(project); }}>
+                            <Lightbulb className="h-4 w-4 mr-2" /> Proposals
+                          </DropdownMenuItem>
+                          {project.registered && !isUnknown && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); removeCatalogItem.mutate(project.path); }}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Remove
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </CardTitle>
                   <p className="text-xs text-muted-foreground truncate">
                     {isUnknown ? "No project path metadata" : project.path}
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    {project.registered && <Badge>Registered</Badge>}
-                    <Badge variant="outline">{project.taskCount} tasks</Badge>
-                    <Badge variant="outline">{project.proposalCount} proposals</Badge>
-                    {project.runningCount > 0 && (
-                      <Badge variant="outline" className="text-blue-500">{project.runningCount} running</Badge>
-                    )}
-                    {project.reviewCount > 0 && (
-                      <Badge variant="outline" className="text-purple-500">{project.reviewCount} review</Badge>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button size="sm" className="flex-1 min-w-[110px]" onClick={() => openWorkspace(project)}>
-                      {project.taskCount === 0 ? "Start Work" : "Workspace"}
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1 min-w-[110px]" onClick={() => openProjectTasks(project)}>
-                      <ListTodo className="h-4 w-4" />
-                      Tasks
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1 min-w-[110px]" onClick={() => openProjectProposals(project)}>
-                      <Lightbulb className="h-4 w-4" />
-                      Proposals
-                    </Button>
-                    {project.registered && !isUnknown && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto text-destructive"
-                        onClick={() => removeCatalogItem.mutate(project.path)}
-                        disabled={removeCatalogItem.isPending}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+                  <div className="flex items-center gap-2">
+                    {project.registered && <span className="text-xs text-emerald-500">Registered</span>}
+                    <p className="text-sm text-muted-foreground">
+                      {project.taskCount} tasks · {project.proposalCount} proposals
+                      {project.runningCount > 0 && <span className="text-blue-500"> · {project.runningCount} running</span>}
+                      {project.reviewCount > 0 && <span className="text-purple-500"> · {project.reviewCount} review</span>}
+                    </p>
                   </div>
                 </CardContent>
               </Card>

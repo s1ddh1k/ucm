@@ -337,6 +337,7 @@ export function useWebSocket() {
       // Config events
       wsManager.on("config:updated", (data) => {
         queryClient.invalidateQueries({ queryKey: ["config"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
         queryClient.invalidateQueries({ queryKey: ["project-catalog"] });
         addActivity("config:updated", data);
       }),

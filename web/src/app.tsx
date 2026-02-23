@@ -12,6 +12,7 @@ import ProposalsPage from "@/routes/proposals";
 import AutopilotPage from "@/routes/autopilot";
 import TerminalPage from "@/routes/terminal";
 import SettingsPage from "@/routes/settings";
+import AnalyticsPage from "@/routes/analytics";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ export default function App() {
                 <Route path="proposals" element={<ProposalsPage />} />
                 <Route path="autopilot" element={<AutopilotPage />} />
                 <Route path="terminal" element={<TerminalPage />} />
+                <Route path="analytics" element={<AnalyticsPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>
