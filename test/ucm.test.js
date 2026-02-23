@@ -3362,6 +3362,66 @@ async function testRefinementStartRejectsMissingOrBlankTitle() {
   }
 }
 
+async function testRefinementStartSurvivesStartedBroadcastFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let capturedSessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      if (event === "refinement:started") {
+        capturedSessionId = data?.sessionId || null;
+        throw new Error("started broadcast failed intentionally");
+      }
+      events.push({ event, data });
+    },
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "브로드캐스트 실패 이후에도 질문이 생성되어야 합니다",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: "기능 요구사항",
+      }),
+    }),
+  });
+
+  let startErr = null;
+  let started = null;
+  try {
+    try {
+      started = await ucmdRefinement.startRefinement({
+        title: "started broadcast failure tolerance",
+        description: "started broadcast failure must not break refinement flow",
+        mode: "interactive",
+      });
+    } catch (e) {
+      startErr = e;
+    }
+
+    assertEqual(startErr, null, "refinement start broadcast failure: startRefinement should not throw");
+    assert(!!started?.sessionId, "refinement start broadcast failure: returns sessionId");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const activeSessionId = started?.sessionId || capturedSessionId;
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === activeSessionId);
+    assertEqual(questions.length, 1, "refinement start broadcast failure: continues question generation after started broadcast failure");
+  } finally {
+    const activeSessionId = started?.sessionId || capturedSessionId;
+    if (activeSessionId) {
+      try { ucmdRefinement.cancelRefinement(activeSessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9599,6 +9659,7 @@ async function main() {
   await testRefinementStartFallsBackToBodyWhenDescriptionBlank();
   await testRefinementStartNormalizesInvalidModeToInteractive();
   await testRefinementStartRejectsMissingOrBlankTitle();
+  await testRefinementStartSurvivesStartedBroadcastFailure();
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
   await testRefinementInteractiveAnswerEmitsProgress();
   await testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage();
