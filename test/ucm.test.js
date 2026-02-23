@@ -2821,6 +2821,18 @@ function testHasUnresolvedContradictions() {
   );
 }
 
+function testHasUnresolvedContradictionsResolvedByReaffirmedAnswer() {
+  const resolved = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+  ];
+  assert(
+    !hasUnresolvedContradictions(resolved),
+    "hasUnresolvedContradictions: treats contradiction as resolved when final answer is reaffirmed",
+  );
+}
+
 function testShouldStopQnaForCoverage() {
   const fullCoverage = { a: 1.0, b: 1.0 };
   const partialCoverage = { a: 1.0, b: 0.5 };
@@ -2946,6 +2958,22 @@ function testShouldAcceptDoneResponse() {
       decisions: contradictoryDecisions,
     }),
     "qna done gate: rejects done when unresolved contradictions exist",
+  );
+
+  const resolvedContradictions = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+  ];
+  assert(
+    shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: null,
+      decisionsCount: resolvedContradictions.length,
+      feedbackStartDecisionsCount: null,
+      decisions: resolvedContradictions,
+    }),
+    "qna done gate: accepts done when contradiction is resolved by reaffirming one answer",
   );
 
   const repeatedPreFeedbackDecision = [
@@ -10280,6 +10308,7 @@ async function main() {
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testHasUnresolvedContradictions();
+  testHasUnresolvedContradictionsResolvedByReaffirmedAnswer();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
