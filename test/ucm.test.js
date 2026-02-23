@@ -54,7 +54,7 @@ const {
   EXPECTED_GREENFIELD, EXPECTED_BROWNFIELD,
   REFINEMENT_GREENFIELD, REFINEMENT_BROWNFIELD,
   computeCoverage, isFullyCovered,
-  shouldStopQnaForCoverage,
+  shouldStopQnaForCoverage, shouldAcceptDoneResponse,
   buildQuestionPrompt, formatDecisions, parseDecisionsFile,
   buildRefinementPrompt, buildAutopilotRefinementPrompt, formatRefinedRequirements,
 } = require("../lib/qna-core.js");
@@ -2741,6 +2741,51 @@ function testShouldStopQnaForCoverage() {
   assert(shouldStopQnaForCoverage(fullCoverage, "   "), "qna coverage stop: full coverage with blank feedback");
   assert(!shouldStopQnaForCoverage(fullCoverage, "gap-report: 수용 조건 상세화 필요"), "qna coverage stop: feedback keeps interview running");
   assert(!shouldStopQnaForCoverage(partialCoverage, "gap-report"), "qna coverage stop: partial coverage never stops");
+}
+
+function testShouldAcceptDoneResponse() {
+  const fullCoverage = { a: 1.0, b: 1.0 };
+  const partialCoverage = { a: 1.0, b: 0.5 };
+
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: "gap-report: 테스트 가능성 보강 필요",
+      decisionsCount: 4,
+      feedbackStartDecisionsCount: 4,
+    }),
+    "qna done gate: rejects done when feedback exists but no follow-up decision",
+  );
+
+  assert(
+    shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: "gap-report: 테스트 가능성 보강 필요",
+      decisionsCount: 5,
+      feedbackStartDecisionsCount: 4,
+    }),
+    "qna done gate: accepts done after at least one follow-up decision",
+  );
+
+  assert(
+    shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: null,
+      decisionsCount: 3,
+      feedbackStartDecisionsCount: null,
+    }),
+    "qna done gate: accepts done without feedback when fully covered",
+  );
+
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: partialCoverage,
+      feedback: null,
+      decisionsCount: 3,
+      feedbackStartDecisionsCount: null,
+    }),
+    "qna done gate: rejects done when coverage is partial",
+  );
 }
 
 function testParseDecisionsFileBasic() {
@@ -9908,6 +9953,7 @@ async function main() {
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testShouldStopQnaForCoverage();
+  testShouldAcceptDoneResponse();
   testParseDecisionsFileBasic();
   testParseDecisionsFileEmpty();
   testParseDecisionsFileNoReason();
