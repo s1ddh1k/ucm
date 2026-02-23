@@ -4499,6 +4499,79 @@ async function testAutopilotStopsAfterMaxRoundsWithoutFullCoverage() {
   }
 }
 
+async function testAutopilotIgnoresWhitespaceOnlyAnswersForCoverage() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  const answerPlan = [];
+  for (const [area, count] of Object.entries(REFINEMENT_GREENFIELD)) {
+    for (let i = 0; i < count; i++) answerPlan.push(area);
+  }
+  const expectedMaxRounds = Math.max(15, answerPlan.length);
+  let spawnCount = 0;
+  let terminalResolve;
+  const terminalPromise = new Promise((resolve) => { terminalResolve = resolve; });
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if (event === "refinement:complete" || event === "refinement:error") {
+        terminalResolve();
+      }
+    },
+    submitTask: async () => ({ id: "autopilot-whitespace-answers" }),
+    spawnAgent: async () => {
+      const area = answerPlan[Math.min(spawnCount, answerPlan.length - 1)] || "기능 요구사항";
+      spawnCount += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: `autopilot whitespace question ${spawnCount}`,
+          area,
+          answer: "   ",
+        }),
+      };
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "autopilot whitespace answers should not count",
+      description: "whitespace-only autopilot answers must not satisfy refinement coverage",
+      mode: "autopilot",
+    });
+    sessionId = started.sessionId;
+
+    await terminalPromise;
+
+    const completes = events.filter((e) => e.event === "refinement:complete" && e.data?.sessionId === sessionId);
+    const errors = events.filter((e) => e.event === "refinement:error" && e.data?.sessionId === sessionId);
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    assertEqual(spawnCount, expectedMaxRounds, "autopilot whitespace answers: still runs until max rounds");
+    assertEqual(completes.length, 0, "autopilot whitespace answers: does not emit complete with whitespace-only answers");
+    assertEqual(progresses.length, 0, "autopilot whitespace answers: does not emit progress for whitespace-only answers");
+    assert(errors.some((e) => String(e.data?.error || "").includes("max rounds")), "autopilot whitespace answers: reports max rounds coverage failure");
+
+    let cancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (err) {
+      cancelErr = err;
+    }
+    assert(cancelErr && cancelErr.message.includes("session not found"), "autopilot whitespace answers: session is auto-cleaned");
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testAutopilotRejectsInvalidAreaWithoutRetryLoop() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9214,6 +9287,7 @@ async function main() {
   await testRefinementSwitchToAutopilotRejectsCompletedSession();
   await testRefinementCleansSessionWhenSwitchedAutopilotSpawnFails();
   await testAutopilotStopsAfterMaxRoundsWithoutFullCoverage();
+  await testAutopilotIgnoresWhitespaceOnlyAnswersForCoverage();
   await testAutopilotRejectsInvalidAreaWithoutRetryLoop();
   await testAutopilotProgressRoundTracksAcceptedDecisions();
   await testAutopilotCanCompleteWhenCoveragePlanIsSatisfied();
