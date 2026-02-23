@@ -3113,6 +3113,90 @@ function testReqBuildQnaArgsPreservesTemplateOnResume() {
   assert(args.includes("--resume"), "req qna args: still uses --resume on follow-up rounds");
 }
 
+function testReqCliKeepsGapReportForFollowupQna() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "req-gap-followup-"));
+  const outputDir = path.join(tmpDir, "output");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const reqSourcePath = path.join(__dirname, "..", "lib", "req.js");
+  const reqRunnerPath = path.join(tmpDir, "req.js");
+  fs.writeFileSync(reqRunnerPath, fs.readFileSync(reqSourcePath, "utf-8"));
+
+  const qnaStubPath = path.join(tmpDir, "qna.js");
+  fs.writeFileSync(
+    qnaStubPath,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "const args = process.argv.slice(2);",
+      "const getArg = (name) => { const idx = args.indexOf(name); return idx >= 0 ? args[idx + 1] : null; };",
+      "const outputDir = getArg('--output');",
+      "const countFile = path.join(outputDir, 'qna.count');",
+      "let count = 0;",
+      "try { count = Number(fs.readFileSync(countFile, 'utf-8')) || 0; } catch {}",
+      "count += 1;",
+      "fs.writeFileSync(countFile, String(count));",
+      "if (count > 1) {",
+      "  const feedbackFile = getArg('--feedback-file');",
+      "  if (!feedbackFile || !fs.existsSync(path.resolve(feedbackFile))) {",
+      "    console.error('missing feedback file on follow-up round');",
+      "    process.exit(2);",
+      "  }",
+      "  const feedbackText = fs.readFileSync(path.resolve(feedbackFile), 'utf-8');",
+      "  if (!feedbackText.includes('# Gap Report')) {",
+      "    console.error('invalid feedback file content');",
+      "    process.exit(3);",
+      "  }",
+      "  fs.writeFileSync(path.join(outputDir, 'followup-feedback-ok'), 'ok');",
+      "}",
+      "const decisionsPath = path.join(outputDir, `decisions-${count}.md`);",
+      "fs.writeFileSync(decisionsPath, '### 설계 결정\\n\\n- **Q:** 테스트 질문?\\n  - **A:** 테스트 답변\\n');",
+      "process.stdout.write(decisionsPath);",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(qnaStubPath, 0o755);
+
+  const specStubPath = path.join(tmpDir, "spec.js");
+  fs.writeFileSync(
+    specStubPath,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "const args = process.argv.slice(2);",
+      "const getArg = (name) => { const idx = args.indexOf(name); return idx >= 0 ? args[idx + 1] : null; };",
+      "const outputDir = getArg('--output');",
+      "const countFile = path.join(outputDir, 'spec.count');",
+      "let count = 0;",
+      "try { count = Number(fs.readFileSync(countFile, 'utf-8')) || 0; } catch {}",
+      "count += 1;",
+      "fs.writeFileSync(countFile, String(count));",
+      "if (count === 1) {",
+      "  fs.writeFileSync(path.join(outputDir, 'gap-report.md'), '# Gap Report\\n\\n- **테스트 가능성**: 성공/실패 기준을 보강하세요.\\n');",
+      "}",
+      "const requirementsPath = path.join(outputDir, `requirements-${count}.md`);",
+      "fs.writeFileSync(requirementsPath, '# Requirements\\n');",
+      "process.stdout.write(requirementsPath);",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(specStubPath, 0o755);
+
+  const result = spawnSync(
+    "node",
+    [reqRunnerPath, "--provider", "codex", "--output", outputDir, "--max-rounds", "2"],
+    { encoding: "utf-8" },
+  );
+
+  assertEqual(result.status, 0, "req cli follow-up feedback: process exits successfully");
+  assertEqual(fs.readFileSync(path.join(outputDir, "qna.count"), "utf-8"), "2", "req cli follow-up feedback: qna runs two rounds");
+  assert(fs.existsSync(path.join(outputDir, "followup-feedback-ok")), "req cli follow-up feedback: second qna consumed previous gap report");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
 function testQnaCliConsumesLlmJsonDataEnvelope() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-json-envelope-"));
   const outputDir = path.join(tmpDir, "output");
@@ -10474,6 +10558,7 @@ async function main() {
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
   testReqBuildQnaArgsPreservesTemplateOnResume();
+  testReqCliKeepsGapReportForFollowupQna();
   testQnaCliConsumesLlmJsonDataEnvelope();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testSpecCliFailsOnValidationErrors();
