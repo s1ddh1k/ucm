@@ -3745,6 +3745,83 @@ async function testRefinementCancelPreventsLateQuestionEvent() {
   }
 }
 
+async function testRefinementCancelSurvivesCancelledBroadcastFailure() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let resolveSpawn = null;
+  let spawnStartedResolve = null;
+  const spawnStarted = new Promise((resolve) => { spawnStartedResolve = resolve; });
+  let sessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => {
+      events.push({ event, data });
+      if (event === "refinement:cancelled" && data?.sessionId === sessionId) {
+        throw new Error("cancelled broadcast failed intentionally");
+      }
+    },
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnStartedResolve();
+      return new Promise((resolve) => { resolveSpawn = resolve; });
+    },
+  });
+
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "cancel broadcast failure tolerance",
+      description: "cancel should succeed even if cancelled broadcast fails",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+    await spawnStarted;
+
+    let cancelErr = null;
+    let cancelled = null;
+    try {
+      cancelled = ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      cancelErr = e;
+    }
+
+    assertEqual(cancelErr, null, "refinement cancel broadcast failure: cancel should not throw");
+    assertEqual(cancelled?.sessionId, sessionId, "refinement cancel broadcast failure: returns session id");
+    assertEqual(cancelled?.status, "cancelled", "refinement cancel broadcast failure: returns cancelled status");
+
+    let secondCancelErr = null;
+    try {
+      ucmdRefinement.cancelRefinement(sessionId);
+    } catch (e) {
+      secondCancelErr = e;
+    }
+    assert(
+      secondCancelErr && secondCancelErr.message.includes("session not found"),
+      "refinement cancel broadcast failure: session is cleaned after successful cancel",
+    );
+  } finally {
+    if (resolveSpawn) {
+      resolveSpawn({
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "cleanup late question",
+          options: [{ label: "a", reason: "r" }],
+          area: "기능 요구사항",
+        }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementFinalizePreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9833,6 +9910,7 @@ async function main() {
   await testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage();
   await testRefinementInteractiveQuestionAreaTrimsWhitespace();
   await testRefinementCancelPreventsLateQuestionEvent();
+  await testRefinementCancelSurvivesCancelledBroadcastFailure();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
   await testRefinementFinalizeRejectsConcurrentFinalization();
