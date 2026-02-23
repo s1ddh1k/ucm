@@ -11,6 +11,10 @@ const { extractJson } = require("../lib/core/llm");
 
 const { quoteUserContent, summarizeDecisions, computeCoverage, isFullyCovered, buildQuestionPrompt, EXPECTED_GREENFIELD } = require("../lib/core/qna");
 
+// ── sanitizeContent tests ──
+
+const { sanitizeContent } = require("../lib/core/worktree");
+
 // ── parseTaskFile / serializeTaskFile tests ──
 
 const { parseTaskFile, serializeTaskFile } = require("../lib/ucmd-task");
@@ -249,6 +253,96 @@ title: line1\\nline2
       assert(!serialized.includes("title:"), "null skipped");
       assert(!serialized.includes("state:"), "undefined skipped");
       assert(serialized.includes("tag: valid"), "valid included");
+    },
+  });
+
+  // ── sanitizeContent ──
+  await runGroup("sanitizeContent", {
+    "returns non-string inputs as-is": () => {
+      assertEqual(sanitizeContent(null), null, "null passthrough");
+      assertEqual(sanitizeContent(undefined), undefined, "undefined passthrough");
+      assertEqual(sanitizeContent(""), "", "empty string passthrough");
+    },
+
+    "passes through normal text unchanged": () => {
+      const text = "This is normal code with no secrets.";
+      assertEqual(sanitizeContent(text), text, "normal text unchanged");
+    },
+
+    "redacts api_key pattern": () => {
+      const input = 'api_key: sk_live_abcdefghij1234567890';
+      const result = sanitizeContent(input);
+      assert(result.includes("[REDACTED]"), "contains REDACTED marker");
+      assert(!result.includes("abcdefghij1234567890"), "secret value removed");
+    },
+
+    "redacts apikey (no separator) pattern": () => {
+      const input = 'apikey=my_secret_key_value_12345678';
+      const result = sanitizeContent(input);
+      assert(result.includes("[REDACTED]"), "contains REDACTED marker");
+      assert(!result.includes("my_secret_key_value_12345678"), "secret value removed");
+    },
+
+    "redacts secret/password/token patterns": () => {
+      const input = 'secret: supersecretvalue1234\npassword=mypassword123\ntoken: tok_abc123def456';
+      const result = sanitizeContent(input);
+      assert(!result.includes("supersecretvalue1234"), "secret redacted");
+      assert(!result.includes("mypassword123"), "password redacted");
+      assert(!result.includes("tok_abc123def456"), "token redacted");
+      // Should have 3 REDACTED markers
+      const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
+      assertEqual(redactedCount, 3, "three redactions");
+    },
+
+    "redacts AWS/Anthropic/OpenAI key env vars": () => {
+      const input = 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nANTHROPIC_API_KEY=sk-ant-abc123\nOPENAI_API_KEY=sk-proj-xyz789';
+      const result = sanitizeContent(input);
+      assert(!result.includes("wJalrXUtnFEMI"), "AWS key redacted");
+      assert(!result.includes("sk-ant-abc123"), "Anthropic key redacted");
+      assert(!result.includes("sk-proj-xyz789"), "OpenAI key redacted");
+    },
+
+    "redacts Bearer tokens": () => {
+      const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      const result = sanitizeContent(input);
+      assert(result.includes("[REDACTED]"), "Bearer token redacted");
+      assert(!result.includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"), "JWT payload removed");
+    },
+
+    "redacts GitHub PATs (ghp_ prefix)": () => {
+      const input = 'GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789';
+      const result = sanitizeContent(input);
+      assert(result.includes("[REDACTED]"), "GitHub PAT redacted");
+      assert(!result.includes("aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"), "PAT value removed");
+    },
+
+    "redacts OpenAI sk- keys": () => {
+      const input = 'key: sk-abcdefghijklmnopqrstuvwxyz0123456789';
+      const result = sanitizeContent(input);
+      assert(result.includes("[REDACTED]"), "sk- key redacted");
+      assert(!result.includes("abcdefghijklmnopqrstuvwxyz0123456789"), "sk- key value removed");
+    },
+
+    "preserves prefix before REDACTED marker": () => {
+      const input = 'ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789';
+      const result = sanitizeContent(input);
+      // prefix should be min(10, floor(len/3)) chars of original match
+      assert(result.startsWith("ghp_"), "preserves beginning of token");
+      assert(result.endsWith("[REDACTED]"), "ends with REDACTED");
+    },
+
+    "handles multiple secrets in same line": () => {
+      const input = 'api_key: secret12345678901234 token: mytokenvalue12345678';
+      const result = sanitizeContent(input);
+      const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
+      assert(redactedCount >= 2, "multiple redactions in same line");
+    },
+
+    "is case-insensitive for key names": () => {
+      const input = 'API_KEY: secret12345678901234\nApi_Key: secret12345678901234';
+      const result = sanitizeContent(input);
+      const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
+      assertEqual(redactedCount, 2, "case-insensitive matching");
     },
   });
 
