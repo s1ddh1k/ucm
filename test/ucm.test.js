@@ -3059,6 +3059,26 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: accepts done when follow-up decisions explicitly address feedback gaps",
   );
+
+  const weakKeywordOverlapFollowups = [
+    { area: "제품 정의", question: "무엇을 만드나요?", answer: "B2B 대시보드" },
+    { area: "핵심 기능", question: "핵심 기능은?", answer: "실시간 분석" },
+    { area: "기술 스택", question: "언어는?", answer: "TypeScript" },
+    { area: "설계 결정", question: "배포 방식은?", answer: "Docker" },
+    { area: "설계 결정", question: "테스트 도구는?", answer: "Jest 사용" },
+  ];
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: `# Gap Report
+
+- **테스트 가능성**: 성공/실패 기준을 명확히 정의하세요.`,
+      decisionsCount: weakKeywordOverlapFollowups.length,
+      feedbackStartDecisionsCount: 4,
+      decisions: weakKeywordOverlapFollowups,
+    }),
+    "qna done gate: rejects done when follow-up only overlaps generic gap keyword",
+  );
 }
 
 function testReqBuildQnaArgsUsesFeedbackFile() {
