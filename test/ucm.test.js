@@ -2931,6 +2931,22 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: rejects done when unresolved contradictions exist",
   );
+
+  const repeatedPreFeedbackDecision = [
+    { area: "핵심 기능", question: "실패 시 동작은?", answer: "재시도 3회 후 에러 반환" },
+    { area: "설계 결정", question: "로그 기록 방식은?", answer: "구조화 로그" },
+    { area: "핵심 기능", question: "실패 시 동작은?", answer: "재시도 3회 후 에러 반환" },
+  ];
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: "# Gap Report\n\n- **테스트 가능성**: 성공/실패 기준을 더 구체화하세요.",
+      decisionsCount: repeatedPreFeedbackDecision.length,
+      feedbackStartDecisionsCount: 2,
+      decisions: repeatedPreFeedbackDecision,
+    }),
+    "qna done gate: rejects done when post-feedback decision only repeats pre-feedback decision",
+  );
 }
 
 function testParseDecisionsFileBasic() {
