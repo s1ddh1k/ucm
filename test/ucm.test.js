@@ -2706,6 +2706,25 @@ function testComputeCoverageIgnoresVagueAffirmativeSignals() {
   assertEqual(coverage["설계 결정"], 0, "computeCoverage vague affirmatives: 설계 결정 stays 0");
 }
 
+function testComputeCoverageIgnoresGenericNonActionableSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "기능 개선" },
+    { area: "제품 정의", question: "q2", answer: "성능 향상" },
+    { area: "제품 정의", question: "q3", answer: "버그 수정" },
+    { area: "제품 정의", question: "q4", answer: "리팩터링" },
+    { area: "핵심 기능", question: "q5", answer: "자동화" },
+    { area: "핵심 기능", question: "q6", answer: "최적화" },
+    { area: "기술 스택", question: "q7", answer: "최신 기술" },
+    { area: "설계 결정", question: "q8", answer: "유연하게" },
+    { area: "설계 결정", question: "q9", answer: "상황에 따라" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(coverage["제품 정의"], 0, "computeCoverage generic signals: 제품 정의 stays 0");
+  assertEqual(coverage["핵심 기능"], 0, "computeCoverage generic signals: 핵심 기능 stays 0");
+  assertEqual(coverage["기술 스택"], 0, "computeCoverage generic signals: 기술 스택 stays 0");
+  assertEqual(coverage["설계 결정"], 0, "computeCoverage generic signals: 설계 결정 stays 0");
+}
+
 function testComputeCoverageBrownfield() {
   const decisions = [
     { area: "작업 목표", question: "q1", answer: "a1" },
@@ -10028,6 +10047,7 @@ async function main() {
   testComputeCoverageIgnoresDuplicateSignals();
   testComputeCoverageIgnoresNonInformativeSignals();
   testComputeCoverageIgnoresVagueAffirmativeSignals();
+  testComputeCoverageIgnoresGenericNonActionableSignals();
   testComputeCoverageBrownfield();
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
