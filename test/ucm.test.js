@@ -3172,6 +3172,33 @@ function testBuildQuestionPromptContradictionGuard() {
   );
 }
 
+function testBuildQuestionPromptIncludesDetectedContradictions() {
+  const decisions = [
+    { area: "기술 스택", question: "백엔드는?", answer: "Node.js" },
+    { area: "기술 스택", question: "백엔드는?", answer: "Go" },
+  ];
+  const coverage = computeCoverage(decisions, false);
+  const prompt = buildQuestionPrompt(null, decisions, null, {
+    isResume: true,
+    isBrownfield: false,
+    coverage,
+    repoContext: null,
+  });
+
+  assert(
+    prompt.includes("감지된 모순 후보"),
+    "buildQuestionPrompt contradiction detail: includes detected contradiction section",
+  );
+  assert(
+    prompt.includes("백엔드는?"),
+    "buildQuestionPrompt contradiction detail: includes contradictory question",
+  );
+  assert(
+    prompt.includes("Node.js") && prompt.includes("Go"),
+    "buildQuestionPrompt contradiction detail: includes conflicting answers",
+  );
+}
+
 function testBuildRefinementPromptGreenfield() {
   const coverage = computeCoverage([], REFINEMENT_GREENFIELD);
   const prompt = buildRefinementPrompt([], "로그인 기능 구현", {
@@ -10142,6 +10169,7 @@ async function main() {
   testBuildQuestionPromptNoTemplate();
   testBuildQuestionPromptWithFeedback();
   testBuildQuestionPromptContradictionGuard();
+  testBuildQuestionPromptIncludesDetectedContradictions();
   testBuildRefinementPromptGreenfield();
   testBuildRefinementPromptBrownfield();
   testBuildRefinementPromptWithDecisions();
