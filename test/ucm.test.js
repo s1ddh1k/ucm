@@ -54,6 +54,7 @@ const {
   EXPECTED_GREENFIELD, EXPECTED_BROWNFIELD,
   REFINEMENT_GREENFIELD, REFINEMENT_BROWNFIELD,
   computeCoverage, isFullyCovered, hasUnresolvedContradictions,
+  shouldSkipDuplicateQuestion,
   shouldStopQnaForCoverage, shouldAcceptDoneResponse,
   buildQuestionPrompt, formatDecisions, parseDecisionsFile,
   buildRefinementPrompt, buildAutopilotRefinementPrompt, formatRefinedRequirements,
@@ -2857,6 +2858,33 @@ function testHasUnresolvedContradictionsWithEquivalentQuestionSignals() {
   );
 }
 
+function testShouldSkipDuplicateQuestion() {
+  const decisions = [
+    { area: "핵심 기능", question: "핵심 기능 우선순위는?", answer: "로그인" },
+  ];
+  assert(
+    shouldSkipDuplicateQuestion(decisions, {
+      area: "핵심 기능",
+      question: "핵심 기능 우선순위는?",
+    }),
+    "shouldSkipDuplicateQuestion: skips already-asked question in same area",
+  );
+}
+
+function testShouldSkipDuplicateQuestionAllowsContradictionResolution() {
+  const contradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "DB는?", answer: "MySQL" },
+  ];
+  assert(
+    !shouldSkipDuplicateQuestion(contradictory, {
+      area: "기술 스택",
+      question: "DB는?",
+    }),
+    "shouldSkipDuplicateQuestion: allows duplicate question when contradiction must be resolved",
+  );
+}
+
 function testShouldStopQnaForCoverage() {
   const fullCoverage = { a: 1.0, b: 1.0 };
   const partialCoverage = { a: 1.0, b: 0.5 };
@@ -3248,6 +3276,87 @@ function testQnaCliConsumesLlmJsonDataEnvelope() {
   assertEqual(decisions[0].area, "핵심 기능", "qna cli json envelope: preserves response area");
   assertEqual(decisions[0].question, "핵심 기능 우선순위는?", "qna cli json envelope: preserves response question");
   assertEqual(decisions[0].answer, "로그인", "qna cli json envelope: stores selected option label");
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+function testQnaCliSkipsDuplicateQuestionSuggestion() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-duplicate-question-"));
+  const outputDir = path.join(tmpDir, "output");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const decisionsPath = path.join(tmpDir, "decisions.md");
+  fs.writeFileSync(
+    decisionsPath,
+    [
+      "# 설계 결정",
+      "",
+      "## 결정 사항",
+      "",
+      "### 핵심 기능",
+      "",
+      "- **Q:** 핵심 기능 우선순위는?",
+      "  - **A:** 로그인",
+      "",
+    ].join("\n"),
+  );
+
+  const codexStubPath = path.join(tmpDir, "codex");
+  fs.writeFileSync(
+    codexStubPath,
+    [
+      "#!/bin/sh",
+      "count_file=\"$0.count\"",
+      "count=0",
+      "if [ -f \"$count_file\" ]; then count=$(cat \"$count_file\"); fi",
+      "count=$((count+1))",
+      "echo \"$count\" > \"$count_file\"",
+      "if [ \"$count\" -eq 1 ]; then",
+      "  cat <<'EOF'",
+      "{\"question\":\"핵심 기능 우선순위는?\",\"options\":[{\"label\":\"로그인\",\"reason\":\"기본 사용자 흐름\"},{\"label\":\"대시보드\",\"reason\":\"핵심 가치 노출\"}],\"area\":\"핵심 기능\",\"done\":false}",
+      "EOF",
+      "elif [ \"$count\" -eq 2 ]; then",
+      "  cat <<'EOF'",
+      "{\"question\":\"성능 목표는?\",\"options\":[{\"label\":\"응답 1초\",\"reason\":\"체감 성능 향상\"},{\"label\":\"응답 3초\",\"reason\":\"구현 복잡도 절충\"}],\"area\":\"설계 결정\",\"done\":false}",
+      "EOF",
+      "else",
+      "  cat <<'EOF'",
+      "{\"question\":\"배포 전략은?\",\"options\":[{\"label\":\"블루그린 배포\",\"reason\":\"무중단 배포\"},{\"label\":\"롤링 배포\",\"reason\":\"점진적 전환\"}],\"area\":\"설계 결정\",\"done\":false}",
+      "EOF",
+      "fi",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.chmodSync(codexStubPath, 0o755);
+
+  const qnaPath = path.join(__dirname, "..", "lib", "qna.js");
+  const result = spawnSync(
+    "node",
+    [qnaPath, "--provider", "codex", "--resume", decisionsPath, "--output", outputDir],
+    {
+      encoding: "utf-8",
+      input: "1\n",
+      env: {
+        ...process.env,
+        PATH: `${tmpDir}${path.delimiter}${process.env.PATH || ""}`,
+      },
+    },
+  );
+
+  assertEqual(result.status, 0, "qna cli duplicate skip: process exits successfully");
+  assert(
+    result.stderr.includes("중복 질문 감지"),
+    "qna cli duplicate skip: logs duplicate question detection",
+  );
+
+  const savedDecisionsPath = result.stdout.trim();
+  const savedDecisions = parseDecisionsFile(fs.readFileSync(savedDecisionsPath, "utf-8"));
+  assertEqual(savedDecisions.length, 2, "qna cli duplicate skip: stores one additional decision");
+  assertEqual(
+    savedDecisions[1].question,
+    "성능 목표는?",
+    "qna cli duplicate skip: skips duplicate prompt and records next unique question",
+  );
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
@@ -10554,12 +10663,15 @@ async function main() {
   testHasUnresolvedContradictions();
   testHasUnresolvedContradictionsResolvedByReaffirmedAnswer();
   testHasUnresolvedContradictionsWithEquivalentQuestionSignals();
+  testShouldSkipDuplicateQuestion();
+  testShouldSkipDuplicateQuestionAllowsContradictionResolution();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
   testReqBuildQnaArgsPreservesTemplateOnResume();
   testReqCliKeepsGapReportForFollowupQna();
   testQnaCliConsumesLlmJsonDataEnvelope();
+  testQnaCliSkipsDuplicateQuestionSuggestion();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testSpecCliFailsOnValidationErrors();
   testParseDecisionsFileBasic();
