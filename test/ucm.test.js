@@ -2348,6 +2348,25 @@ function testUiServerResumeRouteUsesBodyParams() {
   assertEqual(params.fromStage, body.fromStage, "uiServer: resume route forwards fromStage from body");
 }
 
+function testUiServerRefinementAutopilotRouteUsesBodyParams() {
+  const { PROXY_ROUTES } = require("../lib/ucm-ui-server.js");
+  const route = PROXY_ROUTES.find((r) => r.method === "refinement_autopilot" && r.post === true);
+  assert(!!route, "uiServer: refinement_autopilot POST route exists");
+  if (!route) return;
+
+  const body = { sessionId: "refinement-session-123" };
+  const url = new URL("http://localhost/api/refinement/autopilot");
+  let params = {};
+  if (route.bodyParams && body) {
+    params = body;
+  } else if (route.params) {
+    const match = "/api/refinement/autopilot".match(route.pattern);
+    params = route.params(url, match, body);
+  }
+
+  assertEqual(params.sessionId, body.sessionId, "uiServer: refinement_autopilot route forwards sessionId from body");
+}
+
 function testUiServerResolveHomePath() {
   const { resolveHomePath } = require("../lib/ucm-ui-server.js");
   const home = os.homedir();
@@ -9456,6 +9475,7 @@ async function main() {
   testUiServerAnalyzeRoute();
   testUiServerResearchRoute();
   testUiServerResumeRouteUsesBodyParams();
+  testUiServerRefinementAutopilotRouteUsesBodyParams();
   testDashboardCommandPassesDevFlag();
   testDashboardCommandUsesCrossPlatformOpen();
   testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();

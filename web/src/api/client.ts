@@ -178,6 +178,8 @@ export const refinement = {
   },
   finalize: (params: { sessionId: string; answers: Record<string, string> }) =>
     post<unknown>("/api/refinement/finalize", params),
+  autopilot: (params: { sessionId: string }) =>
+    post<unknown>("/api/refinement/autopilot", params),
   cancel: (params: { sessionId: string }) =>
     post<unknown>("/api/refinement/cancel", params),
 };
