@@ -2885,6 +2885,19 @@ function testShouldSkipDuplicateQuestionAllowsContradictionResolution() {
   );
 }
 
+function testShouldSkipDuplicateQuestionWhenPriorAnswerIsUninformative() {
+  const nonInformative = [
+    { area: "제품 정의", question: "어떤 제품을 만드나요?", answer: "모름" },
+  ];
+  assert(
+    !shouldSkipDuplicateQuestion(nonInformative, {
+      area: "제품 정의",
+      question: "어떤 제품을 만드나요?",
+    }),
+    "shouldSkipDuplicateQuestion: allows repeating question when prior answer is non-informative",
+  );
+}
+
 function testShouldStopQnaForCoverage() {
   const fullCoverage = { a: 1.0, b: 1.0 };
   const partialCoverage = { a: 1.0, b: 0.5 };
@@ -10665,6 +10678,7 @@ async function main() {
   testHasUnresolvedContradictionsWithEquivalentQuestionSignals();
   testShouldSkipDuplicateQuestion();
   testShouldSkipDuplicateQuestionAllowsContradictionResolution();
+  testShouldSkipDuplicateQuestionWhenPriorAnswerIsUninformative();
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
