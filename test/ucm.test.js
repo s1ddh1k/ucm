@@ -2688,6 +2688,21 @@ function testComputeCoverageIgnoresNonInformativeSignals() {
   assertEqual(coverage["제품 정의"], 0.25, "computeCoverage non-informative answers do not increase coverage");
 }
 
+function testComputeCoverageIgnoresPartiallyUnresolvedSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "B2B 운영 대시보드 (세부 사용자 TBD)" },
+    { area: "제품 정의", question: "q2", answer: "MVP 범위는 미정이며 추후 결정" },
+    { area: "제품 정의", question: "q3", answer: "권한 정책 확인 필요" },
+    { area: "제품 정의", question: "q4", answer: "배포 지역 TBD" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(
+    coverage["제품 정의"],
+    0,
+    "computeCoverage partially unresolved answers do not increase coverage",
+  );
+}
+
 function testComputeCoverageIgnoresVagueAffirmativeSignals() {
   const decisions = [
     { area: "제품 정의", question: "q1", answer: "네" },
@@ -10255,6 +10270,7 @@ async function main() {
   testComputeCoverageOverflow();
   testComputeCoverageIgnoresDuplicateSignals();
   testComputeCoverageIgnoresNonInformativeSignals();
+  testComputeCoverageIgnoresPartiallyUnresolvedSignals();
   testComputeCoverageIgnoresVagueAffirmativeSignals();
   testComputeCoverageIgnoresGenericNonActionableSignals();
   testComputeCoverageBrownfield();
