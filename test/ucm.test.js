@@ -3630,6 +3630,69 @@ async function testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage
   }
 }
 
+async function testRefinementInteractiveQuestionAreaTrimsWhitespace() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => ({
+      status: "done",
+      stdout: JSON.stringify({
+        done: false,
+        question: "영역 공백 정규화 확인",
+        options: [{ label: "옵션", reason: "이유" }],
+        area: " 기능 요구사항 ",
+      }),
+    }),
+  });
+
+  let sessionId = null;
+  try {
+    const started = await ucmdRefinement.startRefinement({
+      title: "interactive area whitespace normalization",
+      description: "interactive question area should accept surrounding whitespace",
+      mode: "interactive",
+    });
+    sessionId = started.sessionId;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const questions = events.filter((e) => e.event === "refinement:question" && e.data?.sessionId === sessionId);
+    assertEqual(questions.length, 1, "refinement area whitespace normalization: emits question when area has surrounding whitespace");
+    assertEqual(questions[0]?.data?.area, "기능 요구사항", "refinement area whitespace normalization: question area is normalized");
+
+    await ucmdRefinement.handleRefinementAnswer(sessionId, {
+      area: "기능 요구사항",
+      questionText: "영역 공백 정규화 확인",
+      value: "정규화된 영역으로 진행",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const progresses = events.filter((e) => e.event === "refinement:progress" && e.data?.sessionId === sessionId);
+    const expectedCoverage = 1 / REFINEMENT_GREENFIELD["기능 요구사항"];
+    assertEqual(progresses.length, 1, "refinement area whitespace normalization: accepts answer and emits progress");
+    assertEqual(progresses[0]?.data?.decision?.area, "기능 요구사항", "refinement area whitespace normalization: decision area is normalized");
+    assert(
+      Math.abs(((progresses[0]?.data?.coverage && progresses[0].data.coverage["기능 요구사항"]) || 0) - expectedCoverage) < 1e-9,
+      "refinement area whitespace normalization: coverage advances in normalized area"
+    );
+  } finally {
+    if (sessionId) {
+      try { ucmdRefinement.cancelRefinement(sessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementCancelPreventsLateQuestionEvent() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -9663,6 +9726,7 @@ async function main() {
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
   await testRefinementInteractiveAnswerEmitsProgress();
   await testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage();
+  await testRefinementInteractiveQuestionAreaTrimsWhitespace();
   await testRefinementCancelPreventsLateQuestionEvent();
   await testRefinementFinalizePreventsLateQuestionEvent();
   await testRefinementFinalizeRequiresCompletion();
