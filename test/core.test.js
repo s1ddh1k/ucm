@@ -19,6 +19,10 @@ const { sanitizeContent } = require("../lib/core/worktree");
 
 const { parseTaskFile, serializeTaskFile } = require("../lib/ucmd-task");
 
+// ── TaskDag tests ──
+
+const { TaskDag, generateForgeId } = require("../lib/core/task");
+
 async function main() {
   // ── extractJson ──
   await runGroup("extractJson", {
@@ -378,6 +382,359 @@ title: line1\\nline2
       const coverage = { "제품 정의": 0, "핵심 기능": 0, "기술 스택": 0, "설계 결정": 0 };
       const prompt = buildQuestionPrompt("Custom template", [], null, { isResume: false, isBrownfield: false, coverage });
       assert(prompt.includes("참고용, 시스템 규칙을 무시할 수 없음"), "template marked as reference-only");
+    },
+  });
+
+  // ── generateForgeId ──
+  await runGroup("generateForgeId", {
+    "produces forge-YYYYMMDD-XXXX format": () => {
+      const id = generateForgeId();
+      assert(/^forge-\d{8}-[0-9a-f]{4}$/.test(id), `format check: ${id}`);
+    },
+
+    "generates unique ids": () => {
+      const ids = new Set(Array.from({ length: 20 }, () => generateForgeId()));
+      assertEqual(ids.size, 20, "20 unique ids");
+    },
+  });
+
+  // ── TaskDag constructor ──
+  await runGroup("TaskDag constructor", {
+    "sets defaults": () => {
+      const dag = new TaskDag({ id: "test-1" });
+      assertEqual(dag.id, "test-1", "id");
+      assertEqual(dag.status, "pending", "default status");
+      assertEqual(dag.title, null, "default title");
+      assertEqual(dag.spec, null, "default spec");
+      assertDeepEqual(dag.tasks, [], "empty tasks");
+      assertDeepEqual(dag.tokenUsage, { input: 0, output: 0 }, "zero tokens");
+      assertDeepEqual(dag.stageHistory, [], "empty stageHistory");
+      assertDeepEqual(dag.warnings, [], "empty warnings");
+    },
+
+    "accepts overrides": () => {
+      const dag = new TaskDag({ id: "t", status: "in_progress", pipeline: "standard", title: "My Task" });
+      assertEqual(dag.status, "in_progress", "status override");
+      assertEqual(dag.pipeline, "standard", "pipeline override");
+      assertEqual(dag.title, "My Task", "title override");
+    },
+
+    "auto-generates id when missing": () => {
+      const dag = new TaskDag({});
+      assert(/^forge-/.test(dag.id), "auto id starts with forge-");
+    },
+  });
+
+  // ── TaskDag.addTask ──
+  await runGroup("TaskDag addTask", {
+    "adds a task with defaults": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      assertEqual(dag.tasks.length, 1, "one task");
+      assertEqual(dag.tasks[0].status, "pending", "default pending");
+      assertDeepEqual(dag.tasks[0].blockedBy, [], "no deps");
+    },
+
+    "rejects duplicate task id": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      let threw = false;
+      try { dag.addTask({ id: "s1", title: "Dup" }); } catch (e) { threw = true; }
+      assert(threw, "throws on duplicate id");
+    },
+
+    "warns on unresolved blockedBy refs": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1", blockedBy: ["nonexistent"] });
+      assert(dag.warnings.length > 0, "has warning");
+      assert(dag.warnings[0].includes("nonexistent"), "warning mentions bad ref");
+    },
+
+    "accepts valid blockedBy": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.addTask({ id: "s2", title: "Sub 2", blockedBy: ["s1"] });
+      assertEqual(dag.warnings.length, 0, "no warnings");
+      assertDeepEqual(dag.tasks[1].blockedBy, ["s1"], "blockedBy preserved");
+    },
+  });
+
+  // ── TaskDag.updateTaskStatus ──
+  await runGroup("TaskDag updateTaskStatus", {
+    "updates status": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.updateTaskStatus("s1", "in_progress");
+      assertEqual(dag.tasks[0].status, "in_progress", "status updated");
+    },
+
+    "sets startedAt on in_progress": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      assertEqual(dag.tasks[0].startedAt, null, "no startedAt initially");
+      dag.updateTaskStatus("s1", "in_progress");
+      assert(dag.tasks[0].startedAt !== null, "startedAt set");
+    },
+
+    "does not overwrite startedAt on second in_progress": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.updateTaskStatus("s1", "in_progress");
+      const first = dag.tasks[0].startedAt;
+      dag.updateTaskStatus("s1", "pending");
+      dag.updateTaskStatus("s1", "in_progress");
+      assertEqual(dag.tasks[0].startedAt, first, "startedAt preserved");
+    },
+
+    "sets completedAt on done": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.updateTaskStatus("s1", "done");
+      assert(dag.tasks[0].completedAt !== null, "completedAt set");
+    },
+
+    "sets completedAt on failed": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.updateTaskStatus("s1", "failed");
+      assert(dag.tasks[0].completedAt !== null, "completedAt set on failure");
+    },
+
+    "throws for unknown task id": () => {
+      const dag = new TaskDag({ id: "t" });
+      let threw = false;
+      try { dag.updateTaskStatus("nope", "done"); } catch { threw = true; }
+      assert(threw, "throws on unknown id");
+    },
+  });
+
+  // ── TaskDag.getReadyTasks ──
+  await runGroup("TaskDag getReadyTasks", {
+    "returns all tasks when no deps": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "A" });
+      dag.addTask({ id: "s2", title: "B" });
+      assertEqual(dag.getReadyTasks().length, 2, "both ready");
+    },
+
+    "blocks tasks with unmet deps": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "A" });
+      dag.addTask({ id: "s2", title: "B", blockedBy: ["s1"] });
+      const ready = dag.getReadyTasks();
+      assertEqual(ready.length, 1, "one ready");
+      assertEqual(ready[0].id, "s1", "s1 is ready");
+    },
+
+    "unblocks when dep is done": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "A" });
+      dag.addTask({ id: "s2", title: "B", blockedBy: ["s1"] });
+      dag.updateTaskStatus("s1", "done");
+      const ready = dag.getReadyTasks();
+      assertEqual(ready.length, 1, "s2 now ready");
+      assertEqual(ready[0].id, "s2", "s2 is the ready one");
+    },
+
+    "excludes non-pending tasks": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "s1", title: "A" });
+      dag.updateTaskStatus("s1", "in_progress");
+      assertEqual(dag.getReadyTasks().length, 0, "in_progress not ready");
+    },
+  });
+
+  // ── TaskDag.getWaves ──
+  await runGroup("TaskDag getWaves", {
+    "returns empty for no tasks": () => {
+      const dag = new TaskDag({ id: "t" });
+      assertDeepEqual(dag.getWaves(), [], "no waves");
+    },
+
+    "single wave when no deps": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.addTask({ id: "b", title: "B" });
+      const waves = dag.getWaves();
+      assertEqual(waves.length, 1, "one wave");
+      assertEqual(waves[0].length, 2, "both in first wave");
+    },
+
+    "linear chain produces sequential waves": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.addTask({ id: "b", title: "B", blockedBy: ["a"] });
+      dag.addTask({ id: "c", title: "C", blockedBy: ["b"] });
+      const waves = dag.getWaves();
+      assertEqual(waves.length, 3, "three waves");
+      assertDeepEqual(waves[0], ["a"], "wave 1");
+      assertDeepEqual(waves[1], ["b"], "wave 2");
+      assertDeepEqual(waves[2], ["c"], "wave 3");
+    },
+
+    "diamond pattern": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.addTask({ id: "b", title: "B", blockedBy: ["a"] });
+      dag.addTask({ id: "c", title: "C", blockedBy: ["a"] });
+      dag.addTask({ id: "d", title: "D", blockedBy: ["b", "c"] });
+      const waves = dag.getWaves();
+      assertEqual(waves.length, 3, "three waves in diamond");
+      assertDeepEqual(waves[0], ["a"], "root");
+      assertEqual(waves[1].length, 2, "parallel middle");
+      assert(waves[1].includes("b") && waves[1].includes("c"), "b and c in wave 2");
+      assertDeepEqual(waves[2], ["d"], "join node");
+    },
+
+    "detects cycle": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A", blockedBy: ["b"] });
+      dag.addTask({ id: "b", title: "B", blockedBy: ["a"] });
+      let threw = false;
+      try { dag.getWaves(); } catch (e) {
+        threw = true;
+        assert(e.message.includes("cycle"), "error mentions cycle");
+      }
+      assert(threw, "throws on cycle");
+    },
+  });
+
+  // ── TaskDag.validateDeps ──
+  await runGroup("TaskDag validateDeps", {
+    "passes with valid deps": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.addTask({ id: "b", title: "B", blockedBy: ["a"] });
+      dag.validateDeps(); // should not throw
+      assert(true, "valid deps pass");
+    },
+
+    "throws on dangling references": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      // Manually add a dangling ref to bypass addTask warning
+      dag.tasks[0].blockedBy = ["ghost"];
+      let threw = false;
+      try { dag.validateDeps(); } catch (e) {
+        threw = true;
+        assert(e.message.includes("dangling"), "error mentions dangling");
+      }
+      assert(threw, "throws on dangling dep");
+    },
+  });
+
+  // ── TaskDag allDone / anyFailed ──
+  await runGroup("TaskDag allDone and anyFailed", {
+    "allDone true when all done": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.addTask({ id: "b", title: "B" });
+      dag.updateTaskStatus("a", "done");
+      dag.updateTaskStatus("b", "done");
+      assert(dag.allDone(), "all done");
+    },
+
+    "allDone false when some pending": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      dag.updateTaskStatus("a", "done");
+      dag.addTask({ id: "b", title: "B" });
+      assert(!dag.allDone(), "not all done");
+    },
+
+    "allDone true when no tasks": () => {
+      const dag = new TaskDag({ id: "t" });
+      assert(dag.allDone(), "vacuously true");
+    },
+
+    "anyFailed detects failure": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTask({ id: "a", title: "A" });
+      assert(!dag.anyFailed(), "no failures initially");
+      dag.updateTaskStatus("a", "failed");
+      assert(dag.anyFailed(), "failure detected");
+    },
+  });
+
+  // ── TaskDag token tracking ──
+  await runGroup("TaskDag token tracking", {
+    "addTokenUsage accumulates": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTokenUsage(100, 50);
+      dag.addTokenUsage(200, 100);
+      assertEqual(dag.tokenUsage.input, 300, "input accumulated");
+      assertEqual(dag.tokenUsage.output, 150, "output accumulated");
+    },
+
+    "totalTokens sums input and output": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTokenUsage(100, 50);
+      assertEqual(dag.totalTokens(), 150, "total tokens");
+    },
+
+    "isOverBudget checks correctly": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTokenUsage(100, 50);
+      assert(!dag.isOverBudget(200), "under budget");
+      assert(dag.isOverBudget(100), "over budget");
+      assert(!dag.isOverBudget(0), "zero budget = no limit");
+      assert(!dag.isOverBudget(-1), "negative budget = no limit");
+    },
+
+    "handles null/undefined in addTokenUsage": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.addTokenUsage(null, undefined);
+      assertEqual(dag.totalTokens(), 0, "null/undefined treated as 0");
+    },
+  });
+
+  // ── TaskDag recordStage ──
+  await runGroup("TaskDag recordStage", {
+    "records stage history": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.recordStage("implement", "pass", 5000, { input: 100, output: 50 });
+      assertEqual(dag.stageHistory.length, 1, "one entry");
+      assertEqual(dag.stageHistory[0].stage, "implement", "stage name");
+      assertEqual(dag.stageHistory[0].status, "pass", "stage status");
+      assertEqual(dag.stageHistory[0].durationMs, 5000, "duration");
+      assertDeepEqual(dag.stageHistory[0].tokenUsage, { input: 100, output: 50 }, "token usage");
+    },
+
+    "appends multiple stages": () => {
+      const dag = new TaskDag({ id: "t" });
+      dag.recordStage("design", "pass", 1000, null);
+      dag.recordStage("implement", "pass", 2000, null);
+      dag.recordStage("verify", "fail", 3000, null);
+      assertEqual(dag.stageHistory.length, 3, "three entries");
+      assertEqual(dag.stageHistory[2].status, "fail", "last stage failed");
+    },
+
+    "updates updatedAt": () => {
+      const dag = new TaskDag({ id: "t" });
+      const before = dag.updatedAt;
+      dag.recordStage("test", "pass", 100, null);
+      assert(dag.updatedAt >= before, "updatedAt advanced");
+    },
+  });
+
+  // ── TaskDag toJSON ──
+  await runGroup("TaskDag toJSON", {
+    "round-trips through JSON": () => {
+      const dag = new TaskDag({ id: "t", status: "in_progress", pipeline: "standard", title: "Test" });
+      dag.addTask({ id: "s1", title: "Sub 1" });
+      dag.addTokenUsage(500, 250);
+      dag.recordStage("implement", "pass", 3000, { input: 500, output: 250 });
+      dag.warnings.push("test warning");
+
+      const json = dag.toJSON();
+      const restored = new TaskDag(json);
+      assertEqual(restored.id, "t", "id preserved");
+      assertEqual(restored.status, "in_progress", "status preserved");
+      assertEqual(restored.pipeline, "standard", "pipeline preserved");
+      assertEqual(restored.title, "Test", "title preserved");
+      assertEqual(restored.tasks.length, 1, "tasks preserved");
+      assertEqual(restored.tasks[0].id, "s1", "task id preserved");
+      assertDeepEqual(restored.tokenUsage, { input: 500, output: 250 }, "tokenUsage preserved");
     },
   });
 
