@@ -2820,6 +2820,19 @@ function testComputeCoverageNormalizesEquivalentQuestionSignals() {
   );
 }
 
+function testComputeCoverageNormalizesTechnicalAliasQuestionSignals() {
+  const decisions = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "데이터베이스는?", answer: "MySQL" },
+  ];
+  const coverage = computeCoverage(decisions, { "기술 스택": 2 });
+  assertEqual(
+    coverage["기술 스택"],
+    0.5,
+    "computeCoverage question normalization: technical aliases count as one covered slot",
+  );
+}
+
 function testComputeCoverageDropsWhenAnswerRegressesToUncertainty() {
   const decisions = [
     { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
@@ -2882,6 +2895,17 @@ function testHasUnresolvedContradictionsWithEquivalentQuestionSignals() {
   assert(
     hasUnresolvedContradictions(contradictory),
     "hasUnresolvedContradictions: detects conflicting answers for equivalent question phrasing",
+  );
+}
+
+function testHasUnresolvedContradictionsWithTechnicalAliasSignals() {
+  const contradictory = [
+    { area: "기술 스택", question: "DB는?", answer: "PostgreSQL" },
+    { area: "기술 스택", question: "데이터베이스는?", answer: "MySQL" },
+  ];
+  assert(
+    hasUnresolvedContradictions(contradictory),
+    "hasUnresolvedContradictions: detects conflicting answers for technical alias question phrasing",
   );
 }
 
@@ -10880,12 +10904,14 @@ async function main() {
   testComputeCoverageRefinement();
   testComputeCoverageContradictoryAnswersDoNotInflateCoverage();
   testComputeCoverageNormalizesEquivalentQuestionSignals();
+  testComputeCoverageNormalizesTechnicalAliasQuestionSignals();
   testComputeCoverageDropsWhenAnswerRegressesToUncertainty();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
   testHasUnresolvedContradictions();
   testHasUnresolvedContradictionsResolvedByReaffirmedAnswer();
   testHasUnresolvedContradictionsWithEquivalentQuestionSignals();
+  testHasUnresolvedContradictionsWithTechnicalAliasSignals();
   testHasUnresolvedContradictionsWhenAnswerRegressesToUncertainty();
   testShouldSkipDuplicateQuestion();
   testShouldSkipDuplicateQuestionAllowsContradictionResolution();
