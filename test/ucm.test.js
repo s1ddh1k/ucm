@@ -7464,6 +7464,72 @@ async function testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias() {
   }
 }
 
+async function testSocketRefinementAnswerWhitespaceValueUsesLegacyAlias() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let captured = null;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleRefinementAnswer: async (sessionId, answer) => {
+        captured = { sessionId, answer };
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    await socketRequest({
+      method: "refinement_answer",
+      params: {
+        sessionId: "refinement-legacy-whitespace-flat",
+        area: "기능 요구사항",
+        questionText: "공백 value 평면 레거시 질문",
+        value: "   ",
+        answer: "공백 value 평면 레거시 답변",
+      },
+    });
+
+    assert(captured !== null, "socket refinement answer whitespace legacy alias flat: handler called");
+    assertEqual(
+      captured?.answer?.value,
+      "공백 value 평면 레거시 답변",
+      "socket refinement answer whitespace legacy alias flat: maps trimmed-empty value to legacy answer field"
+    );
+
+    await socketRequest({
+      method: "refinement_answer",
+      params: {
+        sessionId: "refinement-legacy-whitespace-nested",
+        answer: {
+          area: "수용 조건",
+          questionText: "공백 value 중첩 레거시 질문",
+          value: "\t ",
+          answer: "공백 value 중첩 레거시 답변",
+        },
+      },
+    });
+
+    assert(captured !== null, "socket refinement answer whitespace legacy alias nested: handler called");
+    assertEqual(
+      captured?.answer?.value,
+      "공백 value 중첩 레거시 답변",
+      "socket refinement answer whitespace legacy alias nested: maps trimmed-empty value to legacy answer field"
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 async function testSocketRefinementAnswerRejectsMissingSessionId() {
   const ucmdServer = require("../lib/ucmd-server.js");
   let callCount = 0;
@@ -9373,6 +9439,7 @@ async function main() {
   await testSocketRefinementAnswerAcceptsFlatPayload();
   await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
   await testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias();
+  await testSocketRefinementAnswerWhitespaceValueUsesLegacyAlias();
   await testSocketRefinementAnswerRejectsMissingSessionId();
   await testSocketRefinementControlMethodsRejectMissingSessionId();
   testGetNextAction();
