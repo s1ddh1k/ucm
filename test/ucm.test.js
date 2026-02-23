@@ -3237,6 +3237,65 @@ async function testRefinementStartNormalizesInvalidModeToInteractive() {
   }
 }
 
+async function testRefinementStartRejectsMissingOrBlankTitle() {
+  const events = [];
+  const state = { stats: { totalSpawns: 0 } };
+  let spawnCalls = 0;
+  let blankStartedSessionId = null;
+
+  ucmdRefinement.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => state,
+    markStateDirty: () => {},
+    log: () => {},
+    broadcastWs: (event, data) => events.push({ event, data }),
+    submitTask: async () => ({ id: "unused" }),
+    spawnAgent: async () => {
+      spawnCalls += 1;
+      return {
+        status: "done",
+        stdout: JSON.stringify({
+          done: false,
+          question: "질문",
+          options: [{ label: "옵션", reason: "이유" }],
+          area: "기능 요구사항",
+        }),
+      };
+    },
+  });
+
+  try {
+    let missingTitleErr = null;
+    try {
+      await ucmdRefinement.startRefinement();
+    } catch (e) {
+      missingTitleErr = e;
+    }
+    assert(missingTitleErr && String(missingTitleErr.message).includes("title required"), "refinement start title guard: rejects missing params/title");
+
+    let blankTitleErr = null;
+    try {
+      const started = await ucmdRefinement.startRefinement({
+        title: "   ",
+        description: "빈 제목은 거부되어야 함",
+      });
+      blankStartedSessionId = started?.sessionId || null;
+    } catch (e) {
+      blankTitleErr = e;
+    }
+    assert(blankTitleErr && String(blankTitleErr.message).includes("title required"), "refinement start title guard: rejects blank title");
+
+    const startedEvents = events.filter((e) => e.event === "refinement:started");
+    assertEqual(spawnCalls, 0, "refinement start title guard: does not spawn question generation");
+    assertEqual(startedEvents.length, 0, "refinement start title guard: does not emit started event");
+  } finally {
+    if (blankStartedSessionId) {
+      try { ucmdRefinement.cancelRefinement(blankStartedSessionId); } catch {}
+    }
+    ucmdRefinement.setDeps({});
+  }
+}
+
 async function testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion() {
   const events = [];
   const state = { stats: { totalSpawns: 0 } };
@@ -7635,6 +7694,70 @@ async function testSocketRefinementControlMethodsRejectMissingSessionId() {
   }
 }
 
+async function testSocketStartRefinementRejectsMissingTitle() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let startCalls = 0;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      startRefinement: async () => {
+        startCalls += 1;
+        return { sessionId: "should-not-start" };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+    await ucmdServer.startSocketServer();
+
+    let missingTitleErr = null;
+    try {
+      await socketRequest({
+        method: "start_refinement",
+        params: {
+          description: "title 누락",
+        },
+      });
+    } catch (e) {
+      missingTitleErr = e;
+    }
+    assert(missingTitleErr !== null, "socket start_refinement missing title: rejects request");
+    assert(
+      String(missingTitleErr?.message || "").includes("title required"),
+      "socket start_refinement missing title: returns title required error",
+    );
+
+    let blankTitleErr = null;
+    try {
+      await socketRequest({
+        method: "start_refinement",
+        params: {
+          title: "   ",
+          description: "blank title",
+        },
+      });
+    } catch (e) {
+      blankTitleErr = e;
+    }
+    assert(blankTitleErr !== null, "socket start_refinement blank title: rejects request");
+    assert(
+      String(blankTitleErr?.message || "").includes("title required"),
+      "socket start_refinement blank title: returns title required error",
+    );
+    assertEqual(startCalls, 0, "socket start_refinement title guard: does not call handler");
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try { fs.unlinkSync(SOCK_PATH); } catch {}
+  }
+}
+
 function testGetNextAction() {
   // Test the logic of getNextAction
   function getNextAction(dag) {
@@ -9336,6 +9459,7 @@ async function main() {
   await testRefinementStartUsesBodyAsDescriptionFallback();
   await testRefinementStartPrefersDescriptionOverLegacyBody();
   await testRefinementStartNormalizesInvalidModeToInteractive();
+  await testRefinementStartRejectsMissingOrBlankTitle();
   await testRefinementRejectsEmptyAnswerWithoutAdvancingQuestion();
   await testRefinementInteractiveAnswerEmitsProgress();
   await testRefinementInteractiveAnswerUsesCurrentQuestionAreaForCoverage();
@@ -9368,6 +9492,7 @@ async function main() {
   await testRefinementCleansSessionAfterSpawnFailure();
   await testRefinementCleansAutopilotSessionAfterSpawnFailure();
   await testRefinementCleansAutopilotSessionAfterStatusFailure();
+  await testSocketStartRefinementRejectsMissingTitle();
   console.log();
 
   console.log("Snapshot/Evaluation Tests:");
