@@ -3077,6 +3077,22 @@ function testReqBuildQnaArgsUsesFeedbackFile() {
   assert(!args.includes("--feedback"), "req qna args: does not inline feedback text");
 }
 
+function testReqBuildQnaArgsPreservesTemplateOnResume() {
+  const args = buildQnaArgs({
+    round: 1,
+    opts: { template: "/tmp/template.md", project: "/tmp/project" },
+    decisionsPath: "/tmp/output/decisions.md",
+    feedbackFilePath: "/tmp/output/gap-report.md",
+    provider: "claude",
+    outputDir: "/tmp/output",
+  });
+
+  const templateIndex = args.indexOf("--template");
+  assert(templateIndex >= 0, "req qna args: preserves --template on follow-up rounds");
+  assertEqual(args[templateIndex + 1], path.resolve("/tmp/template.md"), "req qna args: uses resolved template path on follow-up rounds");
+  assert(args.includes("--resume"), "req qna args: still uses --resume on follow-up rounds");
+}
+
 function testQnaCliConsumesLlmJsonDataEnvelope() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "qna-json-envelope-"));
   const outputDir = path.join(tmpDir, "output");
@@ -10437,6 +10453,7 @@ async function main() {
   testShouldStopQnaForCoverage();
   testShouldAcceptDoneResponse();
   testReqBuildQnaArgsUsesFeedbackFile();
+  testReqBuildQnaArgsPreservesTemplateOnResume();
   testQnaCliConsumesLlmJsonDataEnvelope();
   testQnaCliRejectsFeedbackAndFeedbackFileTogether();
   testSpecCliFailsOnValidationErrors();
