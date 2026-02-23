@@ -2665,6 +2665,28 @@ function testComputeCoverageOverflow() {
   assertEqual(coverage["기술 스택"], 1.0, "computeCoverage overflow capped at 1.0");
 }
 
+function testComputeCoverageIgnoresDuplicateSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "웹 앱" },
+    { area: "제품 정의", question: "q2", answer: "웹 앱" },
+    { area: "제품 정의", question: "q3", answer: "웹 앱" },
+    { area: "제품 정의", question: "q4", answer: "웹 앱" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(coverage["제품 정의"], 0.25, "computeCoverage duplicate answers count once per area");
+}
+
+function testComputeCoverageIgnoresNonInformativeSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "TODO" },
+    { area: "제품 정의", question: "q2", answer: "미정" },
+    { area: "제품 정의", question: "q3", answer: "[NEEDS CLARIFICATION: 범위 확인 필요]" },
+    { area: "제품 정의", question: "q4", answer: "문서 작성 자동화 CLI" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(coverage["제품 정의"], 0.25, "computeCoverage non-informative answers do not increase coverage");
+}
+
 function testComputeCoverageBrownfield() {
   const decisions = [
     { area: "작업 목표", question: "q1", answer: "a1" },
@@ -9878,6 +9900,8 @@ async function main() {
   testComputeCoverageGreenfield();
   testComputeCoveragePartial();
   testComputeCoverageOverflow();
+  testComputeCoverageIgnoresDuplicateSignals();
+  testComputeCoverageIgnoresNonInformativeSignals();
   testComputeCoverageBrownfield();
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
