@@ -2687,6 +2687,25 @@ function testComputeCoverageIgnoresNonInformativeSignals() {
   assertEqual(coverage["제품 정의"], 0.25, "computeCoverage non-informative answers do not increase coverage");
 }
 
+function testComputeCoverageIgnoresVagueAffirmativeSignals() {
+  const decisions = [
+    { area: "제품 정의", question: "q1", answer: "네" },
+    { area: "제품 정의", question: "q2", answer: "예" },
+    { area: "제품 정의", question: "q3", answer: "yes" },
+    { area: "제품 정의", question: "q4", answer: "ok" },
+    { area: "핵심 기능", question: "q5", answer: "네" },
+    { area: "핵심 기능", question: "q6", answer: "yes" },
+    { area: "기술 스택", question: "q7", answer: "ok" },
+    { area: "설계 결정", question: "q8", answer: "예" },
+    { area: "설계 결정", question: "q9", answer: "네" },
+  ];
+  const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
+  assertEqual(coverage["제품 정의"], 0, "computeCoverage vague affirmatives: 제품 정의 stays 0");
+  assertEqual(coverage["핵심 기능"], 0, "computeCoverage vague affirmatives: 핵심 기능 stays 0");
+  assertEqual(coverage["기술 스택"], 0, "computeCoverage vague affirmatives: 기술 스택 stays 0");
+  assertEqual(coverage["설계 결정"], 0, "computeCoverage vague affirmatives: 설계 결정 stays 0");
+}
+
 function testComputeCoverageBrownfield() {
   const decisions = [
     { area: "작업 목표", question: "q1", answer: "a1" },
@@ -9970,6 +9989,7 @@ async function main() {
   testComputeCoverageOverflow();
   testComputeCoverageIgnoresDuplicateSignals();
   testComputeCoverageIgnoresNonInformativeSignals();
+  testComputeCoverageIgnoresVagueAffirmativeSignals();
   testComputeCoverageBrownfield();
   testComputeCoverageBooleanFlag();
   testComputeCoverageRefinement();
