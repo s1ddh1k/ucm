@@ -2805,6 +2805,31 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: rejects done when coverage is partial",
   );
+
+  const multiGapFeedback = `# Gap Report
+
+- **볼륨 충분성**: 기능 명세가 구현 가능한 수준으로 구체적이지 않습니다.
+- **테스트 가능성**: 성공/실패 기준이 모호합니다.`;
+
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: multiGapFeedback,
+      decisionsCount: 5,
+      feedbackStartDecisionsCount: 4,
+    }),
+    "qna done gate: rejects done when multi-gap feedback is only partially addressed",
+  );
+
+  assert(
+    shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: multiGapFeedback,
+      decisionsCount: 6,
+      feedbackStartDecisionsCount: 4,
+    }),
+    "qna done gate: accepts done after enough follow-up decisions for all gaps",
+  );
 }
 
 function testParseDecisionsFileBasic() {
