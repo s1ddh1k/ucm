@@ -5,7 +5,7 @@ startSuiteTimer(30_000);
 
 // ── extractJson tests ──
 
-const { extractJson } = require("../lib/core/llm");
+const { extractJson, buildCommand, sanitizeEnv, REASONING_EFFORTS } = require("../lib/core/llm");
 
 // ── quoteUserContent / summarizeDecisions tests ──
 
@@ -22,6 +22,10 @@ const { parseTaskFile, serializeTaskFile } = require("../lib/ucmd-task");
 // ── TaskDag tests ──
 
 const { TaskDag, generateForgeId } = require("../lib/core/task");
+
+// ── ucmd pure functions ──
+
+const { mapPipelineToForge, mergeStateStats } = require("../lib/ucmd");
 
 async function main() {
   // ── extractJson ──
@@ -735,6 +739,262 @@ title: line1\\nline2
       assertEqual(restored.tasks.length, 1, "tasks preserved");
       assertEqual(restored.tasks[0].id, "s1", "task id preserved");
       assertDeepEqual(restored.tokenUsage, { input: 500, output: 250 }, "tokenUsage preserved");
+    },
+  });
+
+  // ── buildCommand ──
+  await runGroup("buildCommand", {
+    "claude: basic args with -p": () => {
+      const result = buildCommand({ provider: "claude" });
+      assertEqual(result.cmd, "claude", "cmd is claude");
+      assert(result.args.includes("-p"), "has -p flag");
+      assert(!result.args.includes("--dangerously-skip-permissions"), "no skip permissions by default");
+      assert(result.args.includes("--output-format"), "has output format");
+    },
+
+    "claude: skipPermissions adds flag": () => {
+      const result = buildCommand({ provider: "claude", skipPermissions: true });
+      assert(result.args.includes("--dangerously-skip-permissions"), "has skip permissions");
+    },
+
+    "claude: includes model when specified": () => {
+      const result = buildCommand({ provider: "claude", model: "opus" });
+      const modelIdx = result.args.indexOf("--model");
+      assert(modelIdx !== -1, "has --model flag");
+      assertEqual(result.args[modelIdx + 1], "opus", "model value is opus");
+    },
+
+    "claude: stream-json adds --verbose": () => {
+      const result = buildCommand({ provider: "claude", outputFormat: "stream-json" });
+      assert(result.args.includes("--verbose"), "has --verbose for stream-json");
+      const fmtIdx = result.args.indexOf("--output-format");
+      assertEqual(result.args[fmtIdx + 1], "stream-json", "format is stream-json");
+    },
+
+    "claude: allowTools passed through": () => {
+      const result = buildCommand({ provider: "claude", allowTools: "Read,Write" });
+      const idx = result.args.indexOf("--allowedTools");
+      assert(idx !== -1, "has --allowedTools");
+      assertEqual(result.args[idx + 1], "Read,Write", "tools value");
+    },
+
+    "claude: sessionPersistence=true omits --no-session-persistence": () => {
+      const result = buildCommand({ provider: "claude", sessionPersistence: true });
+      assert(!result.args.includes("--no-session-persistence"), "no session persistence flag omitted");
+    },
+
+    "codex: basic args": () => {
+      const result = buildCommand({ provider: "codex" });
+      assertEqual(result.cmd, "codex", "cmd is codex");
+      assert(result.args.includes("exec"), "has exec subcommand");
+      assert(result.args.includes("--ephemeral"), "has ephemeral");
+      assert(result.args.includes("-"), "has stdin marker");
+    },
+
+    "codex: maps haiku to low reasoning effort": () => {
+      const result = buildCommand({ provider: "codex", model: "haiku" });
+      const idx = result.args.indexOf("-c");
+      assert(idx !== -1, "has -c flag");
+      assertEqual(result.args[idx + 1], "model_reasoning_effort=low", "haiku maps to low");
+    },
+
+    "codex: maps sonnet to medium reasoning effort": () => {
+      const result = buildCommand({ provider: "codex", model: "sonnet" });
+      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
+      assert(configArgs.some((a) => a === "model_reasoning_effort=medium"), "sonnet maps to medium");
+    },
+
+    "codex: maps opus to high reasoning effort": () => {
+      const result = buildCommand({ provider: "codex", model: "opus" });
+      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
+      assert(configArgs.some((a) => a === "model_reasoning_effort=high"), "opus maps to high");
+    },
+
+    "codex: passes through reasoning effort directly": () => {
+      const result = buildCommand({ provider: "codex", model: "xhigh" });
+      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
+      assert(configArgs.some((a) => a === "model_reasoning_effort=xhigh"), "xhigh passed through");
+    },
+
+    "codex: non-reasoning model uses --model": () => {
+      const result = buildCommand({ provider: "codex", model: "gpt-4o" });
+      const modelIdx = result.args.indexOf("--model");
+      assert(modelIdx !== -1, "has --model flag");
+      assertEqual(result.args[modelIdx + 1], "gpt-4o", "model value preserved");
+    },
+
+    "codex: configOverrides added as -c flags": () => {
+      const result = buildCommand({ provider: "codex", configOverrides: ["key=val1", "key2=val2"] });
+      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
+      assert(configArgs.includes("key=val1"), "first override");
+      assert(configArgs.includes("key2=val2"), "second override");
+    },
+
+    "codex: json output adds --json": () => {
+      const result = buildCommand({ provider: "codex", outputFormat: "json" });
+      assert(result.args.includes("--json"), "has --json for json format");
+    },
+
+    "gemini: basic args": () => {
+      const result = buildCommand({ provider: "gemini" });
+      assertEqual(result.cmd, "gemini", "cmd is gemini");
+      assert(result.args.includes("--output-format"), "has output format");
+    },
+
+    "gemini: maps opus to pro": () => {
+      const result = buildCommand({ provider: "gemini", model: "opus" });
+      const modelIdx = result.args.indexOf("--model");
+      assert(modelIdx !== -1, "has --model flag");
+      assertEqual(result.args[modelIdx + 1], "pro", "opus maps to pro");
+    },
+
+    "gemini: maps haiku to flash": () => {
+      const result = buildCommand({ provider: "gemini", model: "haiku" });
+      const modelIdx = result.args.indexOf("--model");
+      assertEqual(result.args[modelIdx + 1], "flash", "haiku maps to flash");
+    },
+
+    "gemini: maps sonnet to flash": () => {
+      const result = buildCommand({ provider: "gemini", model: "sonnet" });
+      const modelIdx = result.args.indexOf("--model");
+      assertEqual(result.args[modelIdx + 1], "flash", "sonnet maps to flash");
+    },
+
+    "gemini: native model names pass through": () => {
+      const result = buildCommand({ provider: "gemini", model: "gemini-2.5-pro" });
+      const modelIdx = result.args.indexOf("--model");
+      assertEqual(result.args[modelIdx + 1], "gemini-2.5-pro", "native model preserved");
+    },
+
+    "gemini: skipPermissions adds -y": () => {
+      const result = buildCommand({ provider: "gemini", skipPermissions: true });
+      assert(result.args.includes("-y"), "has -y flag");
+    },
+
+    "unknown provider throws": () => {
+      let threw = false;
+      try { buildCommand({ provider: "unknown" }); } catch (e) {
+        threw = true;
+        assert(e.message.includes("unknown provider"), "error mentions unknown provider");
+      }
+      assert(threw, "throws on unknown provider");
+    },
+  });
+
+  // ── sanitizeEnv ──
+  await runGroup("sanitizeEnv", {
+    "passes through allowed exact keys": () => {
+      const original = { ...process.env };
+      process.env.PATH = "/usr/bin";
+      process.env.HOME = "/home/test";
+      const env = sanitizeEnv();
+      assert(env.PATH !== undefined, "PATH included");
+      assert(env.HOME !== undefined, "HOME included");
+      // restore
+      Object.assign(process.env, original);
+    },
+
+    "passes through allowed prefix keys": () => {
+      const key = "NODE_TEST_SANITIZE_CHECK";
+      process.env[key] = "yes";
+      const env = sanitizeEnv();
+      assertEqual(env[key], "yes", "NODE_ prefix included");
+      delete process.env[key];
+    },
+
+    "filters out unknown keys": () => {
+      const key = "ZZUNKNOWN_TEST_KEY_12345";
+      process.env[key] = "secret";
+      const env = sanitizeEnv();
+      assertEqual(env[key], undefined, "unknown key filtered");
+      delete process.env[key];
+    },
+
+    "includes API keys that are allowlisted": () => {
+      const origAnthropic = process.env.ANTHROPIC_API_KEY;
+      const origOpenai = process.env.OPENAI_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "test-key";
+      process.env.OPENAI_API_KEY = "test-key";
+      const env = sanitizeEnv();
+      assertEqual(env.ANTHROPIC_API_KEY, "test-key", "ANTHROPIC_API_KEY included");
+      assertEqual(env.OPENAI_API_KEY, "test-key", "OPENAI_API_KEY included");
+      if (origAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = origAnthropic; else delete process.env.ANTHROPIC_API_KEY;
+      if (origOpenai !== undefined) process.env.OPENAI_API_KEY = origOpenai; else delete process.env.OPENAI_API_KEY;
+    },
+
+    "passes through GIT_ prefix keys": () => {
+      process.env.GIT_AUTHOR_NAME = "test";
+      const env = sanitizeEnv();
+      assertEqual(env.GIT_AUTHOR_NAME, "test", "GIT_ prefix included");
+      delete process.env.GIT_AUTHOR_NAME;
+    },
+  });
+
+  // ── mapPipelineToForge ──
+  await runGroup("mapPipelineToForge", {
+    "maps quick to small": () => {
+      assertEqual(mapPipelineToForge("quick"), "small", "quick → small");
+    },
+
+    "maps thorough to large": () => {
+      assertEqual(mapPipelineToForge("thorough"), "large", "thorough → large");
+    },
+
+    "maps research to medium": () => {
+      assertEqual(mapPipelineToForge("research"), "medium", "research → medium");
+    },
+
+    "identity mappings for forge names": () => {
+      assertEqual(mapPipelineToForge("small"), "small", "small identity");
+      assertEqual(mapPipelineToForge("medium"), "medium", "medium identity");
+      assertEqual(mapPipelineToForge("large"), "large", "large identity");
+      assertEqual(mapPipelineToForge("trivial"), "trivial", "trivial identity");
+    },
+
+    "returns null for auto": () => {
+      assertEqual(mapPipelineToForge("auto"), null, "auto → null");
+    },
+
+    "returns null for null/undefined": () => {
+      assertEqual(mapPipelineToForge(null), null, "null → null");
+      assertEqual(mapPipelineToForge(undefined), null, "undefined → null");
+    },
+
+    "returns null for unknown pipeline": () => {
+      assertEqual(mapPipelineToForge("nonexistent"), null, "unknown → null");
+    },
+  });
+
+  // ── mergeStateStats ──
+  await runGroup("mergeStateStats", {
+    "fills missing stats with defaults": () => {
+      const result = mergeStateStats({});
+      assertEqual(typeof result.tasksCompleted, "number", "tasksCompleted is number");
+      assertEqual(typeof result.tasksFailed, "number", "tasksFailed is number");
+      assertEqual(result.tasksCompleted, 0, "default tasksCompleted is 0");
+      assertEqual(result.tasksFailed, 0, "default tasksFailed is 0");
+    },
+
+    "preserves existing valid stats": () => {
+      const result = mergeStateStats({ stats: { tasksCompleted: 5, tasksFailed: 2 } });
+      assertEqual(result.tasksCompleted, 5, "preserves tasksCompleted");
+      assertEqual(result.tasksFailed, 2, "preserves tasksFailed");
+    },
+
+    "fixes NaN values with defaults": () => {
+      const result = mergeStateStats({ stats: { tasksCompleted: NaN, tasksFailed: 3 } });
+      assertEqual(result.tasksCompleted, 0, "NaN replaced with default");
+      assertEqual(result.tasksFailed, 3, "valid value preserved");
+    },
+
+    "handles null state": () => {
+      const result = mergeStateStats(null);
+      assertEqual(typeof result.tasksCompleted, "number", "handles null state");
+    },
+
+    "handles state with null stats": () => {
+      const result = mergeStateStats({ stats: null });
+      assertEqual(typeof result.tasksCompleted, "number", "handles null stats");
     },
   });
 
