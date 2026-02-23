@@ -3004,6 +3004,29 @@ function testBuildQuestionPromptWithFeedback() {
   assert(prompt.includes("React를 선호"), "buildQuestionPrompt with feedback: has feedback content");
 }
 
+function testBuildQuestionPromptContradictionGuard() {
+  const decisions = [
+    { area: "기술 스택", question: "백엔드는?", answer: "Node.js" },
+    { area: "기술 스택", question: "데이터베이스는?", answer: "PostgreSQL" },
+  ];
+  const coverage = computeCoverage(decisions, false);
+  const prompt = buildQuestionPrompt(null, decisions, null, {
+    isResume: true,
+    isBrownfield: false,
+    coverage,
+    repoContext: null,
+  });
+
+  assert(
+    prompt.includes("모순되는 답변"),
+    "buildQuestionPrompt contradiction: includes contradiction-detection guidance",
+  );
+  assert(
+    prompt.includes("어느 쪽이 맞는지 확인"),
+    "buildQuestionPrompt contradiction: requests explicit conflict resolution",
+  );
+}
+
 function testBuildRefinementPromptGreenfield() {
   const coverage = computeCoverage([], REFINEMENT_GREENFIELD);
   const prompt = buildRefinementPrompt([], "로그인 기능 구현", {
@@ -9969,6 +9992,7 @@ async function main() {
   testBuildQuestionPromptWithTemplate();
   testBuildQuestionPromptNoTemplate();
   testBuildQuestionPromptWithFeedback();
+  testBuildQuestionPromptContradictionGuard();
   testBuildRefinementPromptGreenfield();
   testBuildRefinementPromptBrownfield();
   testBuildRefinementPromptWithDecisions();
