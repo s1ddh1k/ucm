@@ -54,6 +54,7 @@ const {
   EXPECTED_GREENFIELD, EXPECTED_BROWNFIELD,
   REFINEMENT_GREENFIELD, REFINEMENT_BROWNFIELD,
   computeCoverage, isFullyCovered,
+  shouldStopQnaForCoverage,
   buildQuestionPrompt, formatDecisions, parseDecisionsFile,
   buildRefinementPrompt, buildAutopilotRefinementPrompt, formatRefinedRequirements,
 } = require("../lib/qna-core.js");
@@ -2708,6 +2709,16 @@ function testIsFullyCovered() {
   assert(!isFullyCovered({ a: 0 }), "isFullyCovered single 0");
   assert(isFullyCovered({}), "isFullyCovered empty object");
   assert(isFullyCovered({ x: 1.5 }), "isFullyCovered > 1.0 counts as covered");
+}
+
+function testShouldStopQnaForCoverage() {
+  const fullCoverage = { a: 1.0, b: 1.0 };
+  const partialCoverage = { a: 1.0, b: 0.5 };
+
+  assert(shouldStopQnaForCoverage(fullCoverage, null), "qna coverage stop: full coverage without feedback");
+  assert(shouldStopQnaForCoverage(fullCoverage, "   "), "qna coverage stop: full coverage with blank feedback");
+  assert(!shouldStopQnaForCoverage(fullCoverage, "gap-report: 수용 조건 상세화 필요"), "qna coverage stop: feedback keeps interview running");
+  assert(!shouldStopQnaForCoverage(partialCoverage, "gap-report"), "qna coverage stop: partial coverage never stops");
 }
 
 function testParseDecisionsFileBasic() {
@@ -9872,6 +9883,7 @@ async function main() {
   testComputeCoverageRefinement();
   testComputeCoverageWithRefinementBrownfield();
   testIsFullyCovered();
+  testShouldStopQnaForCoverage();
   testParseDecisionsFileBasic();
   testParseDecisionsFileEmpty();
   testParseDecisionsFileNoReason();
