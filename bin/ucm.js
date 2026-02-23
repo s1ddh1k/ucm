@@ -183,7 +183,11 @@ function parseArgs(argv) {
     else if (args[i] === "--budget") { opts.budget = readIntegerOption("--budget", { min: 0 }); }
     else if (args[i] === "--days") { opts.days = readIntegerOption("--days", { min: 1 }); }
     else if (args[i] === "--follow" || args[i] === "-f") { opts.follow = true; }
-    else if (args[i] === "--watch" || args[i] === "-w") { opts.watch = true; }
+    else if (args[i] === "--watch" || args[i] === "-w") {
+      // Keep --watch as a backward-compatible alias for --follow in `logs`.
+      opts.watch = true;
+      opts.follow = true;
+    }
     else if (args[i] === "--background" || args[i] === "--bg") { opts.background = true; }
     else if (args[i] === "--verbose" || args[i] === "-v") { opts.verbose = true; }
     else if (args[i] === "--force") { opts.force = true; }
@@ -1003,10 +1007,12 @@ async function cmdForge(opts) {
 
 async function cmdForgeResume(opts) {
   const taskId = opts.positional[0];
+  if (!taskId) { console.error("task-id 필수: ucm resume <id>"); process.exit(1); }
 
-  const project = opts.project ? path.resolve(opts.project) : process.cwd();
+  const project = await resolveForgeResumeProject(taskId, opts.project);
 
   console.error(`resume: ${taskId}`);
+  console.error(`project: ${project}`);
   if (opts.from) console.error(`from: ${opts.from}`);
 
   // --background: daemon에 위임하여 백그라운드 실행
@@ -1048,6 +1054,25 @@ async function cmdForgeResume(opts) {
   }
 
   console.log(dag.id);
+}
+
+async function resolveForgeResumeProject(taskId, projectOption) {
+  if (projectOption) {
+    return path.resolve(projectOption);
+  }
+  try {
+    const { loadWorkspace } = require("../lib/core/worktree");
+    const workspace = await loadWorkspace(taskId);
+    const projects = Array.isArray(workspace?.projects) ? workspace.projects : [];
+    if (projects.length > 0) {
+      const primary = projects.find((project) => project?.role === "primary") || projects[0];
+      const candidate = primary?.origin || primary?.path;
+      if (typeof candidate === "string" && candidate.trim()) {
+        return path.resolve(candidate);
+      }
+    }
+  } catch {}
+  return process.cwd();
 }
 
 async function cmdAbort(opts) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,6 +15,15 @@ export default function AutopilotPage() {
   const { data: sessions, isLoading } = useAutopilotStatusQuery();
   const selectedSessionId = useUiStore((s) => s.selectedSessionId);
   const setSelectedSessionId = useUiStore((s) => s.setSelectedSessionId);
+
+  useEffect(() => {
+    if (isLoading || !selectedSessionId) return;
+    const hasSelectedSession = Array.isArray(sessions)
+      && sessions.some((session) => session.id === selectedSessionId);
+    if (!hasSelectedSession) {
+      setSelectedSessionId(sessions?.[0]?.id ?? null);
+    }
+  }, [isLoading, sessions, selectedSessionId, setSelectedSessionId]);
 
   return (
     <div className="flex h-full">

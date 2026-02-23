@@ -40,6 +40,13 @@ export function useWebSocket() {
   const clearTaskLogs = useEventsStore((s) => s.clearTaskLogs);
   const initialized = useRef(false);
   const pendingCount = useRef(0);
+  const pendingByType = useRef({
+    failed: new Set<string>(),
+    review: new Set<string>(),
+    gate: new Set<string>(),
+    pipelineError: new Set<string>(),
+  });
+  type PendingType = keyof typeof pendingByType.current;
 
   // ---------- Tab title badge ----------
   const updateTitleBadge = useCallback((delta: number) => {
@@ -48,15 +55,51 @@ export function useWebSocket() {
     document.title = count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
   }, []);
 
+  const resetPendingBadge = useCallback(() => {
+    pendingCount.current = 0;
+    pendingByType.current.failed.clear();
+    pendingByType.current.review.clear();
+    pendingByType.current.gate.clear();
+    pendingByType.current.pipelineError.clear();
+    document.title = BASE_TITLE;
+  }, []);
+
+  const markPending = useCallback((type: PendingType, taskId: string | null): boolean => {
+    if (!taskId) return false;
+    const bucket = pendingByType.current[type];
+    if (bucket.has(taskId)) return false;
+    bucket.add(taskId);
+    updateTitleBadge(1);
+    return true;
+  }, [updateTitleBadge]);
+
+  const clearPending = useCallback((type: PendingType, taskId: string | null): boolean => {
+    if (!taskId) return false;
+    const bucket = pendingByType.current[type];
+    const removed = bucket.delete(taskId);
+    if (removed) updateTitleBadge(-1);
+    return removed;
+  }, [updateTitleBadge]);
+
+  const clearPendingForTask = useCallback((taskId: string | null) => {
+    if (!taskId) return;
+    let removed = 0;
+    for (const type of Object.keys(pendingByType.current) as PendingType[]) {
+      if (pendingByType.current[type].delete(taskId)) {
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      updateTitleBadge(-removed);
+    }
+  }, [updateTitleBadge]);
+
   // Reset the badge when the user focuses the tab
   useEffect(() => {
-    const onFocus = () => {
-      pendingCount.current = 0;
-      document.title = BASE_TITLE;
-    };
+    const onFocus = () => resetPendingBadge();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, []);
+  }, [resetPendingBadge]);
 
   // Request notification permission on mount (non-blocking)
   useEffect(() => {
@@ -120,6 +163,7 @@ export function useWebSocket() {
       wsManager.on("task:updated", (data) => {
         const taskId = typeof data.taskId === "string" ? data.taskId : null;
         const nextState = typeof data.state === "string" ? data.state : null;
+        const nextStatus = typeof data.status === "string" ? data.status : null;
 
         if (taskId && nextState) {
           patchTaskCaches(taskId, (task) => {
@@ -139,18 +183,25 @@ export function useWebSocket() {
         }
         addActivity("task:updated", data);
 
-        // Notify on task failure
-        if (data.status === "failed") {
+        const failedEvent = nextState === "failed" || nextStatus === "failed";
+        if (failedEvent && markPending("failed", taskId)) {
           const taskLabel = (data.taskId as string) || "unknown";
           notify("Task failed", `Task ${taskLabel} has failed.`);
-          updateTitleBadge(1);
+        } else if (taskId && nextState && nextState !== "failed") {
+          clearPending("failed", taskId);
         }
 
-        // Notify when task enters review state
-        if (data.state === "review" || data.status === "review") {
+        const reviewEvent = nextState === "review" || nextStatus === "review";
+        if (reviewEvent && markPending("review", taskId)) {
           const taskLabel = (data.taskId as string) || "unknown";
           notify("Task ready for review", `Task ${taskLabel} is ready for review.`);
-          updateTitleBadge(1);
+        } else if (taskId && nextState && nextState !== "review") {
+          clearPending("review", taskId);
+        }
+
+        if (taskId && (nextState === "pending" || nextState === "running" || nextState === "done")) {
+          clearPending("gate", taskId);
+          clearPending("pipelineError", taskId);
         }
       }),
       wsManager.on("task:deleted", (data) => {
@@ -161,6 +212,7 @@ export function useWebSocket() {
           if (useUiStore.getState().selectedTaskId === taskId) {
             useUiStore.getState().setSelectedTaskId(null);
           }
+          clearPendingForTask(taskId);
         }
         addActivity("task:deleted", data);
       }),
@@ -305,8 +357,9 @@ export function useWebSocket() {
 
         // Notify on stage gate awaiting approval
         const taskLabel = taskId || "unknown";
-        notify("Stage awaiting approval", `Task ${taskLabel} is waiting for approval at stage "${stageName}".`);
-        updateTitleBadge(1);
+        if (markPending("gate", taskId)) {
+          notify("Stage awaiting approval", `Task ${taskLabel} is waiting for approval at stage "${stageName}".`);
+        }
       }),
       wsManager.on("stage:gate_resolved", (data) => {
         const taskId = typeof data.taskId === "string" ? data.taskId : null;
@@ -318,16 +371,16 @@ export function useWebSocket() {
           queryClient.invalidateQueries({ queryKey: ["task", taskId] });
         }
         addActivity("stage:gate_resolved", data);
-
-        // A gate was resolved, decrement the pending badge
-        updateTitleBadge(-1);
+        clearPending("gate", taskId);
       }),
 
       // Pipeline error events
       wsManager.on("pipeline:error", (data) => {
         const taskLabel = (data.taskId as string) || "unknown";
-        notify("Task failed", `Task ${taskLabel} encountered a pipeline error.`);
-        updateTitleBadge(1);
+        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        if (markPending("pipelineError", taskId)) {
+          notify("Task failed", `Task ${taskLabel} encountered a pipeline error.`);
+        }
         addActivity("pipeline:error", data);
       }),
     );
@@ -336,6 +389,10 @@ export function useWebSocket() {
       unsubs.forEach((unsub) => unsub());
       wsManager.disconnect();
       initialized.current = false;
+      resetPendingBadge();
     };
-  }, [queryClient, setStatus, setConnected, addActivity, addTaskLog, clearTaskLogs, updateTitleBadge]);
+  }, [
+    queryClient, setStatus, setConnected, addActivity, addTaskLog, clearTaskLogs,
+    markPending, clearPending, clearPendingForTask, resetPendingBadge,
+  ]);
 }
