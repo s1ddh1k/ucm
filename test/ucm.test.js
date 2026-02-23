@@ -2991,6 +2991,50 @@ function testShouldAcceptDoneResponse() {
     }),
     "qna done gate: rejects done when post-feedback decision only repeats pre-feedback decision",
   );
+
+  const unrelatedFollowupDecisions = [
+    { area: "제품 정의", question: "무엇을 만드나요?", answer: "B2B 대시보드" },
+    { area: "핵심 기능", question: "핵심 기능은?", answer: "실시간 분석" },
+    { area: "기술 스택", question: "언어는?", answer: "TypeScript" },
+    { area: "설계 결정", question: "배포 방식은?", answer: "Docker" },
+    { area: "설계 결정", question: "로그 저장소는?", answer: "Elasticsearch" },
+    { area: "기술 스택", question: "메시지 브로커는?", answer: "Kafka" },
+  ];
+  assert(
+    !shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: `# Gap Report
+
+- **테스트 가능성**: 성공/실패 기준을 명확히 정의하세요.
+- **인터페이스 명세**: 입력/출력 데이터 구조를 구체화하세요.`,
+      decisionsCount: unrelatedFollowupDecisions.length,
+      feedbackStartDecisionsCount: 4,
+      decisions: unrelatedFollowupDecisions,
+    }),
+    "qna done gate: rejects done when follow-up decisions do not address feedback gaps",
+  );
+
+  const addressedFollowupDecisions = [
+    { area: "제품 정의", question: "무엇을 만드나요?", answer: "B2B 대시보드" },
+    { area: "핵심 기능", question: "핵심 기능은?", answer: "실시간 분석" },
+    { area: "기술 스택", question: "언어는?", answer: "TypeScript" },
+    { area: "설계 결정", question: "배포 방식은?", answer: "Docker" },
+    { area: "핵심 기능", question: "성공/실패 기준은?", answer: "정상 응답 2초 이내, 실패 시 재시도 3회 후 오류 코드 반환" },
+    { area: "설계 결정", question: "입력/출력 데이터 구조는?", answer: "요청 body는 JSON 스키마 v1, 응답은 status/result/error 필드를 고정" },
+  ];
+  assert(
+    shouldAcceptDoneResponse({
+      coverage: fullCoverage,
+      feedback: `# Gap Report
+
+- **테스트 가능성**: 성공/실패 기준을 명확히 정의하세요.
+- **인터페이스 명세**: 입력/출력 데이터 구조를 구체화하세요.`,
+      decisionsCount: addressedFollowupDecisions.length,
+      feedbackStartDecisionsCount: 4,
+      decisions: addressedFollowupDecisions,
+    }),
+    "qna done gate: accepts done when follow-up decisions explicitly address feedback gaps",
+  );
 }
 
 function testReqBuildQnaArgsUsesFeedbackFile() {
