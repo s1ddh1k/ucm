@@ -27,6 +27,11 @@ const { TaskDag, generateForgeId } = require("../lib/core/task");
 
 const { mapPipelineToForge, mergeStateStats } = require("../lib/ucmd");
 
+// ── forge pipeline tests ──
+
+const { ForgePipeline, assertResumableDagStatus } = require("../lib/forge/index");
+const { FORGE_PIPELINES, STAGE_TIMEOUTS, STAGE_ARTIFACTS, STAGE_MODELS } = require("../lib/core/constants");
+
 async function main() {
   // ── extractJson ──
   await runGroup("extractJson", {
@@ -995,6 +1000,269 @@ title: line1\\nline2
     "handles state with null stats": () => {
       const result = mergeStateStats({ stats: null });
       assertEqual(typeof result.tasksCompleted, "number", "handles null stats");
+    },
+  });
+
+  // ── ForgePipeline constructor ──
+  await runGroup("ForgePipeline constructor", {
+    "throws on empty input (no input, no resumeFrom, no taskId)": () => {
+      let threw = false;
+      try { new ForgePipeline({}); } catch (e) {
+        threw = true;
+        assert(e.message.includes("input required"), "error mentions input required");
+      }
+      assert(threw, "should throw on empty options");
+    },
+
+    "throws on whitespace-only input": () => {
+      let threw = false;
+      try { new ForgePipeline({ input: "   " }); } catch (e) { threw = true; }
+      assert(threw, "should throw on whitespace input");
+    },
+
+    "throws on empty string input": () => {
+      let threw = false;
+      try { new ForgePipeline({ input: "" }); } catch (e) { threw = true; }
+      assert(threw, "should throw on empty string");
+    },
+
+    "accepts valid string input": () => {
+      const p = new ForgePipeline({ input: "build a feature" });
+      assertEqual(p.input, "build a feature", "input preserved");
+      assert(p.taskId.startsWith("forge-"), "auto-generated taskId");
+    },
+
+    "generates unique taskId when not provided": () => {
+      const p1 = new ForgePipeline({ input: "a" });
+      const p2 = new ForgePipeline({ input: "b" });
+      assert(p1.taskId !== p2.taskId, "unique ids");
+    },
+
+    "preserves provided taskId": () => {
+      const p = new ForgePipeline({ input: "x", taskId: "my-task-123" });
+      assertEqual(p.taskId, "my-task-123", "taskId preserved");
+    },
+
+    "allows resumeFrom without input": () => {
+      const p = new ForgePipeline({ taskId: "t", resumeFrom: "implement" });
+      assertEqual(p.resumeFrom, "implement", "resumeFrom set");
+      assertEqual(p.input, undefined, "input is undefined");
+    },
+
+    "allows taskId without input": () => {
+      const p = new ForgePipeline({ taskId: "my-task" });
+      assertEqual(p.taskId, "my-task", "taskId preserved without input");
+    },
+
+    "sets default values": () => {
+      const p = new ForgePipeline({ input: "test" });
+      assertEqual(p.autopilot, false, "default autopilot false");
+      assertEqual(p.onQuestion, null, "default onQuestion null");
+      assertEqual(p.resumeFrom, null, "default resumeFrom null");
+      assertEqual(p.tokenBudget, 0, "default tokenBudget 0");
+      assertDeepEqual(p.stageApproval, {}, "default stageApproval empty");
+      assertEqual(p.aborted, false, "default aborted false");
+      assertEqual(p.dag, null, "default dag null");
+      assertDeepEqual(p.stages, [], "default stages empty");
+      assertEqual(p.worktreeCwd, null, "default worktreeCwd null");
+    },
+
+    "accepts non-string input (array)": () => {
+      const p = new ForgePipeline({ input: ["task1", "task2"] });
+      assertDeepEqual(p.input, ["task1", "task2"], "array input accepted");
+    },
+  });
+
+  // ── assertResumableDagStatus ──
+  await runGroup("assertResumableDagStatus", {
+    "allows failed status": () => {
+      assertResumableDagStatus({ status: "failed" }); // should not throw
+      assert(true, "failed is resumable");
+    },
+
+    "allows rejected status": () => {
+      assertResumableDagStatus({ status: "rejected" });
+      assert(true, "rejected is resumable");
+    },
+
+    "allows aborted status": () => {
+      assertResumableDagStatus({ status: "aborted" });
+      assert(true, "aborted is resumable");
+    },
+
+    "allows in_progress status": () => {
+      assertResumableDagStatus({ status: "in_progress" });
+      assert(true, "in_progress is resumable");
+    },
+
+    "throws on done status": () => {
+      let threw = false;
+      try { assertResumableDagStatus({ status: "done" }); } catch (e) {
+        threw = true;
+        assert(e.message.includes("cannot resume"), "error mentions cannot resume");
+      }
+      assert(threw, "done is not resumable");
+    },
+
+    "throws on pending status": () => {
+      let threw = false;
+      try { assertResumableDagStatus({ status: "pending" }); } catch (e) { threw = true; }
+      assert(threw, "pending is not resumable");
+    },
+
+    "throws on review status": () => {
+      let threw = false;
+      try { assertResumableDagStatus({ status: "review" }); } catch (e) { threw = true; }
+      assert(threw, "review is not resumable");
+    },
+
+    "throws on null dag": () => {
+      let threw = false;
+      try { assertResumableDagStatus(null); } catch (e) {
+        threw = true;
+        assert(e.message.includes("invalid task state"), "error mentions invalid state");
+      }
+      assert(threw, "null dag throws");
+    },
+
+    "throws on dag without status": () => {
+      let threw = false;
+      try { assertResumableDagStatus({}); } catch (e) { threw = true; }
+      assert(threw, "missing status throws");
+    },
+
+    "throws on dag with numeric status": () => {
+      let threw = false;
+      try { assertResumableDagStatus({ status: 42 }); } catch (e) { threw = true; }
+      assert(threw, "numeric status throws");
+    },
+  });
+
+  // ── STAGE_MODELS ──
+  await runGroup("STAGE_MODELS", {
+    "returns default string models": () => {
+      // Save and clear any overrides
+      const saved = {};
+      for (const stage of ["intake", "clarify", "design", "implement", "verify", "deliver"]) {
+        const key = `UCM_MODEL_${stage.toUpperCase()}`;
+        saved[key] = process.env[key];
+        delete process.env[key];
+      }
+      // Clear proxy cache
+      const { _modelCache } = require("../lib/core/constants");
+      if (_modelCache) _modelCache.clear();
+
+      assertEqual(STAGE_MODELS.intake, "sonnet", "intake default");
+      assertEqual(STAGE_MODELS.clarify, "sonnet", "clarify default");
+      assertEqual(STAGE_MODELS.design, "opus", "design default");
+      assertEqual(STAGE_MODELS.implement, "opus", "implement default");
+      assertEqual(STAGE_MODELS.verify, "sonnet", "verify default");
+      assertEqual(STAGE_MODELS.deliver, "sonnet", "deliver default");
+
+      // Restore
+      for (const [k, v] of Object.entries(saved)) {
+        if (v !== undefined) process.env[k] = v; else delete process.env[k];
+      }
+    },
+
+    "overrides string model via env var": () => {
+      const orig = process.env.UCM_MODEL_IMPLEMENT;
+      process.env.UCM_MODEL_IMPLEMENT = "haiku";
+      assertEqual(STAGE_MODELS.implement, "haiku", "env override works");
+      if (orig !== undefined) process.env.UCM_MODEL_IMPLEMENT = orig; else delete process.env.UCM_MODEL_IMPLEMENT;
+    },
+
+    "returns object models for specify": () => {
+      const origW = process.env.UCM_MODEL_SPECIFY_WORKER;
+      const origC = process.env.UCM_MODEL_SPECIFY_CONVERGE;
+      delete process.env.UCM_MODEL_SPECIFY_WORKER;
+      delete process.env.UCM_MODEL_SPECIFY_CONVERGE;
+      const { _modelCache } = require("../lib/core/constants");
+      if (_modelCache) _modelCache.clear();
+
+      const specifyModels = STAGE_MODELS.specify;
+      assertEqual(typeof specifyModels, "object", "specify returns object");
+      assertEqual(specifyModels.worker, "sonnet", "specify.worker default");
+      assertEqual(specifyModels.converge, "opus", "specify.converge default");
+
+      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW; else delete process.env.UCM_MODEL_SPECIFY_WORKER;
+      if (origC !== undefined) process.env.UCM_MODEL_SPECIFY_CONVERGE = origC; else delete process.env.UCM_MODEL_SPECIFY_CONVERGE;
+    },
+
+    "overrides object sub-keys via env var": () => {
+      const origW = process.env.UCM_MODEL_SPECIFY_WORKER;
+      process.env.UCM_MODEL_SPECIFY_WORKER = "haiku";
+      const { _modelCache } = require("../lib/core/constants");
+      if (_modelCache) _modelCache.clear();
+
+      const specifyModels = STAGE_MODELS.specify;
+      assertEqual(specifyModels.worker, "haiku", "sub-key override works");
+      assertEqual(specifyModels.converge, "opus", "non-overridden sub-key preserved");
+
+      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW; else delete process.env.UCM_MODEL_SPECIFY_WORKER;
+      if (_modelCache) _modelCache.clear();
+    },
+
+    "returns undefined for unknown stages": () => {
+      assertEqual(STAGE_MODELS.nonexistent, undefined, "unknown stage returns undefined");
+    },
+  });
+
+  // ── Pipeline/Artifact/Timeout Consistency ──
+  await runGroup("pipeline config consistency", {
+    "every pipeline stage has a timeout defined": () => {
+      for (const [pipeline, stages] of Object.entries(FORGE_PIPELINES)) {
+        for (const stage of stages) {
+          assert(STAGE_TIMEOUTS[stage] !== undefined, `${pipeline}/${stage} has timeout`);
+          assert(typeof STAGE_TIMEOUTS[stage].idle === "number", `${pipeline}/${stage} timeout.idle is number`);
+          assert(typeof STAGE_TIMEOUTS[stage].hard === "number", `${pipeline}/${stage} timeout.hard is number`);
+          assert(STAGE_TIMEOUTS[stage].hard > STAGE_TIMEOUTS[stage].idle, `${pipeline}/${stage} hard > idle`);
+        }
+      }
+    },
+
+    "every pipeline stage has artifacts defined": () => {
+      for (const [pipeline, stages] of Object.entries(FORGE_PIPELINES)) {
+        for (const stage of stages) {
+          assert(STAGE_ARTIFACTS[stage] !== undefined, `${pipeline}/${stage} has artifacts`);
+          assert(Array.isArray(STAGE_ARTIFACTS[stage].requires), `${pipeline}/${stage} artifacts.requires is array`);
+          assert(Array.isArray(STAGE_ARTIFACTS[stage].produces), `${pipeline}/${stage} artifacts.produces is array`);
+        }
+      }
+    },
+
+    "all pipelines end with deliver": () => {
+      for (const [name, stages] of Object.entries(FORGE_PIPELINES)) {
+        assertEqual(stages[stages.length - 1], "deliver", `${name} ends with deliver`);
+      }
+    },
+
+    "no duplicate stages in any pipeline": () => {
+      for (const [name, stages] of Object.entries(FORGE_PIPELINES)) {
+        const unique = new Set(stages);
+        assertEqual(unique.size, stages.length, `${name} has no duplicates`);
+      }
+    },
+
+    "all expected pipelines exist": () => {
+      assert(FORGE_PIPELINES.trivial !== undefined, "trivial pipeline exists");
+      assert(FORGE_PIPELINES.small !== undefined, "small pipeline exists");
+      assert(FORGE_PIPELINES.medium !== undefined, "medium pipeline exists");
+      assert(FORGE_PIPELINES.large !== undefined, "large pipeline exists");
+    },
+
+    "trivial is subset of small": () => {
+      const trivialSet = new Set(FORGE_PIPELINES.trivial);
+      for (const stage of FORGE_PIPELINES.trivial) {
+        assert(new Set(FORGE_PIPELINES.small).has(stage), `trivial stage ${stage} in small`);
+      }
+      assert(FORGE_PIPELINES.small.length >= FORGE_PIPELINES.trivial.length, "small >= trivial length");
+    },
+
+    "idle timeout is at least 2 minutes for all stages": () => {
+      for (const [stage, t] of Object.entries(STAGE_TIMEOUTS)) {
+        assert(t.idle >= 2 * 60_000, `${stage} idle >= 2m`);
+      }
     },
   });
 
