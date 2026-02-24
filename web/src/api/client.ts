@@ -235,8 +235,12 @@ export const browse = {
     request<BrowseResult>(
       `/api/browse?path=${encodeURIComponent(path || "")}&showHidden=${showHidden ? "1" : "0"}`,
     ),
-  mkdir: (path: string) =>
-    post<{ created: string; gitInit: boolean }>("/api/mkdir", { path }),
+  mkdir: (path: string) => post<{ created: string }>("/api/mkdir", { path }),
+  gitInit: (path: string) =>
+    post<{ path: string; initialized?: boolean; alreadyGit?: boolean }>(
+      "/api/git-init",
+      { path },
+    ),
 };
 
 // Refinement
@@ -282,6 +286,20 @@ export const config = {
   set: (params: Partial<UcmConfig>) => post<UcmConfig>("/api/config", params),
 };
 
+// Automation
+export interface AutomationConfig {
+  autoExecute: boolean;
+  autoApprove: boolean;
+  autoPropose: boolean;
+  autoConvert: boolean;
+  projects: Record<string, Partial<{ autoExecute: boolean | null; autoApprove: boolean | null; autoPropose: boolean | null; autoConvert: boolean | null }>>;
+}
+
+export const automation = {
+  get: () => request<AutomationConfig>("/api/automation"),
+  set: (params: Partial<AutomationConfig>) => post<UcmConfig>("/api/automation", params),
+};
+
 // Cleanup
 export const cleanup = {
   run: (params?: { retentionDays?: number }) =>
@@ -300,6 +318,7 @@ export const api = {
   refinement,
   cleanup,
   config,
+  automation,
 };
 
 export default api;

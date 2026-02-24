@@ -16,6 +16,7 @@ import {
   getTaskProjectPath,
   UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
+import { AutomationOverrideCard } from "@/components/automation/automation-override-card";
 import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
@@ -122,6 +123,10 @@ export default function ProjectOverviewPage() {
         proposalCount={projectProposals.length}
         onNavigate={(path) => navigate(path)}
       />
+
+      {projectKey !== UNKNOWN_PROJECT_KEY && (
+        <AutomationOverrideCard projectKey={projectKey} />
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Card>

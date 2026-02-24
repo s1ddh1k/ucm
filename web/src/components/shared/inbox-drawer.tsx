@@ -71,13 +71,13 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
   function goToTask(taskId: string) {
     setSelectedTaskId(taskId);
     setTaskFilter("");
-    navigate("/tasks");
+    navigate("/?tab=tasks");
     onOpenChange(false);
   }
 
   function goToTasks(filter: string) {
     setTaskFilter(filter);
-    navigate("/tasks");
+    navigate("/?tab=tasks");
     onOpenChange(false);
   }
 
@@ -180,7 +180,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   count={pendingProposals.length}
                   icon={<Lightbulb className="h-3.5 w-3.5 text-amber-400" />}
                   onViewAll={() => {
-                    navigate("/proposals");
+                    navigate("/?tab=proposals");
                     onOpenChange(false);
                   }}
                 >
@@ -194,7 +194,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                         </span>
                       }
                       onClick={() => {
-                        navigate("/proposals");
+                        navigate("/?tab=proposals");
                         onOpenChange(false);
                       }}
                     />
@@ -214,7 +214,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   count={awaitingReviewSessions.length}
                   icon={<Bot className="h-3.5 w-3.5 text-purple-400" />}
                   onViewAll={() => {
-                    navigate("/autopilot");
+                    navigate("/?tab=automation");
                     onOpenChange(false);
                   }}
                 >
@@ -224,7 +224,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                       title={`Session ${s.id.slice(0, 8)}`}
                       subtitle={<span>{s.project}</span>}
                       onClick={() => {
-                        navigate("/autopilot");
+                        navigate("/?tab=automation");
                         onOpenChange(false);
                       }}
                     />

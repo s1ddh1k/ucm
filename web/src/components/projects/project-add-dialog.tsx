@@ -1,5 +1,6 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, FolderPlus } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,6 +28,9 @@ export function ProjectAddDialog({
 }: ProjectAddDialogProps) {
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [creating, setCreating] = useState(false);
   const pathInputId = useId();
   const nameInputId = useId();
   const upsertProject = useUpsertProjectCatalogItem();
@@ -53,6 +57,23 @@ export function ProjectAddDialog({
   const selectDirectory = (dirPath: string) => {
     setPath(dirPath);
     closeBrowser();
+    setShowNewFolder(false);
+    setNewFolderName("");
+  };
+
+  const createFolder = async () => {
+    if (!newFolderName.trim() || !browseResult) return;
+    const folderPath = browseResult.current + "/" + newFolderName.trim();
+    setCreating(true);
+    try {
+      await api.browse.mkdir(folderPath);
+      selectDirectory(folderPath);
+    } catch {
+      // re-browse to show current state
+      await navigateBrowser(browseResult.current);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -130,16 +151,45 @@ export function ProjectAddDialog({
                   <span className="text-xs font-mono truncate">
                     {browseResult.current}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 text-xs"
-                    type="button"
-                    onClick={() => selectDirectory(browseResult.current)}
-                  >
-                    Select
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-xs"
+                      type="button"
+                      onClick={() => {
+                        setShowNewFolder(!showNewFolder);
+                        setNewFolderName("");
+                      }}
+                    >
+                      <FolderPlus className="h-3 w-3 mr-1" /> New
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-xs"
+                      type="button"
+                      onClick={() => selectDirectory(browseResult.current)}
+                    >
+                      Select
+                    </Button>
+                  </div>
                 </div>
+                {showNewFolder && (
+                  <div className="px-3 py-1.5 border-b flex items-center gap-1">
+                    <Input
+                      placeholder="folder name"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") createFolder(); }}
+                      className="h-6 text-xs flex-1"
+                      autoFocus
+                    />
+                    <Button size="sm" variant="default" className="h-6 text-xs px-2" onClick={createFolder} disabled={!newFolderName.trim() || creating}>
+                      {creating ? "..." : "Create"}
+                    </Button>
+                  </div>
+                )}
                 {browseResult.parent && (
                   <button
                     type="button"

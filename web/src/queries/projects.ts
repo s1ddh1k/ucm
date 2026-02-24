@@ -61,6 +61,7 @@ export function useUpsertProjectCatalogItem() {
       const current = normalizeCatalog(config.projectCatalog);
       const path = item.path.trim();
       const name = item.name?.trim();
+      await api.browse.gitInit(path);
       const next = [
         ...current.filter((p) => p.path !== path),
         {

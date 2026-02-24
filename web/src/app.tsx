@@ -1,10 +1,9 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AnalyticsPage from "@/routes/analytics";
-import AutopilotPage from "@/routes/autopilot";
 import DashboardPage from "@/routes/dashboard";
 import ProjectOverviewPage from "@/routes/project-overview";
 import ProjectsPage from "@/routes/projects";
@@ -46,9 +45,9 @@ export default function App() {
                   path="projects/:projectKey/proposals"
                   element={<ProposalsPage />}
                 />
-                <Route path="tasks" element={<TasksPage />} />
-                <Route path="proposals" element={<ProposalsPage />} />
-                <Route path="autopilot" element={<AutopilotPage />} />
+                <Route path="tasks" element={<Navigate to="/?tab=tasks" replace />} />
+                <Route path="proposals" element={<Navigate to="/?tab=proposals" replace />} />
+                <Route path="autopilot" element={<Navigate to="/?tab=automation" replace />} />
                 <Route path="terminal" element={<TerminalPage />} />
                 <Route path="analytics" element={<AnalyticsPage />} />
                 <Route path="settings" element={<SettingsPage />} />

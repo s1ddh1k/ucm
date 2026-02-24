@@ -1,6 +1,6 @@
 import { Bell, Monitor, Moon, Search, Sun } from "lucide-react";
 import { useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { ConnectionIndicator } from "@/components/shared/connection-indicator";
 import { InboxDrawer, useInboxCount } from "@/components/shared/inbox-drawer";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,15 @@ import { type Theme, useUiStore } from "@/stores/ui";
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
   "/projects": "Projects",
-  "/tasks": "Task Inbox",
-  "/proposals": "Proposal Inbox",
-  "/autopilot": "Autopilot",
   "/terminal": "Terminal",
   "/analytics": "Analytics",
   "/settings": "Settings",
+};
+
+const TAB_TITLES: Record<string, string> = {
+  tasks: "Tasks",
+  proposals: "Proposals",
+  automation: "Automation",
 };
 
 const THEME_CYCLE: Theme[] = ["light", "dark", "system"];
@@ -23,6 +26,7 @@ const THEME_LABEL = { light: "Light", dark: "Dark", system: "System" } as const;
 
 export function Header() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -46,6 +50,10 @@ export function Header() {
       location.pathname.endsWith("/proposals")
     ) {
       return "Project Proposals";
+    }
+    if (location.pathname === "/") {
+      const tab = searchParams.get("tab");
+      if (tab && TAB_TITLES[tab]) return TAB_TITLES[tab];
     }
     return pageTitles[location.pathname] || "UCM";
   })();

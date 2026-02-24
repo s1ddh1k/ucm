@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  Bot,
   FileText,
   FolderTree,
   LayoutDashboard,
@@ -9,6 +8,7 @@ import {
   Search,
   Settings,
   Terminal,
+  ToggleRight,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -87,24 +87,24 @@ export function CommandPalette() {
       },
       {
         id: "page-tasks",
-        label: "Task Inbox",
+        label: "Tasks",
         category: "page",
         icon: ListTodo,
-        onSelect: () => navigate("/tasks"),
+        onSelect: () => navigate("/?tab=tasks"),
       },
       {
         id: "page-proposals",
-        label: "Proposal Inbox",
+        label: "Proposals",
         category: "page",
         icon: Lightbulb,
-        onSelect: () => navigate("/proposals"),
+        onSelect: () => navigate("/?tab=proposals"),
       },
       {
-        id: "page-autopilot",
-        label: "Autopilot",
+        id: "page-automation",
+        label: "Automation",
         category: "page",
-        icon: Bot,
-        onSelect: () => navigate("/autopilot"),
+        icon: ToggleRight,
+        onSelect: () => navigate("/?tab=automation"),
       },
       {
         id: "page-terminal",
@@ -126,7 +126,7 @@ export function CommandPalette() {
         label: "New Task",
         category: "action",
         icon: ListTodo,
-        onSelect: () => navigate("/tasks?new=1"),
+        onSelect: () => navigate("/?tab=tasks&new=1"),
       },
     ];
 
@@ -146,7 +146,7 @@ export function CommandPalette() {
           icon: FileText,
           onSelect: () => {
             setSelectedTaskId(task.id);
-            navigate("/tasks");
+            navigate("/?tab=tasks");
           },
         });
       }
@@ -166,7 +166,7 @@ export function CommandPalette() {
           label: proposal.title,
           category: "proposal",
           icon: Lightbulb,
-          onSelect: () => navigate("/proposals"),
+          onSelect: () => navigate("/?tab=proposals"),
         });
       }
     }

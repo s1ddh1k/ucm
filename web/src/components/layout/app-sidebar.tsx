@@ -1,10 +1,7 @@
 import {
   BarChart3,
-  Bot,
   FolderTree,
   LayoutDashboard,
-  Lightbulb,
-  ListTodo,
   PanelLeft,
   PanelLeftClose,
   Settings,
@@ -20,22 +17,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useAutopilotStatusQuery } from "@/queries/autopilot";
 import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 
 interface BadgeInfo {
   count: number;
-  color: string; // tailwind bg class
+  color: string;
 }
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/projects", icon: FolderTree, label: "Projects" },
-  { to: "/tasks", icon: ListTodo, label: "Task Inbox" },
-  { to: "/proposals", icon: Lightbulb, label: "Proposal Inbox" },
-  { to: "/autopilot", icon: Bot, label: "Autopilot" },
   { to: "/terminal", icon: Terminal, label: "Terminal" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
 ];
@@ -45,7 +38,6 @@ const bottomItems = [{ to: "/settings", icon: Settings, label: "Settings" }];
 function useAttentionBadges(): Record<string, BadgeInfo> {
   const { data: tasks } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
-  const { data: sessions } = useAutopilotStatusQuery();
 
   return useMemo(() => {
     const badges: Record<string, BadgeInfo> = {};
@@ -53,26 +45,17 @@ function useAttentionBadges(): Record<string, BadgeInfo> {
     const reviewCount = Array.isArray(tasks)
       ? tasks.filter((t) => t.state === "review").length
       : 0;
-    if (reviewCount > 0) {
-      badges["/tasks"] = { count: reviewCount, color: "bg-purple-500" };
-    }
-
     const proposedCount = Array.isArray(proposals)
       ? proposals.filter((p) => p.status === "proposed").length
       : 0;
-    if (proposedCount > 0) {
-      badges["/proposals"] = { count: proposedCount, color: "bg-amber-500" };
-    }
+    const total = reviewCount + proposedCount;
 
-    const awaitingCount = Array.isArray(sessions)
-      ? sessions.filter((s) => s.status === "awaiting_review").length
-      : 0;
-    if (awaitingCount > 0) {
-      badges["/autopilot"] = { count: awaitingCount, color: "bg-purple-500" };
+    if (total > 0) {
+      badges["/"] = { count: total, color: "bg-purple-500" };
     }
 
     return badges;
-  }, [tasks, proposals, sessions]);
+  }, [tasks, proposals]);
 }
 
 export function AppSidebar() {

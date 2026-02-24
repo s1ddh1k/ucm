@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AutomationConfig } from "@/api/client";
 import {
   Bot,
   Loader2,
@@ -166,6 +167,8 @@ export default function SettingsPage() {
       <ProviderCard />
 
       <StageApprovalCard />
+
+      <AutomationDefaultsCard />
 
       <Card>
         <CardHeader>
@@ -516,6 +519,61 @@ function StageApprovalCard() {
           <div className="text-sm text-muted-foreground">
             Config not available (daemon offline?)
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const AUTOMATION_TOGGLES = [
+  { key: "autoExecute" as const, label: "Auto Execute", description: "Automatically run forge when a task is created" },
+  { key: "autoApprove" as const, label: "Auto Approve", description: "Automatically approve tasks after forge completes" },
+  { key: "autoPropose" as const, label: "Auto Propose", description: "Observer automatically generates proposals" },
+  { key: "autoConvert" as const, label: "Auto Convert", description: "Automatically promote proposals to tasks" },
+];
+
+function AutomationDefaultsCard() {
+  const qc = useQueryClient();
+  const { data: automationConfig, isLoading } = useQuery({
+    queryKey: ["automation"],
+    queryFn: () => api.automation.get(),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (params: Partial<AutomationConfig>) => api.automation.set(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["automation"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+
+  const config = automationConfig || { autoExecute: false, autoApprove: false, autoPropose: false, autoConvert: false };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Automation Defaults</CardTitle>
+        <CardDescription>
+          Global automation toggles. Per-project overrides can be set from each project's overview page.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading config...</div>
+        ) : (
+          AUTOMATION_TOGGLES.map(({ key, label, description }) => (
+            <div key={key} className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground">{description}</p>
+              </div>
+              <Switch
+                checked={!!config[key as keyof typeof config]}
+                onCheckedChange={(checked) => mutation.mutate({ [key]: checked })}
+                disabled={mutation.isPending}
+              />
+            </div>
+          ))
         )}
       </CardContent>
     </Card>
