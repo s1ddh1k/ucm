@@ -50,8 +50,8 @@ ucm approve forge-20260219-a3f2
 |-----------|------|------|
 | **trivial** | implement → verify → deliver | 오타, 한 줄 수정 |
 | **small** | design → implement → verify → deliver | 함수 추가, 간단한 기능 |
-| **medium** | clarify → specify → design → implement → verify → polish → deliver | 일반적인 기능 개발 |
-| **large** | clarify → specify → decompose → design → implement → verify → polish → integrate → deliver | 대규모 리팩토링, 새 모듈 |
+| **medium** | clarify → specify → design → implement → verify → ux-review → polish → deliver | 일반적인 기능 개발 |
+| **large** | clarify → specify → decompose → design → implement → verify → ux-review → polish → integrate → deliver | 대규모 리팩토링, 새 모듈 |
 
 `--pipeline` 플래그로 강제 지정할 수 있다:
 
@@ -77,6 +77,7 @@ ucm forge "빠르게 구현만" --pipeline "implement,verify,deliver" --project 
 | **design** | 코드베이스 분석 후 구현 설계서 작성 | ~5-20분 |
 | **implement** | 설계서 기반 코드 작성 및 커밋 | ~10-45분 |
 | **verify** | 테스트 실행 + 코드 리뷰 (통과할 때까지 최대 3회 반복) | ~5-20분 |
+| **ux-review** | 프론트엔드 사용성/모바일 동선 점검 | ~5-15분 |
 | **polish** | 다관점 리뷰-수정 루프 (코드 품질/설계/테스트/보안) | ~10-60분 |
 | **integrate** | 하위 태스크 워크트리 병합, 충돌 해결 | ~5-20분 |
 | **deliver** | 변경사항 요약, 리뷰 대기 또는 자동 머지 | ~1-5분 |
@@ -152,7 +153,7 @@ ucm list                    # 전체 목록
 ucm list --status review    # 리뷰 대기 중인 것만
 ```
 
-상태 필터: `pending`, `in_progress`, `done`, `failed`, `review`, `rejected`, `aborted`
+상태 필터(`ucm list --status`): `pending`, `running`, `review`, `done`, `failed`
 
 ### `ucm start <id>` — pending 작업 시작
 

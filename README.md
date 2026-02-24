@@ -33,10 +33,14 @@ ForgePipeline ──→ Git Worktree (격리 실행)
      │
      ├── intake → 복잡도 분류, 파이프라인 자동 결정
      ├── clarify → 요구사항 정제
+     ├── specify → 요구사항 명세
+     ├── decompose → 대규모 작업 분해
      ├── design → 설계
      ├── implement → 코드 작성 (AI Agent)
      ├── verify → 테스트 + 리뷰 (최대 3회 반복)
+     ├── ux-review → 프론트엔드 사용성 점검
      ├── polish → 다관점 코드 품질 개선
+     ├── integrate → 하위 태스크 병합
      └── deliver → 결과 정리, 리뷰 대기
 ```
 
@@ -62,11 +66,17 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm reject <id> --feedback "..."` | 반려 (피드백 반영 재작업) |
 | `ucm resume <id>` | 중단된 작업 재개 |
 | `ucm ui` | 웹 대시보드 |
-| `ucm chat` | Claude 채팅 |
+| `ucm dashboard` | 브라우저에서 대시보드 열기 |
+| `ucm submit/start` | 데몬 큐 제출 및 실행 시작 |
 | `ucm analyze` | 프로젝트 분석 및 제안 생성 |
 | `ucm research` | 프로젝트 리서치 및 전략 제안 |
 | `ucm daemon start/stop` | 데몬 관리 |
+| `ucm pause/resume/stats` | 데몬 일시정지/재개/통계 |
+| `ucm merge-queue` | 머지 큐 상태/재시도/스킵 |
 | `ucm observe [--status]` | 수동 관찰 트리거/상태 확인 |
+| `ucm chat` | 대화형 AI 관리 모드 |
+
+전체 명령/옵션은 `ucm --help`를 기준으로 한다.
 
 ## 독립 도구
 
@@ -106,6 +116,14 @@ cd web && npm run dev              # 프론트엔드 HMR
 ucm-dev daemon stop && ucm-dev daemon start   # 개발 데몬
 ```
 
+릴리즈 전 최소 검증:
+
+```bash
+node test/core.test.js
+cd web && npm run build
+cd ucm-desktop && bun run build
+```
+
 ## 문서
 
 | 문서 | 설명 |
@@ -114,6 +132,7 @@ ucm-dev daemon stop && ucm-dev daemon start   # 개발 데몬
 | [Architecture](docs/architecture.md) | 시스템 아키텍처, 데몬, Forge, Stage Gate |
 | [Development](docs/development.md) | 프로젝트 구조, 모듈 맵, 테스트 |
 | [HiveMind](docs/hivemind.md) | 지식 메모리 시스템 |
+| [Changelog](CHANGELOG.md) | 릴리즈 변경 이력 |
 | [전체 문서 목록](docs/README.md) | 모든 문서 인덱스 |
 
 ## 데이터 디렉토리

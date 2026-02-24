@@ -15,7 +15,7 @@ Hivemind (lib/hivemind/) AI 세션에서 지식 추출·검색하는 Zettelkaste
     ↕ hook + cli
 Claude/Codex 세션     SessionStart 훅으로 컨텍스트 주입, /recall로 검색
 
-Forge (lib/forge/)   intake→clarify→design→implement→verify→polish→deliver 파이프라인
+Forge (lib/forge/)   intake→clarify→specify→decompose→design→implement→verify→ux-review→polish→integrate→deliver 파이프라인
 ```
 
 ## 통신 경로
@@ -43,7 +43,7 @@ Forge (lib/forge/)   intake→clarify→design→implement→verify→polish→d
 
 ```bash
 node test/core.test.js          # 코어 단위 테스트
-cd web && npx tsc --noEmit      # 프론트엔드 타입 체크
+cd web && npm run build         # 프론트엔드 프로덕션 빌드
 cd ucm-desktop && bun run build # 데스크톱 빌드
 ```
 

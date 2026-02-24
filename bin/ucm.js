@@ -17,10 +17,7 @@ const {
   SOCKET_POLL_INTERVAL_MS,
   CLIENT_TIMEOUT_MS,
   DEFAULT_CONFIG,
-  parseTaskFile,
   cleanStaleFiles,
-  readPid,
-  isProcessAlive,
 } = require("../lib/ucmd.js");
 const { createSocketClient } = require("../lib/socket-client.js");
 
@@ -47,13 +44,13 @@ Usage:
     ucm list [--status <s>] [--project <dir>] 태스크 목록
     ucm status [<task-id>]                    태스크/데몬 상태 조회
     ucm approve <task-id>                     태스크 승인 (merge)
-    ucm reject <task-id> [--feedback "..."]   태스크 반려
+    ucm reject <task-id> [--feedback "..."] [--force]   태스크 반려
     ucm cancel <task-id>                      태스크 취소
     ucm retry <task-id>                       실패한 태스크 재시도
     ucm delete <task-id> [--force]            태스크 삭제
     ucm priority <task-id> <N>                우선순위 변경
     ucm gate approve <task-id>                스테이지 승인
-    ucm gate reject <task-id>                 스테이지 반려
+    ucm gate reject <task-id> [--feedback "..."] [--force]  스테이지 반려
     ucm diff <task-id>                        변경사항 조회
     ucm logs <task-id> [--lines N]            로그 조회
 
@@ -63,7 +60,7 @@ Usage:
 
   Proposals:
     ucm proposals [--status <s>]              제안 목록
-    ucm proposal <approve|reject|up|down|eval> <id>  제안 관리
+    ucm proposal <approve|reject|up|down|eval> <id> [--force]  제안 관리
 
   Daemon control:
     ucm daemon start|stop                     데몬 시작/종료
@@ -107,7 +104,7 @@ Options:
   --watch, -w          watch 모드
   --port <N>           UI 서버 포트 (기본: ${DEFAULT_CONFIG.uiPort})
   --dev                프론트엔드 개발 모드
-  --force              확인 없이 강제 실행 (예: delete)
+  --force              확인 없이 강제 실행 (예: delete, reject)
   --help               도움말`;
 
 function tryOpenDashboard(url) {
@@ -275,6 +272,27 @@ async function promptYesNo(question, { defaultNo = true } = {}) {
   });
 }
 
+async function confirmDangerousAction({
+  force,
+  commandHint,
+  question,
+  cancelledMessage,
+}) {
+  if (force) return true;
+  if (!process.stdin.isTTY || !process.stderr.isTTY) {
+    console.error(
+      `확인을 받을 수 없습니다(비대화형 입력). 계속하려면 \`${commandHint} --force\`를 사용하세요.`,
+    );
+    process.exit(1);
+  }
+  const confirmed = await promptYesNo(question, { defaultNo: true });
+  if (!confirmed) {
+    if (cancelledMessage) console.log(cancelledMessage);
+    return false;
+  }
+  return true;
+}
+
 function splitLogLines(logText) {
   if (!logText || logText === "(no logs)") return [];
   const lines = String(logText).replace(/\r\n/g, "\n").split("\n");
@@ -305,14 +323,28 @@ function isTaskActive(task) {
   return state === "pending" || state === "running" || state === "in_progress";
 }
 
+function failMissingTaskId(usage) {
+  if (usage) {
+    console.error(`task-id 필수: ${usage}`);
+  } else {
+    console.error("task-id 필수");
+  }
+  console.error("hint: `ucm list` 또는 `ucm status`로 task-id를 확인하세요.");
+  process.exit(1);
+}
+
+function isDaemonNotRunningError(error) {
+  return error?.code === "ECONNREFUSED" || error?.code === "ENOENT";
+}
+
 // ── Socket Communication ──
 
 const socketRequest = createSocketClient(SOCK_PATH, CLIENT_TIMEOUT_MS);
 
 async function ensureDaemon() {
   try {
-    await socketRequest({ method: "stats", params: {} });
-    return;
+    const status = await socketRequest({ method: "stats", params: {} });
+    return { started: false, pid: status?.pid || null };
   } catch (e) {
     if (
       e.code !== "ECONNREFUSED" &&
@@ -324,6 +356,7 @@ async function ensureDaemon() {
   }
 
   // start daemon
+  console.error("daemon이 실행 중이지 않아 자동으로 시작합니다...");
   await cleanStaleFiles();
   await mkdir(DAEMON_DIR, { recursive: true });
 
@@ -338,17 +371,29 @@ async function ensureDaemon() {
   await writeFile(PID_PATH, String(child.pid));
 
   // wait for socket
+  const startedAt = Date.now();
+  let waitedSeconds = 0;
+  const progressTimer = setInterval(() => {
+    waitedSeconds++;
+    console.error(`daemon 시작 대기 중... ${waitedSeconds}s`);
+  }, 1000);
   const deadline = Date.now() + SOCKET_READY_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      await socketRequest({ method: "stats", params: {} });
-      return;
-    } catch {
-      await new Promise((r) => setTimeout(r, SOCKET_POLL_INTERVAL_MS));
+  try {
+    while (Date.now() < deadline) {
+      try {
+        await socketRequest({ method: "stats", params: {} });
+        const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+        console.error(`daemon 시작 완료 (pid: ${child.pid}, ${elapsedSec}s)`);
+        return { started: true, pid: child.pid };
+      } catch {
+        await new Promise((r) => setTimeout(r, SOCKET_POLL_INTERVAL_MS));
+      }
     }
+  } finally {
+    clearInterval(progressTimer);
   }
 
-  throw new Error("daemon failed to start");
+  throw new Error("daemon failed to start (timeout)");
 }
 
 // ── Command Handlers ──
@@ -436,8 +481,7 @@ async function cmdStart(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm start <task-id>");
-    process.exit(1);
+    failMissingTaskId("ucm start <task-id>");
   }
 
   const result = await socketRequest({ method: "start", params: { taskId } });
@@ -523,8 +567,7 @@ async function cmdApprove(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수");
-    process.exit(1);
+    failMissingTaskId("ucm approve <task-id>");
   }
 
   const params = { taskId };
@@ -538,9 +581,16 @@ async function cmdReject(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수");
-    process.exit(1);
+    failMissingTaskId('ucm reject <task-id> [--feedback "..."]');
   }
+
+  const confirmed = await confirmDangerousAction({
+    force: opts.force,
+    commandHint: `ucm reject ${taskId}`,
+    question: `태스크 ${taskId}를 반려합니다${opts.feedback ? " (피드백 포함)" : ""}. 계속할까요? [y/N] `,
+    cancelledMessage: `cancelled: ${taskId} (반려하지 않음)`,
+  });
+  if (!confirmed) return;
 
   const result = await socketRequest({
     method: "reject",
@@ -554,8 +604,7 @@ async function cmdCancel(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수");
-    process.exit(1);
+    failMissingTaskId("ucm cancel <task-id>");
   }
 
   const result = await socketRequest({ method: "cancel", params: { taskId } });
@@ -567,8 +616,7 @@ async function cmdDiff(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수");
-    process.exit(1);
+    failMissingTaskId("ucm diff <task-id>");
   }
 
   const diffs = await socketRequest({ method: "diff", params: { taskId } });
@@ -583,8 +631,7 @@ async function cmdLogs(opts) {
 
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수");
-    process.exit(1);
+    failMissingTaskId("ucm logs <task-id> [--lines N]");
   }
 
   const logs = await socketRequest({
@@ -619,8 +666,7 @@ async function cmdRetry(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm retry <task-id>");
-    process.exit(1);
+    failMissingTaskId("ucm retry <task-id>");
   }
   const result = await socketRequest({ method: "retry", params: { taskId } });
   console.log(`retried: ${result.id} → ${result.status}`);
@@ -630,25 +676,16 @@ async function cmdDelete(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm delete <task-id>");
-    process.exit(1);
+    failMissingTaskId("ucm delete <task-id>");
   }
-  if (!opts.force) {
-    if (!process.stdin.isTTY || !process.stderr.isTTY) {
-      console.error(
-        `삭제 확인을 받을 수 없습니다(비대화형 입력). 계속하려면 \`ucm delete ${taskId} --force\`를 사용하세요.`,
-      );
-      process.exit(1);
-    }
-    const confirmed = await promptYesNo(
-      `태스크 ${taskId}를 삭제합니다. 로그/아티팩트도 함께 제거됩니다. 계속할까요? [y/N] `,
-      { defaultNo: true },
-    );
-    if (!confirmed) {
-      console.log(`cancelled: ${taskId} (삭제하지 않음)`);
-      return;
-    }
-  }
+  const confirmed = await confirmDangerousAction({
+    force: opts.force,
+    commandHint: `ucm delete ${taskId}`,
+    question: `태스크 ${taskId}를 삭제합니다. 로그/아티팩트도 함께 제거됩니다. 계속할까요? [y/N] `,
+    cancelledMessage: `cancelled: ${taskId} (삭제하지 않음)`,
+  });
+  if (!confirmed) return;
+
   const result = await socketRequest({ method: "delete", params: { taskId } });
   console.log(`deleted: ${result.id}`);
 }
@@ -657,8 +694,7 @@ async function cmdGateApprove(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm gate approve <task-id>");
-    process.exit(1);
+    failMissingTaskId("ucm gate approve <task-id>");
   }
   const result = await socketRequest({
     method: "stage_gate_approve",
@@ -671,9 +707,17 @@ async function cmdGateReject(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm gate reject <task-id>");
-    process.exit(1);
+    failMissingTaskId("ucm gate reject <task-id>");
   }
+
+  const confirmed = await confirmDangerousAction({
+    force: opts.force,
+    commandHint: `ucm gate reject ${taskId}`,
+    question: `태스크 ${taskId}의 현재 스테이지를 반려합니다${opts.feedback ? " (피드백 포함)" : ""}. 계속할까요? [y/N] `,
+    cancelledMessage: `cancelled: ${taskId} (스테이지 반려하지 않음)`,
+  });
+  if (!confirmed) return;
+
   const result = await socketRequest({
     method: "stage_gate_reject",
     params: { taskId, feedback: opts.feedback },
@@ -849,6 +893,14 @@ async function cmdProposal(opts) {
       break;
     }
     case "reject": {
+      const confirmed = await confirmDangerousAction({
+        force: opts.force,
+        commandHint: `ucm proposal reject ${proposalId}`,
+        question: `제안 ${proposalId}를 반려합니다. 계속할까요? [y/N] `,
+        cancelledMessage: `cancelled: ${proposalId} (제안 반려하지 않음)`,
+      });
+      if (!confirmed) break;
+
       const result = await socketRequest({
         method: "proposal_reject",
         params: { proposalId },
@@ -1229,8 +1281,7 @@ async function cmdForge(opts) {
 async function cmdForgeResume(opts) {
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm resume <id>");
-    process.exit(1);
+    failMissingTaskId("ucm resume <id>");
   }
 
   const project = await resolveForgeResumeProject(taskId, opts.project);
@@ -1312,8 +1363,7 @@ async function resolveForgeResumeProject(taskId, projectOption) {
 async function cmdAbort(opts) {
   const taskId = opts.positional[0];
   if (!taskId) {
-    console.error("task-id 필수: ucm abort <id>");
-    process.exit(1);
+    failMissingTaskId("ucm abort <id>");
   }
 
   const { TaskDag } = require("../lib/core/task");
@@ -1362,8 +1412,7 @@ async function cmdAnalyze(opts) {
     params: { project },
   });
   if (result.error) {
-    console.error(`error: ${result.error}`);
-    return;
+    throw new Error(result.error);
   }
   console.log(
     `${result.proposalCount} proposals created for ${result.project}`,
@@ -1384,8 +1433,7 @@ async function cmdResearch(opts) {
     params: { project },
   });
   if (result.error) {
-    console.error(`error: ${result.error}`);
-    return;
+    throw new Error(result.error);
   }
   console.log(`${result.proposalCount} proposals created`);
 }
@@ -1398,8 +1446,7 @@ async function cmdMergeQueue(opts) {
   if (subcommand === "retry") {
     const taskId = opts.positional[1];
     if (!taskId) {
-      console.error("task-id 필수: ucm merge-queue retry <task-id>");
-      process.exit(1);
+      failMissingTaskId("ucm merge-queue retry <task-id>");
     }
     const result = await socketRequest({
       method: "merge_queue_retry",
@@ -1412,8 +1459,7 @@ async function cmdMergeQueue(opts) {
   if (subcommand === "skip") {
     const taskId = opts.positional[1];
     if (!taskId) {
-      console.error("task-id 필수: ucm merge-queue skip <task-id>");
-      process.exit(1);
+      failMissingTaskId("ucm merge-queue skip <task-id>");
     }
     const result = await socketRequest({
       method: "merge_queue_skip",
@@ -1480,14 +1526,28 @@ async function cmdMergeQueue(opts) {
 async function cmdDaemon(opts) {
   const subcommand = opts.positional[0];
   if (subcommand === "start") {
-    await ensureDaemon();
-    console.log("daemon started");
+    const result = await ensureDaemon();
+    if (result?.started) {
+      console.log(`daemon started (pid: ${result.pid})`);
+    } else {
+      console.log(
+        `daemon already running${result?.pid ? ` (pid: ${result.pid})` : ""}`,
+      );
+    }
   } else if (subcommand === "stop") {
     try {
       await socketRequest({ method: "shutdown", params: {} });
       console.log("daemon stopped");
-    } catch {
-      console.log("daemon not running");
+    } catch (error) {
+      if (isDaemonNotRunningError(error)) {
+        console.log("daemon not running");
+        return;
+      }
+      const detail = error?.message || String(error);
+      console.error(`daemon stop failed: ${detail}`);
+      console.error(`hint: 로그를 확인하세요: ${LOG_PATH}`);
+      console.error("hint: `ucm status`로 상태를 확인한 뒤 다시 시도하세요.");
+      process.exit(1);
     }
   } else {
     console.error("usage: ucm daemon <start|stop>");
@@ -1732,7 +1792,10 @@ async function main() {
 
 const ERROR_HINTS = {
   ECONNREFUSED: "데몬이 실행 중이지 않습니다. `ucm daemon start`로 시작하세요.",
-  ENOENT: "파일 또는 경로를 찾을 수 없습니다. 프로젝트 경로를 확인하세요.",
+  ENOENT:
+    "대상 파일 또는 데몬 소켓을 찾을 수 없습니다. `ucm daemon start`로 데몬을 시작하거나 경로를 확인하세요.",
+  TIMEOUT:
+    "응답 시간이 초과되었습니다. `ucm stats`로 상태를 확인하고, 필요하면 `ucm daemon stop && ucm daemon start`로 재시작하세요.",
   RATE_LIMITED: "API 요청 제한에 도달했습니다. 잠시 후 자동 재시도됩니다.",
   "task not found":
     "태스크를 찾을 수 없습니다. `ucm list`로 태스크 목록을 확인하세요.",

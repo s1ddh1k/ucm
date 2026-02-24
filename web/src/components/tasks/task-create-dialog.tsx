@@ -1,7 +1,5 @@
 import { FolderOpen } from "lucide-react";
-import { useEffect, useState } from "react";
-import { api } from "@/api/client";
-import type { BrowseResult } from "@/api/types";
+import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
 import { useProjectCatalogQuery } from "@/queries/projects";
 import { useSubmitTask } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
@@ -43,6 +42,12 @@ const PIPELINE_INFO: Record<string, { stages: string; desc: string }> = {
   },
 };
 
+type PipelineType = keyof typeof PIPELINE_INFO;
+
+function isPipelineType(value: string): value is PipelineType {
+  return value in PIPELINE_INFO;
+}
+
 interface TaskCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -57,14 +62,26 @@ export function TaskCreateDialog({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [project, setProject] = useState("");
-  const [pipeline, setPipeline] = useState("medium");
+  const [pipeline, setPipeline] = useState<PipelineType>("medium");
   const [priority, setPriority] = useState("0");
-  const [browsing, setBrowsing] = useState(false);
-  const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
+  const titleInputId = useId();
+  const descriptionInputId = useId();
+  const projectInputId = useId();
+  const priorityInputId = useId();
 
   const submitTask = useSubmitTask();
   const { data: projectCatalog } = useProjectCatalogQuery();
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
+  const {
+    browsing,
+    loading: browseLoading,
+    browseResult,
+    browseError,
+    openBrowser,
+    navigateBrowser,
+    closeBrowser,
+    clearBrowseError,
+  } = useDirectoryBrowser();
 
   useEffect(() => {
     if (open && defaultProjectPath) {
@@ -85,7 +102,7 @@ export function TaskCreateDialog({
       },
       {
         onSuccess: (data) => {
-          const newId = (data as { id?: string })?.id;
+          const newId = data.id;
           setTitle("");
           setBody("");
           setProject("");
@@ -104,33 +121,20 @@ export function TaskCreateDialog({
     if (nextOpen && defaultProjectPath) {
       setProject(defaultProjectPath);
     }
-    onOpenChange(nextOpen);
-  };
-
-  const openBrowser = async () => {
-    try {
-      const result = await api.browse.list(project || undefined);
-      setBrowseResult(result);
-      setBrowsing(true);
-    } catch {
-      // fallback: just keep the input
+    if (!nextOpen) {
+      closeBrowser();
     }
+    onOpenChange(nextOpen);
   };
 
   const selectDirectory = (dirPath: string) => {
     setProject(dirPath);
-    setBrowsing(false);
-    setBrowseResult(null);
-  };
-
-  const navigateBrowser = async (dirPath: string) => {
-    try {
-      const result = await api.browse.list(dirPath);
-      setBrowseResult(result);
-    } catch {}
+    closeBrowser();
   };
 
   const info = PIPELINE_INFO[pipeline];
+  const submitErrorMessage =
+    submitTask.error instanceof Error ? submitTask.error.message : null;
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -144,8 +148,11 @@ export function TaskCreateDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Title</label>
+            <label htmlFor={titleInputId} className="text-sm font-medium mb-1.5 block">
+              Title
+            </label>
             <Input
+              id={titleInputId}
               placeholder="Task title..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -154,10 +161,14 @@ export function TaskCreateDialog({
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">
+            <label
+              htmlFor={descriptionInputId}
+              className="text-sm font-medium mb-1.5 block"
+            >
               Description
             </label>
             <textarea
+              id={descriptionInputId}
               placeholder="Task description (optional)..."
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -166,7 +177,7 @@ export function TaskCreateDialog({
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">
+            <label htmlFor={projectInputId} className="text-sm font-medium mb-1.5 block">
               Project Path
             </label>
             {(projectCatalog?.length || 0) === 0 && (
@@ -199,23 +210,42 @@ export function TaskCreateDialog({
             )}
             <div className="flex gap-1">
               <Input
+                id={projectInputId}
                 placeholder="~/my-project (optional)"
                 value={project}
-                onChange={(e) => setProject(e.target.value)}
+                onChange={(e) => {
+                  clearBrowseError();
+                  setProject(e.target.value);
+                }}
                 className="flex-1"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={openBrowser}
+                onClick={() => void openBrowser(project || undefined)}
                 title="Browse directories"
+                aria-label="Browse directories"
+                disabled={browseLoading}
               >
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
+            {browseLoading && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                Loading directories...
+              </p>
+            )}
+            {browseError && (
+              <p className="mt-2 text-xs text-destructive" role="alert">
+                {browseError}
+              </p>
+            )}
             {browsing && browseResult && (
-              <div className="mt-2 border rounded-md max-h-48 overflow-auto bg-muted/50">
+              <div
+                className="mt-2 border rounded-md max-h-48 overflow-auto bg-muted/50"
+                aria-label="Directory browser"
+              >
                 <div className="px-3 py-1.5 border-b flex items-center justify-between">
                   <span className="text-xs font-mono truncate">
                     {browseResult.current}
@@ -224,6 +254,7 @@ export function TaskCreateDialog({
                     size="sm"
                     variant="ghost"
                     className="h-6 text-xs"
+                    type="button"
                     onClick={() => selectDirectory(browseResult.current)}
                   >
                     Select
@@ -231,17 +262,21 @@ export function TaskCreateDialog({
                 </div>
                 {browseResult.parent && (
                   <button
+                    type="button"
                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
-                    onClick={() => navigateBrowser(browseResult.parent)}
+                    onClick={() => void navigateBrowser(browseResult.parent)}
+                    disabled={browseLoading}
                   >
                     ..
                   </button>
                 )}
                 {browseResult.directories.map((dir) => (
                   <button
+                    type="button"
                     key={dir.path}
                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
-                    onClick={() => navigateBrowser(dir.path)}
+                    onClick={() => void navigateBrowser(dir.path)}
+                    disabled={browseLoading}
                   >
                     {dir.name}/
                   </button>
@@ -255,7 +290,14 @@ export function TaskCreateDialog({
               <label className="text-sm font-medium mb-1.5 block">
                 Pipeline
               </label>
-              <Select value={pipeline} onValueChange={setPipeline}>
+              <Select
+                value={pipeline}
+                onValueChange={(value) => {
+                  if (isPipelineType(value)) {
+                    setPipeline(value);
+                  }
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -278,10 +320,11 @@ export function TaskCreateDialog({
             </div>
 
             <div className="w-24">
-              <label className="text-sm font-medium mb-1.5 block">
+              <label htmlFor={priorityInputId} className="text-sm font-medium mb-1.5 block">
                 Priority
               </label>
               <Input
+                id={priorityInputId}
                 type="number"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
@@ -303,6 +346,12 @@ export function TaskCreateDialog({
               {submitTask.isPending ? "Creating..." : "Create Task"}
             </Button>
           </div>
+          {submitErrorMessage && (
+            <p className="text-xs text-destructive" role="alert">
+              Failed to create task: {submitErrorMessage}. Check your inputs and
+              retry.
+            </p>
+          )}
         </div>
       </DialogContent>
     </Dialog>

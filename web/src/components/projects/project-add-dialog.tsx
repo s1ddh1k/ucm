@@ -1,7 +1,5 @@
 import { FolderOpen } from "lucide-react";
-import { useEffect, useState } from "react";
-import { api } from "@/api/client";
-import type { BrowseResult } from "@/api/types";
+import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
 import { useUpsertProjectCatalogItem } from "@/queries/projects";
 
 interface ProjectAddDialogProps {
@@ -28,38 +27,32 @@ export function ProjectAddDialog({
 }: ProjectAddDialogProps) {
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
-  const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
-  const [browsing, setBrowsing] = useState(false);
+  const pathInputId = useId();
+  const nameInputId = useId();
   const upsertProject = useUpsertProjectCatalogItem();
+  const {
+    browsing,
+    loading: browseLoading,
+    browseResult,
+    browseError,
+    openBrowser,
+    navigateBrowser,
+    closeBrowser,
+    clearBrowseError,
+  } = useDirectoryBrowser();
 
   useEffect(() => {
     if (open) {
       setPath(defaultPath || "");
       setName("");
-      setBrowseResult(null);
-      setBrowsing(false);
+    } else {
+      closeBrowser();
     }
-  }, [open, defaultPath]);
-
-  const openBrowser = async () => {
-    try {
-      const result = await api.browse.list(path || undefined);
-      setBrowseResult(result);
-      setBrowsing(true);
-    } catch {}
-  };
-
-  const navigateBrowser = async (dirPath: string) => {
-    try {
-      const result = await api.browse.list(dirPath);
-      setBrowseResult(result);
-    } catch {}
-  };
+  }, [open, defaultPath, closeBrowser]);
 
   const selectDirectory = (dirPath: string) => {
     setPath(dirPath);
-    setBrowsing(false);
-    setBrowseResult(null);
+    closeBrowser();
   };
 
   const handleSubmit = () => {
@@ -76,6 +69,8 @@ export function ProjectAddDialog({
       },
     );
   };
+  const submitErrorMessage =
+    upsertProject.error instanceof Error ? upsertProject.error.message : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -90,28 +85,47 @@ export function ProjectAddDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">
+            <label htmlFor={pathInputId} className="text-sm font-medium mb-1.5 block">
               Project Path
             </label>
             <div className="flex gap-1">
               <Input
+                id={pathInputId}
                 placeholder="~/git/my-project"
                 value={path}
-                onChange={(e) => setPath(e.target.value)}
+                onChange={(e) => {
+                  clearBrowseError();
+                  setPath(e.target.value);
+                }}
                 className="flex-1"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={openBrowser}
+                onClick={() => void openBrowser(path || undefined)}
                 title="Browse directories"
+                aria-label="Browse directories"
+                disabled={browseLoading}
               >
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
+            {browseLoading && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                Loading directories...
+              </p>
+            )}
+            {browseError && (
+              <p className="mt-2 text-xs text-destructive" role="alert">
+                {browseError}
+              </p>
+            )}
             {browsing && browseResult && (
-              <div className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40">
+              <div
+                className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40"
+                aria-label="Directory browser"
+              >
                 <div className="px-3 py-1.5 border-b flex items-center justify-between gap-2">
                   <span className="text-xs font-mono truncate">
                     {browseResult.current}
@@ -120,6 +134,7 @@ export function ProjectAddDialog({
                     size="sm"
                     variant="ghost"
                     className="h-6 text-xs"
+                    type="button"
                     onClick={() => selectDirectory(browseResult.current)}
                   >
                     Select
@@ -127,17 +142,21 @@ export function ProjectAddDialog({
                 </div>
                 {browseResult.parent && (
                   <button
+                    type="button"
                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
-                    onClick={() => navigateBrowser(browseResult.parent)}
+                    onClick={() => void navigateBrowser(browseResult.parent)}
+                    disabled={browseLoading}
                   >
                     ..
                   </button>
                 )}
                 {browseResult.directories.map((dir) => (
                   <button
+                    type="button"
                     key={dir.path}
                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
-                    onClick={() => navigateBrowser(dir.path)}
+                    onClick={() => void navigateBrowser(dir.path)}
+                    disabled={browseLoading}
                   >
                     {dir.name}/
                   </button>
@@ -147,10 +166,11 @@ export function ProjectAddDialog({
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">
+            <label htmlFor={nameInputId} className="text-sm font-medium mb-1.5 block">
               Label (optional)
             </label>
             <Input
+              id={nameInputId}
               placeholder="e.g. Console Frontend"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -168,6 +188,12 @@ export function ProjectAddDialog({
               {upsertProject.isPending ? "Adding..." : "Add Project"}
             </Button>
           </div>
+          {submitErrorMessage && (
+            <p className="text-xs text-destructive" role="alert">
+              Failed to add project: {submitErrorMessage}. Verify the path and
+              try again.
+            </p>
+          )}
         </div>
       </DialogContent>
     </Dialog>

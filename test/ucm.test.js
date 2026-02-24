@@ -10865,6 +10865,44 @@ function testCliResumeProjectFallbackUsesWorkspace() {
   );
 }
 
+async function runCliCommand(args, { env = {}, timeoutMs = 5000 } = {}) {
+  const cliPath = path.join(__dirname, "..", "bin", "ucm.js");
+  const child = spawn(process.execPath, [cliPath, ...args], {
+    env: { ...process.env, ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString("utf-8");
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString("utf-8");
+  });
+
+  const result = await Promise.race([
+    new Promise((resolve, reject) => {
+      child.on("close", (code, signal) => resolve({ code, signal }));
+      child.on("error", reject);
+    }),
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        try {
+          child.kill("SIGTERM");
+        } catch {}
+        reject(
+          new Error(
+            `cli ${args.join(" ")} timed out. stdout=${JSON.stringify(stdout)} stderr=${JSON.stringify(stderr)}`,
+          ),
+        );
+      }, timeoutMs);
+    }),
+  ]);
+
+  return { ...result, stdout, stderr };
+}
+
 async function testCliLogsFollowStreamsNewLines() {
   const cliPath = path.join(__dirname, "..", "bin", "ucm.js");
   const tempRoot = path.join(
@@ -10992,6 +11030,223 @@ async function testCliLogsFollowStreamsNewLines() {
     assert(
       statusCalls >= 3,
       "cli logs --follow: polls until task leaves running state",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+function testCliTaskIdErrorsIncludeActionHint() {
+  const cliPath = path.join(__dirname, "..", "bin", "ucm.js");
+  const result = spawnSync(process.execPath, [cliPath, "abort"], {
+    env: { ...process.env, UCM_DIR: TEST_UCM_DIR },
+    encoding: "utf-8",
+    timeout: 2000,
+  });
+
+  assertEqual(result.status, 1, "cli task-id hint: exits with code 1");
+  assert(
+    (result.stderr || "").includes("task-id 필수: ucm abort <id>"),
+    "cli task-id hint: shows usage-specific error",
+  );
+  assert(
+    (result.stderr || "").includes(
+      "hint: `ucm list` 또는 `ucm status`로 task-id를 확인하세요.",
+    ),
+    "cli task-id hint: shows next action guidance",
+  );
+}
+
+function testCliRejectCommandsRequireConfirmation() {
+  const cliSource = fs.readFileSync(
+    path.join(__dirname, "..", "bin", "ucm.js"),
+    "utf-8",
+  );
+  assert(
+    cliSource.includes("async function confirmDangerousAction"),
+    "cli reject confirm: common dangerous-action helper exists",
+  );
+  assert(
+    cliSource.includes(
+      "확인을 받을 수 없습니다(비대화형 입력). 계속하려면",
+    ),
+    "cli reject confirm: non-interactive --force guidance exists",
+  );
+  assert(
+    cliSource.includes("commandHint: `ucm reject ${taskId}`"),
+    "cli reject confirm: task reject uses confirmation helper",
+  );
+  assert(
+    cliSource.includes("commandHint: `ucm gate reject ${taskId}`"),
+    "cli reject confirm: stage gate reject uses confirmation helper",
+  );
+  assert(
+    cliSource.includes("commandHint: `ucm proposal reject ${proposalId}`"),
+    "cli reject confirm: proposal reject uses confirmation helper",
+  );
+}
+
+async function testCliAnalyzeErrorExitsNonZero() {
+  const tempRoot = path.join(
+    "/tmp",
+    `uca-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stats") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { daemonStatus: "running" },
+          })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "analyze_project") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { error: "task not found" },
+          })}\n`,
+        );
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(
+      ["analyze", "--project", tempRoot],
+      { env: { UCM_DIR: tempRoot }, timeoutMs: 3000 },
+    );
+
+    assertEqual(result.code, 1, "cli analyze error: exits with code 1");
+    assert(
+      (result.stderr || "").includes("error: task not found"),
+      "cli analyze error: surfaces daemon error",
+    );
+    assert(
+      (result.stderr || "").includes(
+        "hint: 태스크를 찾을 수 없습니다. `ucm list`로 태스크 목록을 확인하세요.",
+      ),
+      "cli analyze error: prints actionable hint",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+async function testCliDaemonStopReportsShutdownFailure() {
+  const tempRoot = path.join(
+    "/tmp",
+    `ucs-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "shutdown") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: false,
+            error: "permission denied",
+          })}\n`,
+        );
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(["daemon", "stop"], {
+      env: { UCM_DIR: tempRoot },
+      timeoutMs: 3000,
+    });
+
+    assertEqual(
+      result.code,
+      1,
+      "cli daemon stop failure: exits with code 1",
+    );
+    assert(
+      (result.stderr || "").includes("daemon stop failed: permission denied"),
+      "cli daemon stop failure: prints shutdown error reason",
+    );
+    assert(
+      (result.stderr || "").includes("hint: 로그를 확인하세요:"),
+      "cli daemon stop failure: shows log guidance",
     );
   } finally {
     await new Promise((resolve) => server.close(() => resolve()));
@@ -13303,7 +13558,8 @@ function testUcmdHandlersUsesBoundedDagSummaryConcurrency() {
     "handlers: has DAG summary concurrency constant",
   );
   assert(
-    handlersSource.includes("mapWithConcurrency(dagSummaryTargets"),
+    handlersSource.includes("mapWithConcurrency(") &&
+      handlersSource.includes("dagSummaryTargets"),
     "handlers: DAG summary uses bounded concurrency",
   );
 }
@@ -16092,6 +16348,10 @@ async function main() {
   testCliWatchAliasEnablesFollow();
   testCliResumeProjectFallbackUsesWorkspace();
   await testCliLogsFollowStreamsNewLines();
+  testCliTaskIdErrorsIncludeActionHint();
+  testCliRejectCommandsRequireConfirmation();
+  await testCliAnalyzeErrorExitsNonZero();
+  await testCliDaemonStopReportsShutdownFailure();
   await testForgeResumeRejectsNonResumableStatus();
   await testForgeResumeAllowsFailedStatus();
   await testForgeResumeUsesWorkspaceProjectFallback();

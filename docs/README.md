@@ -7,6 +7,7 @@
 | [User Guide](user-guide.md) | 설치, CLI 명령어, 웹 대시보드, 워크플로 레시피, 트러블슈팅 |
 | [Architecture](architecture.md) | 시스템 아키텍처, 데몬, Forge 파이프라인, Stage Approval Gate |
 | [Development](development.md) | 프로젝트 구조, 모듈 맵, 테스트, 개발/릴리즈 워크플로 |
+| [Changelog](../CHANGELOG.md) | 릴리즈 변경 이력 |
 
 ## Reference
 

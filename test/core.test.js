@@ -1,4 +1,14 @@
 #!/usr/bin/env node
+const path = require("node:path");
+const os = require("node:os");
+const {
+  readFile,
+  writeFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  rm,
+} = require("node:fs/promises");
 const {
   startSuiteTimer,
   stopSuiteTimer,
@@ -16,6 +26,7 @@ startSuiteTimer(30_000);
 const {
   extractJson,
   buildCommand,
+  llmText,
   sanitizeEnv,
   killPidTree,
   REASONING_EFFORTS,
@@ -66,6 +77,7 @@ const {
   STAGE_TIMEOUTS,
   STAGE_ARTIFACTS,
   STAGE_MODELS,
+  FORGE_DIR,
 } = require("../lib/core/constants");
 
 async function main() {
@@ -964,6 +976,43 @@ title: line1\\nline2
     },
   });
 
+  // ── TaskDag.load ──
+  await runGroup("TaskDag.load", {
+    "throws task not found when task.json is missing": async () => {
+      const id = `forge-missing-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      let threw = false;
+      try {
+        await TaskDag.load(id);
+      } catch (e) {
+        threw = true;
+        assertEqual(e.message, `task not found: ${id}`, "missing task message");
+      }
+      assert(threw, "throws when task does not exist");
+    },
+
+    "wraps malformed task.json with task load failed message": async () => {
+      const id = `forge-invalid-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const dir = path.join(FORGE_DIR, id);
+      const file = path.join(dir, "task.json");
+      await mkdir(dir, { recursive: true });
+      await writeFile(file, "{invalid json", "utf-8");
+
+      let threw = false;
+      try {
+        await TaskDag.load(id);
+      } catch (e) {
+        threw = true;
+        assert(
+          e.message.includes(`task load failed: ${id}`),
+          "includes wrapped load failure",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+      assert(threw, "throws on malformed task.json");
+    },
+  });
+
   // ── buildCommand ──
   await runGroup("buildCommand", {
     "claude: basic args with -p": () => {
@@ -1167,6 +1216,102 @@ title: line1\\nline2
         );
       }
       assert(threw, "throws on unknown provider");
+    },
+  });
+
+  // ── llmText ──
+  await runGroup("llmText", {
+    "retries on rate limit and throws RATE_LIMITED after max retries": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-llm-rate-"));
+      const codexPath = path.join(tempDir, "codex");
+      const counterPath = path.join(tempDir, "attempt-count.txt");
+      const originalPath = process.env.PATH || "";
+      const originalSetTimeout = global.setTimeout;
+      const delays = [];
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+count=0
+if [ -f "${counterPath}" ]; then
+  count=$(cat "${counterPath}")
+fi
+count=$((count + 1))
+echo "$count" > "${counterPath}"
+echo "429 quota exceeded" 1>&2
+exit 1
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+        global.setTimeout = (fn, delay, ...args) => {
+          delays.push(delay);
+          fn(...args);
+          return { unref() {}, ref() {} };
+        };
+
+        let threw = false;
+        try {
+          await llmText("test prompt", { provider: "codex" });
+        } catch (e) {
+          threw = true;
+          assertEqual(e.message, "RATE_LIMITED", "rate-limit terminal error");
+        } finally {
+          process.env.PATH = originalPath;
+          global.setTimeout = originalSetTimeout;
+        }
+
+        const attempts = parseInt(
+          (await readFile(counterPath, "utf-8")).trim(),
+          10,
+        );
+        assertEqual(attempts, 4, "attempted initial run plus 3 retries");
+        assertDeepEqual(
+          delays,
+          [5000, 10000, 20000],
+          "exponential backoff delays",
+        );
+        assert(threw, "throws after retry budget exhausted");
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
+    "throws failed status with stderr context for non-rate-limit errors": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-llm-fail-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+echo "fatal: simulated llm failure" 1>&2
+exit 1
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        let threw = false;
+        try {
+          await llmText("test prompt", { provider: "codex" });
+        } catch (e) {
+          threw = true;
+          assert(e.message.includes("LLM failed"), "failed status included");
+          assert(
+            e.message.includes("simulated llm failure"),
+            "stderr context included",
+          );
+        } finally {
+          process.env.PATH = originalPath;
+        }
+
+        assert(threw, "throws on non-rate-limit failure");
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     },
   });
 

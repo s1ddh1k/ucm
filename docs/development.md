@@ -6,7 +6,7 @@
 ucm/
 ├── bin/                    # CLI 진입점 (실행 래퍼)
 │   ├── ucm.js              #   통합 CLI (forge, list, approve, dashboard, ...)
-│   ├── ucmd.js              #   데몬 클라이언트
+│   ├── ucmd.js              #   데몬 실행 엔트리
 │   ├── ucm-dev.js           #   개발 모드 CLI
 │   ├── ucmd-dev.js          #   개발 모드 데몬
 │   ├── ucm-watchdog.js      #   프로세스 감시
@@ -114,7 +114,7 @@ bash scripts/setup-dev.sh    # ucm-dev, ucmd-dev 명령어 등록
 vim lib/forge/index.js
 
 # 2. 테스트
-npm test
+node test/core.test.js
 
 # 3. 개발 데몬으로 확인
 ucm-dev daemon stop && ucm-dev daemon start
@@ -135,11 +135,16 @@ ucm-dev release
 ### 실행
 
 ```bash
-# 전체 테스트
+# 전체 테스트 스위트
 npm test
 
-# 개별 실행
-node test/ucm.test.js          # 코어 데몬 테스트
+# 릴리즈 전 최소 검증
+node test/core.test.js
+cd web && npm run build
+cd ucm-desktop && bun run build
+
+# 추가 개별 실행
+node test/ucm.test.js          # UCM 종합 테스트
 node test/hivemind.test.js     # Hivemind 테스트
 node test/integration.js       # 통합 테스트 (Socket + HTTP API)
 node test/browser.js           # 브라우저 에이전트 테스트
@@ -236,13 +241,15 @@ npm run build    # 프로덕션 빌드 → web/dist/
 ## 릴리즈
 
 ```bash
-# 1. 테스트 확인
+# 1. 릴리즈 전 최소 검증
+node test/core.test.js
+cd web && npm run build && cd ..
+cd ucm-desktop && bun run build && cd ..
+
+# 2. (선택) 전체 테스트 스위트
 npm test
 
-# 2. 프론트엔드 빌드
-cd web && npm run build && cd ..
-
-# 3. 릴리즈 (테스트 → ~/.ucm/release/ 복사 → prod 데몬 재시작)
+# 3. 릴리즈 (~/.ucm/release/ 복사 → prod 데몬 재시작)
 ucm-dev release
 
 # 4. 운영 확인
