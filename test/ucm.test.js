@@ -668,6 +668,38 @@ async function testHandleLogsTailAndLineLimits() {
   }
 }
 
+async function testHandleLogsReadErrorIncludesActionableMessage() {
+  const taskId = `logerr-${crypto.randomBytes(4).toString("hex")}`;
+  const logPath = path.join(LOGS_DIR, `${taskId}.log`);
+  await mkdir(logPath, { recursive: true });
+
+  try {
+    let errorMessage = "";
+    try {
+      await ucmdHandlers.handleLogs({ taskId, lines: 5 });
+    } catch (e) {
+      errorMessage = e.message || String(e);
+    }
+
+    assert(
+      errorMessage.includes(`failed to read logs for ${taskId}`),
+      "handleLogs: read errors include task context",
+    );
+    assert(
+      errorMessage.includes("Check file permissions"),
+      "handleLogs: read errors include next action for permissions",
+    );
+    assert(
+      errorMessage.includes(`ucm status ${taskId}`),
+      "handleLogs: read errors include next action for status check",
+    );
+  } finally {
+    try {
+      await rm(logPath, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
 async function testHandleListRejectsInvalidMinPriority() {
   let threw = false;
   try {
@@ -16145,6 +16177,7 @@ async function main() {
   await testMoveTaskSerializesConcurrentTransitions();
   await testMoveTaskRollsBackWhenSourceCleanupFails();
   await testHandleLogsTailAndLineLimits();
+  await testHandleLogsReadErrorIncludesActionableMessage();
   await testHandleListRejectsInvalidMinPriority();
   await testRejectWithFeedbackTracksActiveTaskState();
   await testRejectWithFeedbackRecoveryPreservesRunningTask();

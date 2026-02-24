@@ -54,12 +54,19 @@ interface TaskDetailProps {
 type TaskDetailTab = "overview" | "logs" | "diff" | "artifacts";
 
 export function TaskDetail({ taskId }: TaskDetailProps) {
-  const { data: task } = useTaskQuery(taskId);
+  const {
+    data: task,
+    isLoading: isTaskLoading,
+    isError: isTaskError,
+    error: taskError,
+    refetch: refetchTask,
+  } = useTaskQuery(taskId);
   const projectPath = task ? getTaskProjectPath(task) : null;
   const projectLabel = task ? getTaskProjectLabel(task) : "";
   const [feedbackText, setFeedbackText] = useState("");
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<TaskDetailTab>("overview");
 
   const startTask = useStartTask();
@@ -83,7 +90,45 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
     }
   }, [activeTab, task?.state]);
 
-  if (!task) return null;
+  if (isTaskLoading && !task) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RotateCw className="h-4 w-4 animate-spin" />
+          <span>Loading task details...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isTaskError && !task) {
+    const description =
+      taskError instanceof Error
+        ? taskError.message
+        : "Failed to load task details.";
+    return (
+      <EmptyState
+        icon={Ban}
+        title="Task detail unavailable"
+        description={description}
+        action={
+          <Button size="sm" variant="outline" onClick={() => refetchTask()}>
+            <RotateCw className="h-4 w-4" /> Retry
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!task) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="Task not found"
+        description="The selected task may have been deleted or is no longer available."
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -308,6 +353,38 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             </div>
           </DialogContent>
         </Dialog>
+        <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Task?</DialogTitle>
+              <DialogDescription>
+                This permanently deletes the task, logs, and artifacts. This
+                action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-sm font-medium truncate">{task.title}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  deleteTask.mutate(taskId);
+                  setConfirmDelete(false);
+                }}
+                disabled={deleteTask.isPending}
+              >
+                {deleteTask.isPending ? (
+                  <RotateCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}{" "}
+                {deleteTask.isPending ? "Deleting..." : "Delete Task"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         {task.state === "pending" && (
           <div className="flex items-center gap-1">
             <Button
@@ -367,10 +444,15 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => deleteTask.mutate(taskId)}
+            onClick={() => setConfirmDelete(true)}
             disabled={deleteTask.isPending}
           >
-            <Trash2 className="h-4 w-4" /> Delete
+            {deleteTask.isPending ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}{" "}
+            {deleteTask.isPending ? "Deleting..." : "Delete"}
           </Button>
         )}
       </div>
@@ -616,12 +698,47 @@ function InfoRow({
 
 function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
   const logLines = taskState === "failed" ? 500 : 200;
-  const { data: logs } = useTaskLogsQuery(
+  const {
+    data: logs,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useTaskLogsQuery(
     taskId,
     logLines,
     taskState === "running",
   );
   const wsLogs = useEventsStore((s) => s.getTaskLogs(taskId));
+
+  if (isLoading && !logs && wsLogs.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RotateCw className="h-4 w-4 animate-spin" />
+          <span>Loading logs...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError && !logs && wsLogs.length === 0) {
+    const description =
+      error instanceof Error ? error.message : "Failed to load logs.";
+    return (
+      <EmptyState
+        icon={Ban}
+        title="Unable to load logs"
+        description={description}
+        action={
+          <Button size="sm" variant="outline" onClick={() => refetch()}>
+            <RotateCw className="h-4 w-4" /> Retry
+          </Button>
+        }
+        className="py-8"
+      />
+    );
+  }
 
   // Merge: HTTP logs as baseline, append any WS lines received after
   const mergedLogs = useMemo(() => {

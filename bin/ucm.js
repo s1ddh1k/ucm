@@ -74,7 +74,7 @@ Usage:
     ucm merge-queue skip <task-id>            큐에서 제거
 
   Maintenance:
-    ucm gc [--days N]                         오래된 태스크 정리
+    ucm gc [--days N] [--force]               오래된 태스크 정리
     ucm observe [--status]                    수동 관찰 트리거
 
   Other:
@@ -1454,8 +1454,18 @@ async function cmdAbort(opts) {
 async function cmdGc(opts) {
   const { gcTasks } = require("../lib/core/worktree");
   const maxAgeDays = opts.days || 30;
+  const confirmed = await confirmDangerousAction({
+    force: opts.force,
+    commandHint: `ucm gc --days ${maxAgeDays}`,
+    question: `${maxAgeDays}일보다 오래된 태스크를 삭제합니다. task 파일, 로그, worktree, 아티팩트가 정리됩니다. 계속할까요? [y/N] `,
+    cancelledMessage: "cancelled: gc (아무것도 삭제하지 않음)",
+  });
+  if (!confirmed) return;
+
   console.error(`cleaning up tasks older than ${maxAgeDays} days...`);
-  const cleaned = await gcTasks({ maxAgeDays });
+  const cleaned = await runWithProgress("태스크 정리", () =>
+    gcTasks({ maxAgeDays }),
+  );
   if (cleaned.length === 0) {
     console.log("(nothing to clean)");
   } else {
