@@ -343,10 +343,6 @@ function formatEventMessage(activity: { event: string; data: Record<string, unkn
     case "stage:gate_resolved": return `Stage ${data.action || "resolved"}: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
     case "config:updated": return "Configuration updated";
     default:
-      if (event.startsWith("autopilot:")) {
-        const action = event.replace("autopilot:", "");
-        return `Autopilot ${action}${data.sessionId ? ` (${(data.sessionId as string).slice(0, 8)})` : ""}`;
-      }
       return event;
   }
 }

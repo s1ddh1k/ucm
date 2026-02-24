@@ -22,7 +22,6 @@ const SMOKE_BROWSER_IDS = [
   "TC-010",
   "TC-020",
   "TC-040",
-  "TC-050",
   "TC-060",
   "TC-080",
 ];
@@ -32,7 +31,7 @@ You have Chrome DevTools MCP tools to interact with the browser.
 
 ## Dashboard Structure
 - Single page app at {URL}
-- 4 panels switchable via top tabs: Chat, Tasks, Proposals, Autopilot
+- 3 panels switchable via top tabs: Chat, Tasks, Proposals
 - Tasks is the default panel
 - Left side: task list, Right side: detail view
 - Dark theme (background: #0d1117)
@@ -222,7 +221,6 @@ function inferChangedSelection(files) {
       browser.add("Task CRUD");
       browser.add("Task Filter");
       browser.add("Proposals");
-      browser.add("Autopilot");
       browser.add("Daemon");
       browser.add("Toast");
       browser.add("Visual");
@@ -233,10 +231,6 @@ function inferChangedSelection(files) {
       browser.add("Page Load");
       browser.add("Navigation");
       browser.add("Visual");
-    }
-    if (f.includes("autopilot")) {
-      api.add("Autopilot API");
-      browser.add("Autopilot");
     }
     if (f.includes("proposal") || f.includes("observer")) {
       api.add("Proposals API");

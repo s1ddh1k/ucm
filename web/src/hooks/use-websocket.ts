@@ -338,47 +338,6 @@ export function useWebSocket() {
         addActivity("observer:completed", data);
       }),
 
-      // Autopilot events
-      wsManager.on("autopilot:started", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:started", data);
-      }),
-      wsManager.on("autopilot:planning", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:planning", data);
-      }),
-      wsManager.on("autopilot:planned", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:planned", data);
-      }),
-      wsManager.on("autopilot:executing", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:executing", data);
-      }),
-      wsManager.on("autopilot:progress", (_data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-      }),
-      wsManager.on("autopilot:awaiting_review", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:awaiting_review", data);
-      }),
-      wsManager.on("autopilot:paused", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:paused", data);
-      }),
-      wsManager.on("autopilot:resumed", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:resumed", data);
-      }),
-      wsManager.on("autopilot:stopped", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:stopped", data);
-      }),
-      wsManager.on("autopilot:released", (data) => {
-        queryClient.invalidateQueries({ queryKey: ["autopilot"] });
-        addActivity("autopilot:released", data);
-      }),
-
       // Refinement events
       wsManager.on("refinement:question", (data) => {
         addActivity("refinement:question", data);

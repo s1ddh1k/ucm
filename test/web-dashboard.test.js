@@ -23,7 +23,6 @@ const SMOKE_BROWSER_IDS = [
   "WB-020",
   "WB-030",
   "WB-050",
-  "WB-060",
   "WB-070",
   "WB-080",
   "WB-090",
@@ -34,7 +33,7 @@ You have Chrome DevTools MCP tools to interact with the browser.
 
 ## Dashboard Structure
 - React SPA served by Vite dev server at {URL}
-- Sidebar navigation on the left with links: Dashboard, Tasks, Proposals, Autopilot, Terminal, Settings
+- Sidebar navigation on the left with links: Dashboard, Tasks, Proposals, Terminal, Settings
 - Header bar at the top showing page title and daemon status
 - Dark theme (very dark background)
 - Content area fills the remaining space
@@ -43,7 +42,6 @@ You have Chrome DevTools MCP tools to interact with the browser.
 - Dashboard: {URL}/
 - Tasks: {URL}/tasks
 - Proposals: {URL}/proposals
-- Autopilot: {URL}/autopilot
 - Terminal: {URL}/terminal
 - Settings: {URL}/settings
 
@@ -236,7 +234,6 @@ function inferChangedSelection(files) {
       browser.add("Tasks");
       browser.add("Task Filter");
       browser.add("Proposals");
-      browser.add("Autopilot");
       browser.add("Terminal");
       browser.add("Settings");
       browser.add("Visual");

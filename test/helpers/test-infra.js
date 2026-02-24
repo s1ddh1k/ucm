@@ -91,13 +91,6 @@ class TestEnvironment {
         backupBranch: true,
       },
       regulator: { enabled: false },
-      autopilot: {
-        releaseEvery: 4,
-        maxConsecutiveFailures: 3,
-        maxItemsPerSession: 50,
-        reviewRetries: 2,
-        itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
-      },
       ...configOverrides,
     };
     fs.writeFileSync(

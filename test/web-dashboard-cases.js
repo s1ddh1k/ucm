@@ -44,17 +44,6 @@ const apiTestGroups = [
         },
       },
       {
-        name: "GET /api/autopilot/status via Vite proxy → 200, array",
-        fn: async (env) => {
-          const res = await env.httpRequest("GET", "/api/autopilot/status");
-          if (res.status !== 200)
-            return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body))
-            return { pass: false, reason: "not array" };
-          return { pass: true };
-        },
-      },
-      {
         name: "GET /api/daemon/status via Vite proxy → 200, has online",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/daemon/status");
@@ -243,7 +232,6 @@ const browserTestCases = [
       - Dashboard
       - Tasks
       - Proposals
-      - Autopilot
       - Terminal
       - Settings
       Verify each link is visible and clickable.
@@ -273,8 +261,6 @@ const browserTestCases = [
       Verify the header changes to show "Tasks".
       Click the "Proposals" link in the sidebar.
       Verify the header changes to show "Proposals".
-      Click the "Autopilot" link in the sidebar.
-      Verify the header changes to show "Autopilot".
       Click the "Dashboard" link to go back.
       Verify the header shows "Dashboard" again.
     `,
@@ -518,48 +504,7 @@ const browserTestCases = [
     `,
   },
 
-  // ── WB-07: Autopilot Page (3) ──
-  {
-    id: "WB-060",
-    group: "Autopilot",
-    name: "autopilot page layout",
-    instruction: `
-      Navigate to {URL}/autopilot.
-      Verify the header shows "Autopilot".
-      Verify there is a session list panel on the left.
-      Verify there is a "New Session" button.
-      Verify the right panel shows "Select a session" placeholder or a session detail.
-      Take a screenshot.
-    `,
-  },
-  {
-    id: "WB-061",
-    group: "Autopilot",
-    name: "new session dialog",
-    instruction: `
-      Navigate to {URL}/autopilot.
-      Click the "New Session" button.
-      Verify a dialog opens with title "Start Autopilot Session".
-      Verify the dialog has:
-      - A "Project Path" input field
-      - A "Pipeline" dropdown
-      - A "Max Items" number input
-      - "Cancel" and "Start Session" buttons
-      Take a screenshot.
-    `,
-  },
-  {
-    id: "WB-062",
-    group: "Autopilot",
-    name: "empty session list",
-    instruction: `
-      Navigate to {URL}/autopilot.
-      Verify the session list panel displays an empty state message ("No sessions").
-      Verify the empty state suggests starting a new session.
-    `,
-  },
-
-  // ── WB-08: Terminal Page (2) ──
+  // ── WB-07: Terminal Page (2) ──
   {
     id: "WB-070",
     group: "Terminal",

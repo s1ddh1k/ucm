@@ -68,6 +68,12 @@ Usage:
     ucm resume                                데몬 재개 (인자 없이)
     ucm stats                                 통계 조회
 
+  Automation:
+    ucm auto                                  현재 automation 설정 표시
+    ucm auto on                               모든 토글 활성화
+    ucm auto off                              모든 토글 비활성화
+    ucm auto set <key> <on|off>               특정 토글 설정
+
   Merge Queue:
     ucm merge-queue                           머지 큐 상태 표시
     ucm merge-queue retry <task-id>           실패 항목 재시도
@@ -88,7 +94,6 @@ Options:
   --version              버전 출력
   --project <dir>      프로젝트 디렉토리 (기본: cwd)
   --pipeline <name>    파이프라인 (trivial|small|medium|large 또는 "stage1,stage2,...")
-  --autopilot          사람 개입 없이 실행
   --background, --bg   daemon에 위임하여 백그라운드 실행
   --verbose, -v        에이전트 상세 출력 표시
   --budget <N>         최대 토큰 예산
@@ -205,8 +210,6 @@ function parseArgs(argv) {
     // Forge-specific flags
     else if (args[i] === "--pipeline") {
       opts.pipeline = readOptionValue("--pipeline");
-    } else if (args[i] === "--autopilot") {
-      opts.autopilot = true;
     } else if (args[i] === "--file") {
       opts.file = readOptionValue("--file");
     } else if (args[i] === "--from") {
@@ -1301,8 +1304,6 @@ async function cmdForge(opts) {
   console.error(`forge: "${input.slice(0, 80)}..."`);
   console.error(`project: ${project}`);
   if (opts.pipeline) console.error(`pipeline: ${opts.pipeline}`);
-  if (opts.autopilot) console.error(`mode: autopilot`);
-
   // --background: daemon에 위임하여 백그라운드 실행
   if (opts.background) {
     try {
@@ -1313,7 +1314,6 @@ async function cmdForge(opts) {
           input,
           project,
           pipeline: opts.pipeline,
-          autopilot: opts.autopilot,
           tokenBudget: opts.budget || 0,
         },
       });
@@ -1333,10 +1333,9 @@ async function cmdForge(opts) {
   const dag = await forge(input, {
     project,
     pipeline: opts.pipeline,
-    autopilot: opts.autopilot,
     tokenBudget: opts.budget || DEFAULT_TOKEN_BUDGET,
     onEvent: createEventHandler(opts),
-    onQuestion: opts.autopilot ? null : createQuestionHandler(),
+    onQuestion: createQuestionHandler(),
   });
 
   // 토큰 사용량 표시
@@ -1374,7 +1373,6 @@ async function cmdForgeResume(opts) {
           taskId,
           project,
           fromStage: opts.from,
-          autopilot: opts.autopilot,
           tokenBudget: opts.budget || 0,
         },
       });
@@ -1394,10 +1392,9 @@ async function cmdForgeResume(opts) {
   const dag = await resume(taskId, {
     project,
     fromStage: opts.from,
-    autopilot: opts.autopilot,
     tokenBudget: opts.budget || DEFAULT_TOKEN_BUDGET,
     onEvent: createEventHandler(opts),
-    onQuestion: opts.autopilot ? null : createQuestionHandler(),
+    onQuestion: createQuestionHandler(),
   });
 
   if (
@@ -1553,6 +1550,57 @@ async function cmdResearch(opts) {
     throw new Error(result.error);
   }
   console.log(`${result.proposalCount} proposals created`);
+}
+
+async function cmdAuto(opts) {
+  await ensureDaemon();
+  const sub = opts.positional[0];
+  const KEYS = ["autoExecute", "autoApprove", "autoPropose", "autoConvert"];
+
+  if (!sub) {
+    // ucm auto — show current automation config
+    const result = await socketRequest({ method: "get_automation" });
+    for (const key of KEYS) {
+      const val = result[key] ? "on" : "off";
+      console.log(`${key}: ${val}`);
+    }
+    return;
+  }
+
+  if (sub === "on") {
+    const patch = {};
+    for (const key of KEYS) patch[key] = true;
+    await socketRequest({ method: "set_automation", params: patch });
+    console.error("all automation toggles enabled");
+    return;
+  }
+
+  if (sub === "off") {
+    const patch = {};
+    for (const key of KEYS) patch[key] = false;
+    await socketRequest({ method: "set_automation", params: patch });
+    console.error("all automation toggles disabled");
+    return;
+  }
+
+  if (sub === "set") {
+    const key = opts.positional[1];
+    const val = opts.positional[2];
+    if (!key || !KEYS.includes(key)) {
+      console.error(`사용법: ucm auto set <${KEYS.join("|")}> <on|off>`);
+      process.exit(1);
+    }
+    if (val !== "on" && val !== "off") {
+      console.error("값은 on 또는 off 중 하나여야 합니다.");
+      process.exit(1);
+    }
+    await socketRequest({ method: "set_automation", params: { [key]: val === "on" } });
+    console.error(`${key}: ${val}`);
+    return;
+  }
+
+  console.error("사용법: ucm auto [on|off|set <key> <on|off>]");
+  process.exit(1);
 }
 
 async function cmdMergeQueue(opts) {
@@ -1732,7 +1780,6 @@ async function cmdInit() {
     path.join(UCM_DIR, "proposals", "approved"),
     path.join(UCM_DIR, "proposals", "rejected"),
     path.join(UCM_DIR, "proposals", "implemented"),
-    path.join(UCM_DIR, "autopilot"),
     path.join(UCM_DIR, "snapshots"),
     path.join(UCM_DIR, "worktrees"),
     path.join(UCM_DIR, "lessons"),
@@ -1742,6 +1789,23 @@ async function cmdInit() {
     await mkdir(dir, { recursive: true });
   }
   console.log(`Directories created: ${UCM_DIR}`);
+
+  // Create hivemind directories
+  const HIVEMIND_DIR =
+    process.env.HIVEMIND_DIR || path.join(os.homedir(), ".hivemind");
+  const hivemindDirs = [
+    HIVEMIND_DIR,
+    path.join(HIVEMIND_DIR, "zettel"),
+    path.join(HIVEMIND_DIR, "index"),
+    path.join(HIVEMIND_DIR, "archive"),
+    path.join(HIVEMIND_DIR, "sources"),
+    path.join(HIVEMIND_DIR, "daemon"),
+    path.join(HIVEMIND_DIR, "adapters"),
+  ];
+  for (const dir of hivemindDirs) {
+    await mkdir(dir, { recursive: true });
+  }
+  console.log(`Hivemind directories initialized: ${HIVEMIND_DIR}`);
 
   // Create default config
   const configPath = path.join(UCM_DIR, "config.json");
@@ -1842,6 +1906,10 @@ async function main() {
       break;
     case "logs":
       await cmdLogs(opts);
+      break;
+    // Automation
+    case "auto":
+      await cmdAuto(opts);
       break;
     // Merge queue
     case "merge-queue":

@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowRight,
   Bell,
-  Bot,
   CheckCircle,
   Lightbulb,
   Pause,
@@ -18,7 +17,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useAutopilotStatusQuery } from "@/queries/autopilot";
 import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
@@ -35,8 +33,6 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
   const setTaskFilter = useUiStore((s) => s.setTaskFilter);
   const { data: tasks } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
-  const { data: sessions } = useAutopilotStatusQuery();
-
   const reviewTasks = useMemo(
     () => (tasks || []).filter((t) => t.state === "review"),
     [tasks],
@@ -53,20 +49,11 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
     () => (proposals || []).filter((p) => p.status === "proposed"),
     [proposals],
   );
-  const awaitingReviewSessions = useMemo(
-    () =>
-      (Array.isArray(sessions) ? sessions : []).filter(
-        (s) => s.status === "awaiting_review",
-      ),
-    [sessions],
-  );
-
   const totalCount =
     reviewTasks.length +
     failedTasks.length +
     gateTasks.length +
-    pendingProposals.length +
-    awaitingReviewSessions.length;
+    pendingProposals.length;
 
   function goToTask(taskId: string) {
     setSelectedTaskId(taskId);
@@ -207,30 +194,6 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                 </InboxSection>
               )}
 
-              {/* Autopilot */}
-              {awaitingReviewSessions.length > 0 && (
-                <InboxSection
-                  title="Autopilot Awaiting Review"
-                  count={awaitingReviewSessions.length}
-                  icon={<Bot className="h-3.5 w-3.5 text-purple-400" />}
-                  onViewAll={() => {
-                    navigate("/?tab=automation");
-                    onOpenChange(false);
-                  }}
-                >
-                  {awaitingReviewSessions.map((s) => (
-                    <InboxItem
-                      key={s.id}
-                      title={`Session ${s.id.slice(0, 8)}`}
-                      subtitle={<span>{s.project}</span>}
-                      onClick={() => {
-                        navigate("/?tab=automation");
-                        onOpenChange(false);
-                      }}
-                    />
-                  ))}
-                </InboxSection>
-              )}
             </div>
           )}
         </ScrollArea>
@@ -302,7 +265,6 @@ function InboxItem({
 export function useInboxCount() {
   const { data: tasks } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
-  const { data: sessions } = useAutopilotStatusQuery();
 
   return useMemo(() => {
     const reviewTasks = (tasks || []).filter(
@@ -317,15 +279,11 @@ export function useInboxCount() {
     const pendingProposals = (proposals || []).filter(
       (p) => p.status === "proposed",
     ).length;
-    const awaitingSessions = (Array.isArray(sessions) ? sessions : []).filter(
-      (s) => s.status === "awaiting_review",
-    ).length;
     return (
       reviewTasks +
       failedTasks +
       gateTasks +
-      pendingProposals +
-      awaitingSessions
+      pendingProposals
     );
-  }, [tasks, proposals, sessions]);
+  }, [tasks, proposals]);
 }

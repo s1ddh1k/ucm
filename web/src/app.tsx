@@ -48,7 +48,6 @@ export default function App() {
                 />
                 <Route path="tasks" element={<Navigate to="/?tab=tasks" replace />} />
                 <Route path="proposals" element={<Navigate to="/?tab=proposals" replace />} />
-                <Route path="autopilot" element={<Navigate to="/?tab=automation" replace />} />
                 <Route path="hivemind" element={<HivemindPage />} />
                 <Route path="terminal" element={<TerminalPage />} />
                 <Route path="analytics" element={<AnalyticsPage />} />

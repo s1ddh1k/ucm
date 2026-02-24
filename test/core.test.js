@@ -1948,7 +1948,7 @@ exit 0
 
     "sets default values": () => {
       const p = new ForgePipeline({ input: "test" });
-      assertEqual(p.autopilot, false, "default autopilot false");
+      assertEqual(p.autoApprove, false, "default autoApprove false");
       assertEqual(p.onQuestion, null, "default onQuestion null");
       assertEqual(p.resumeFrom, null, "default resumeFrom null");
       assertEqual(p.tokenBudget, 0, "default tokenBudget 0");

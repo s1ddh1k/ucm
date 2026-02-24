@@ -1,18 +1,14 @@
 import type {
   Artifacts,
-  AutopilotSession,
-  AutopilotSessionSummary,
   BrowseResult,
   DaemonStats,
   DaemonStatus,
   DiffResult,
-  Directive,
   GcResult,
   HivemindStats,
   ObserverStatus,
   Proposal,
   ReindexResult,
-  Release,
   Task,
   UcmConfig,
   Zettel,
@@ -192,68 +188,6 @@ export const observer = {
   research: (project: string) => post<unknown>("/api/research", { project }),
 };
 
-// Autopilot
-export const autopilot = {
-  status: () => request<AutopilotSessionSummary[]>("/api/autopilot/status"),
-  session: (sessionId: string) =>
-    request<AutopilotSession>(`/api/autopilot/session/${sessionId}`),
-  start: (params: { project: string; pipeline?: string; maxItems?: number }) =>
-    post<{ sessionId: string; project: string; status: string }>(
-      "/api/autopilot/start",
-      params,
-    ),
-  pause: (sessionId: string) =>
-    post<{ sessionId: string; status: string }>("/api/autopilot/pause", {
-      sessionId,
-    }),
-  resume: (sessionId: string) =>
-    post<{ sessionId: string; status: string }>("/api/autopilot/resume", {
-      sessionId,
-    }),
-  stop: (sessionId: string) =>
-    post<{ sessionId: string; status: string }>("/api/autopilot/stop", {
-      sessionId,
-    }),
-  approveItem: (sessionId: string) =>
-    post<{ sessionId: string; action: string }>("/api/autopilot/approve-item", {
-      sessionId,
-    }),
-  rejectItem: (sessionId: string) =>
-    post<{ sessionId: string; action: string }>("/api/autopilot/reject-item", {
-      sessionId,
-    }),
-  feedbackItem: (sessionId: string, feedback: string) =>
-    post<{ sessionId: string; action: string }>(
-      "/api/autopilot/feedback-item",
-      { sessionId, feedback },
-    ),
-  releases: (sessionId: string) =>
-    request<{ sessionId: string; releases: Release[]; stableTags: string[] }>(
-      `/api/autopilot/releases/${sessionId}`,
-    ),
-  directives: {
-    list: (sessionId: string, status?: string) =>
-      request<{ sessionId: string; directives: Directive[] }>(
-        `/api/autopilot/directives/${sessionId}${status ? `?status=${status}` : ""}`,
-      ),
-    add: (sessionId: string, text: string) =>
-      post<{ sessionId: string; directive: Directive }>(
-        "/api/autopilot/directive/add",
-        { sessionId, text },
-      ),
-    edit: (sessionId: string, directiveId: string, text: string) =>
-      post<{ sessionId: string; directive: Directive }>(
-        "/api/autopilot/directive/edit",
-        { sessionId, directiveId, text },
-      ),
-    delete: (sessionId: string, directiveId: string) =>
-      post<{ sessionId: string; directiveId: string }>(
-        "/api/autopilot/directive/delete",
-        { sessionId, directiveId },
-      ),
-  },
-};
-
 // Browse
 export const browse = {
   list: (path?: string, showHidden?: boolean) =>
@@ -360,7 +294,6 @@ export const api = {
   artifacts,
   proposals,
   observer,
-  autopilot,
   browse,
   refinement,
   cleanup,

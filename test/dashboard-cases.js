@@ -313,42 +313,7 @@ const apiTestGroups = [
     ],
   },
 
-  // A5: Autopilot API
-  {
-    name: "Autopilot API",
-    tests: [
-      {
-        name: "GET /api/autopilot/status → 200, array",
-        fn: async (env) => {
-          const res = await env.httpRequest("GET", "/api/autopilot/status");
-          if (res.status !== 200)
-            return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body))
-            return { pass: false, reason: "not array" };
-          return { pass: true };
-        },
-      },
-      {
-        name: "GET /api/autopilot/directives/nonexistent → appropriate error",
-        fn: async (env) => {
-          const res = await env.httpRequest(
-            "GET",
-            "/api/autopilot/directives/nonexistent",
-          );
-          // Should return error or empty — not crash
-          return {
-            pass:
-              res.status === 200 ||
-              res.status === 404 ||
-              res.status === 500 ||
-              res.status === 503,
-          };
-        },
-      },
-    ],
-  },
-
-  // A6: Local Endpoints
+  // A5: Local Endpoints
   {
     name: "Local Endpoints",
     tests: [
@@ -655,7 +620,7 @@ const geminiTestCases = [
       Navigate to {URL}.
       Verify the page title is "UCM Dashboard".
       Verify the header contains "UCM" text.
-      Verify there are 4 navigation tabs (Chat, Tasks, Proposals, Autopilot).
+      Verify there are 3 navigation tabs (Chat, Tasks, Proposals).
       Take a screenshot.
     `,
   },
@@ -693,8 +658,6 @@ const geminiTestCases = [
       Navigate to {URL}.
       Click the "Proposals" tab.
       Verify Proposals content is displayed and Tasks content is hidden.
-      Click the "Autopilot" tab.
-      Verify Autopilot content is displayed.
       Click the "Chat" tab.
       Verify terminal or Chat content is displayed.
       Click the "Tasks" tab to go back.
@@ -867,46 +830,6 @@ const geminiTestCases = [
     `,
   },
 
-  // ── Autopilot Panel (3) ──
-  {
-    id: "TC-050",
-    group: "Autopilot",
-    name: "autopilot panel structure",
-    instruction: `
-      Navigate to {URL}.
-      Click the "Autopilot" tab.
-      Verify a session list area is displayed.
-      Verify an appropriate empty state is shown when there are no sessions.
-      Verify there is UI to start a new Autopilot session (start button, project path input, etc.).
-      Take a screenshot.
-    `,
-  },
-  {
-    id: "TC-051",
-    group: "Autopilot",
-    name: "autopilot start form",
-    instruction: `
-      Navigate to {URL}.
-      Click the "Autopilot" tab.
-      Click the "+ New Autopilot" button to open the start form.
-      Verify the form has a project path input field.
-      Verify there is a Max items setting.
-      Verify there is a Start button.
-    `,
-  },
-  {
-    id: "TC-052",
-    group: "Autopilot",
-    name: "autopilot new button exists",
-    instruction: `
-      Navigate to {URL}.
-      Click the "Autopilot" tab.
-      Use evaluate_script to check: document.querySelector('#apToolbar .primary') !== null.
-      Verify the "+ New Autopilot" button exists and is visible.
-      Take a screenshot.
-    `,
-  },
-
   // ── Daemon Control UI (2) ──
   {
     id: "TC-060",
@@ -975,20 +898,6 @@ const geminiTestCases = [
       - Proposals list area is properly positioned
       - Observer controls are neatly aligned
       - Empty state message is centered or in an appropriate position
-    `,
-  },
-  {
-    id: "TC-082",
-    group: "Visual",
-    name: "autopilot panel layout",
-    instruction: `
-      Navigate to {URL}.
-      Click the "Autopilot" tab.
-      Wait 1 second, then take a full page screenshot.
-      Verify the Autopilot panel layout:
-      - Session list/start UI is properly positioned
-      - Input fields and buttons are aligned
-      - Overall layout is clean
     `,
   },
 ];

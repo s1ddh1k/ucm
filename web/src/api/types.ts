@@ -34,7 +34,6 @@ export interface Task {
   tokenUsage?: TokenUsage;
   feedback?: string;
   refined?: boolean;
-  autopilotSession?: string;
   body?: string;
   suspended?: boolean;
   suspendedStage?: string;
@@ -170,102 +169,6 @@ export interface ObserverStatus {
     timestamp: string;
     [key: string]: unknown;
   } | null;
-}
-
-// Autopilot
-export interface AutopilotSession {
-  id: string;
-  status: AutopilotSessionStatus;
-  pausedPhase?: string;
-  project: string;
-  projectName: string;
-  pipeline: string;
-  roadmap: RoadmapItem[];
-  currentItem: number;
-  currentTaskId: string | null;
-  iteration: number;
-  releases: Release[];
-  stats: AutopilotStats;
-  consecutiveFailures: number;
-  totalItemsProcessed: number;
-  maxItems: number;
-  startedAt: string;
-  lastActivityAt: string;
-  log: LogEntry[];
-  stableTag: string | null;
-  currentItemIteration: number;
-  currentTestResults: unknown[];
-  currentItemLog: unknown[];
-  directives: Directive[];
-  projectContext: string | null;
-}
-
-export type AutopilotSessionStatus =
-  | "planning"
-  | "running"
-  | "paused"
-  | "awaiting_review"
-  | "releasing"
-  | "stopped"
-  | "completed";
-
-export interface AutopilotSessionSummary {
-  id: string;
-  status: AutopilotSessionStatus;
-  project: string;
-  projectName: string;
-  iteration: number;
-  stats: AutopilotStats;
-  currentItem: number;
-  currentTaskId: string | null;
-  startedAt: string;
-  lastActivityAt: string;
-  totalItemsProcessed: number;
-  maxItems: number;
-  releasesCount: number;
-  pendingDirectives: number;
-}
-
-export interface RoadmapItem {
-  title: string;
-  type: string;
-  description: string;
-  status: "pending" | "running" | "done" | "failed";
-  taskId: string | null;
-  iteration: number;
-}
-
-export interface Release {
-  version: string;
-  changelog: string;
-  releaseNotes: string;
-  taskIds: string[];
-  itemTitles: string[];
-  timestamp: string;
-  tag: string;
-}
-
-export interface AutopilotStats {
-  totalItems: number;
-  completedItems: number;
-  failedItems: number;
-  skippedItems: number;
-  totalReleases: number;
-}
-
-export interface LogEntry {
-  timestamp: string;
-  message: string;
-  type: "info" | "warn" | "error";
-}
-
-export interface Directive {
-  id: string;
-  text: string;
-  createdAt: string;
-  updatedAt: string;
-  status: "pending" | "consumed";
-  consumedInIteration: number | null;
 }
 
 // Browse

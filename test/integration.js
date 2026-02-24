@@ -132,13 +132,6 @@ seeded body
       backupBranch: true,
     },
     regulator: { enabled: false },
-    autopilot: {
-      releaseEvery: 4,
-      maxConsecutiveFailures: 3,
-      maxItemsPerSession: 50,
-      reviewRetries: 2,
-      itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
-    },
   };
   fs.writeFileSync(
     path.join(UCM_DIR, "config.json"),
@@ -452,12 +445,6 @@ async function main() {
         const res = await httpRequest("GET", "/api/proposals");
         assertEqual(res.status, 200, "proposals status code");
         assert(Array.isArray(res.body), "proposals body is not array");
-      },
-
-      "GET /api/autopilot/status returns array": async () => {
-        const res = await httpRequest("GET", "/api/autopilot/status");
-        assertEqual(res.status, 200, "autopilot status code");
-        assert(Array.isArray(res.body), "autopilot body is not array");
       },
     },
     { timeout: 15000 },

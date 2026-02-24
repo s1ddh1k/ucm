@@ -101,13 +101,6 @@ function setupDirs() {
       backupBranch: true,
     },
     regulator: { enabled: false },
-    autopilot: {
-      releaseEvery: 4,
-      maxConsecutiveFailures: 3,
-      maxItemsPerSession: 50,
-      reviewRetries: 2,
-      itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
-    },
   };
   fs.writeFileSync(
     path.join(UCM_DIR, "config.json"),
@@ -543,21 +536,6 @@ async function main() {
         assert(hasProposals, "proposals section should exist");
       },
 
-      "autopilot tab exists": async () => {
-        const hasAutopilot = await cdpEvaluate(
-          wsUrl,
-          `
-        (function() {
-          const links = document.querySelectorAll('aside a');
-          for (const el of links) {
-            if ((el.textContent || '').toLowerCase().includes('autopilot')) return true;
-          }
-          return false;
-        })()
-      `,
-        );
-        assert(hasAutopilot, "autopilot tab should exist in UI");
-      },
     },
     { timeout: 15000 },
   );
