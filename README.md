@@ -59,12 +59,13 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 |--------|------|
 | `ucm forge "<설명>" --project <dir>` | 새 작업 시작 |
 | `ucm list` | 태스크 목록 |
-| `ucm status <id>` | 태스크 상세 상태 |
+| `ucm status [<id>]` | 태스크 상세 상태 (`id` 없으면 데몬 상태) |
 | `ucm diff <id>` | 변경사항 확인 |
 | `ucm logs <id>` | 실행 로그 |
 | `ucm approve <id>` | 리뷰 승인 (머지) |
 | `ucm reject <id> --feedback "..."` | 반려 (피드백 반영 재작업) |
-| `ucm resume <id>` | 중단된 작업 재개 |
+| `ucm resume <id>` | 중단된 작업 재개 (`id` 없이 실행하면 데몬 재개) |
+| `ucm abort <id>` / `ucm gc [--days N]` | 실행 중 태스크 중단 / 오래된 태스크 정리 |
 | `ucm ui` | UI 서버 시작 (`http://localhost:17172`) |
 | `ucm dashboard` | 브라우저에서 대시보드 열기 |
 | `ucm submit <file.md>` / `ucm start <id>` | 큐 제출 / 실행 시작 |
@@ -74,7 +75,7 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm research` | 프로젝트 리서치 및 전략 제안 |
 | `ucm proposals` / `ucm proposal ...` | 제안서 조회/처리 |
 | `ucm daemon start/stop` | 데몬 관리 |
-| `ucm pause/resume/stats` | 데몬 일시정지/재개/통계 |
+| `ucm pause` / `ucm resume` / `ucm stats` | 데몬 일시정지/재개/통계 |
 | `ucm merge-queue` | 머지 큐 상태/재시도/스킵 |
 | `ucm observe [--status]` | 수동 관찰 트리거/상태 확인 |
 | `ucm init` | 초기 설정/환경 점검 |

@@ -15,7 +15,8 @@ const msg = `
     npm run install-skill
 
   사용 가능한 명령어:
-    mem, memd, rsa, qna, spec, prl, req
+    ucm, ucm-dev, ucmd, ucmd-dev, ucm-watchdog
+    hm, hmd, rsa, qna, spec, prl, req
 
   자세한 내용은 README.md를 참고하세요.
 `;
