@@ -3579,11 +3579,11 @@ function testUiServerResolveHomePath() {
   );
 }
 
-function testUiServerResolvePathWithinHome() {
+async function testUiServerResolvePathWithinHome() {
   const { resolvePathWithinHome } = require("../lib/ucm-ui-server.js");
   const home = os.homedir();
 
-  const homeRoot = resolvePathWithinHome("~");
+  const homeRoot = await resolvePathWithinHome("~");
   assert(homeRoot.allowed, "uiServer path guard: allows home root");
   assertEqual(
     homeRoot.resolved,
@@ -3591,7 +3591,7 @@ function testUiServerResolvePathWithinHome() {
     "uiServer path guard: resolves home root correctly",
   );
 
-  const nested = resolvePathWithinHome("~/ucm-test");
+  const nested = await resolvePathWithinHome("~/ucm-test");
   assert(nested.allowed, "uiServer path guard: allows nested home path");
   assertEqual(
     nested.resolved,
@@ -3599,8 +3599,57 @@ function testUiServerResolvePathWithinHome() {
     "uiServer path guard: resolves nested home path correctly",
   );
 
-  const escaped = resolvePathWithinHome(path.join(home, ".."));
+  const escaped = await resolvePathWithinHome(path.join(home, ".."));
   assert(!escaped.allowed, "uiServer path guard: blocks parent directory escape");
+}
+
+async function testUiServerResolvePathWithinHomeBlocksSymlinkEscape() {
+  const { resolvePathWithinHome } = require("../lib/ucm-ui-server.js");
+
+  let homeTmpRoot;
+  try {
+    homeTmpRoot = fs.mkdtempSync(path.join(os.homedir(), ".ucm-path-guard-"));
+  } catch (e) {
+    assert(
+      true,
+      `uiServer path guard: symlink escape test skipped (${e.code || e.message})`,
+    );
+    return;
+  }
+
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-path-outside-"));
+  const escapeLink = path.join(homeTmpRoot, "escape-link");
+
+  try {
+    fs.symlinkSync(outsideRoot, escapeLink, "dir");
+  } catch (e) {
+    fs.rmSync(homeTmpRoot, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+    assert(
+      true,
+      `uiServer path guard: symlink creation skipped (${e.code || e.message})`,
+    );
+    return;
+  }
+
+  try {
+    const escaped = await resolvePathWithinHome(escapeLink);
+    assert(
+      !escaped.allowed,
+      "uiServer path guard: blocks symlink target escape outside home",
+    );
+
+    const nestedEscaped = await resolvePathWithinHome(
+      path.join(escapeLink, "nested"),
+    );
+    assert(
+      !nestedEscaped.allowed,
+      "uiServer path guard: blocks nested path under escaping symlink",
+    );
+  } finally {
+    fs.rmSync(homeTmpRoot, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+  }
 }
 
 function testUiServerGitInitRouteUsesPathGuardAndAsyncExec() {
@@ -3623,6 +3672,21 @@ function testUiServerGitInitRouteUsesPathGuardAndAsyncExec() {
   assert(
     !section.includes("execFileSync("),
     "uiServer git-init: avoids sync process execution in request path",
+  );
+}
+
+function testUiServerWebSocketOriginGuard() {
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "lib", "ucm-ui-server.js"),
+    "utf-8",
+  );
+  assert(
+    src.includes("function isAllowedWebSocketOrigin(origin)"),
+    "uiServer websocket: defines origin validation helper",
+  );
+  assert(
+    src.includes('ws.close(1008, "origin not allowed")'),
+    "uiServer websocket: rejects non-local websocket origins",
   );
 }
 
@@ -16341,8 +16405,10 @@ async function main() {
   testDashboardCommandUsesCrossPlatformOpen();
   testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();
   testUiServerResolveHomePath();
-  testUiServerResolvePathWithinHome();
+  await testUiServerResolvePathWithinHome();
+  await testUiServerResolvePathWithinHomeBlocksSymlinkEscape();
   testUiServerGitInitRouteUsesPathGuardAndAsyncExec();
+  testUiServerWebSocketOriginGuard();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
   testUiRightPanelRefinementGuard();
