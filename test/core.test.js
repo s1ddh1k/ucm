@@ -26,7 +26,9 @@ startSuiteTimer(30_000);
 const {
   extractJson,
   buildCommand,
+  spawnLlm,
   llmText,
+  llmJson,
   sanitizeEnv,
   killPidTree,
   REASONING_EFFORTS,
@@ -1219,8 +1221,125 @@ title: line1\\nline2
     },
   });
 
+  // ── spawnLlm ──
+  await runGroup("spawnLlm", {
+    "stream-json 응답을 파싱해 final result와 tokenUsage를 누적한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-stream-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      const chunks = [];
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"part1 "},{"type":"tool_use"}]}}'
+printf '%s\\n' 'this-is-not-json'
+printf '%s\\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"part2"}]}}'
+printf '%s\\n' '{"type":"result","result":"","usage":{"input_tokens":2,"output_tokens":3}}'
+printf '%s\\n' '{"type":"result","result":"FINAL","usage":{"input_tokens":5,"output_tokens":7}}'
+exit 0
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "stream-json",
+          onData: (chunk) => chunks.push(chunk),
+        });
+
+        assertEqual(result.status, "done", "status is done");
+        assertEqual(result.stdout, "FINAL", "final result used as stdout");
+        assertDeepEqual(
+          result.tokenUsage,
+          { input: 7, output: 10 },
+          "token usage accumulated across result events",
+        );
+        assert(chunks.length > 0, "onData callback received output");
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
+    "실행 파일이 없으면 failed 상태와 -1 exitCode를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-miss-"));
+      const originalPath = process.env.PATH || "";
+      try {
+        process.env.PATH = tempDir;
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "text",
+        });
+        assertEqual(result.status, "failed", "missing binary returns failed");
+        assertEqual(result.exitCode, -1, "spawn error sets exitCode to -1");
+        assert(result.stderr.includes("codex"), "stderr mentions codex");
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+  });
+
   // ── llmText ──
   await runGroup("llmText", {
+    "rate-limit 이후 재시도 중 성공하면 텍스트를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-llm-retry-"));
+      const codexPath = path.join(tempDir, "codex");
+      const counterPath = path.join(tempDir, "attempt-count.txt");
+      const originalPath = process.env.PATH || "";
+      const originalSetTimeout = global.setTimeout;
+      const delays = [];
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+count=0
+if [ -f "${counterPath}" ]; then
+  count=$(cat "${counterPath}")
+fi
+count=$((count + 1))
+echo "$count" > "${counterPath}"
+if [ "$count" -lt 3 ]; then
+  echo "429 quota exceeded" 1>&2
+  exit 1
+fi
+echo "  success text  "
+exit 0
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+        global.setTimeout = (fn, delay, ...args) => {
+          delays.push(delay);
+          fn(...args);
+          return { unref() {}, ref() {} };
+        };
+
+        const result = await llmText("test prompt", { provider: "codex" });
+        const attempts = parseInt(
+          (await readFile(counterPath, "utf-8")).trim(),
+          10,
+        );
+        assertEqual(result.text, "success text", "trimmed success text");
+        assertDeepEqual(
+          result.tokenUsage,
+          { input: 0, output: 0 },
+          "text mode keeps zero token usage",
+        );
+        assertEqual(attempts, 3, "succeeds on third attempt");
+        assertDeepEqual(delays, [5000, 10000], "backoff delays before success");
+      } finally {
+        process.env.PATH = originalPath;
+        global.setTimeout = originalSetTimeout;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
     "retries on rate limit and throws RATE_LIMITED after max retries": async () => {
       const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-llm-rate-"));
       const codexPath = path.join(tempDir, "codex");
@@ -1310,6 +1429,42 @@ exit 1
 
         assert(threw, "throws on non-rate-limit failure");
       } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+  });
+
+  // ── llmJson ──
+  await runGroup("llmJson", {
+    "응답이 JSON이 아니면 extractJson 에러를 그대로 던진다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-llm-json-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+echo "not a json response"
+exit 0
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        let threw = false;
+        try {
+          await llmJson("test prompt", { provider: "codex" });
+        } catch (e) {
+          threw = true;
+          assert(
+            e.message.includes("Failed to extract JSON"),
+            "extractJson failure message is preserved",
+          );
+        }
+        assert(threw, "llmJson throws on non-JSON text");
+      } finally {
+        process.env.PATH = originalPath;
         await rm(tempDir, { recursive: true, force: true });
       }
     },
