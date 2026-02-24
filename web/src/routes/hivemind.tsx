@@ -298,13 +298,11 @@ function ZettelDetail({
       {(zettel.links?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {zettel.links!.map((linkId) => (
-            <button
+            <LinkedZettelButton
               key={linkId}
+              linkId={linkId}
               onClick={() => onNavigate(linkId)}
-              className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-mono hover:bg-blue-500/20 transition-colors"
-            >
-              {linkId}
-            </button>
+            />
           ))}
         </div>
       )}
@@ -363,6 +361,33 @@ function ZettelDetail({
         )}
       </div>
     </div>
+  );
+}
+
+function LinkedZettelButton({
+  linkId,
+  onClick,
+}: {
+  linkId: string;
+  onClick: () => void;
+}) {
+  const { data: linked, isLoading, isError } = useHivemindShowQuery(linkId);
+
+  const label =
+    !isLoading && !isError && linked?.title
+      ? linked.title.length > 24
+        ? linked.title.slice(0, 24) + "…"
+        : linked.title
+      : linkId.slice(-8);
+
+  return (
+    <button
+      onClick={onClick}
+      title={linked?.title ?? linkId}
+      className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors truncate max-w-48"
+    >
+      {label}
+    </button>
   );
 }
 
