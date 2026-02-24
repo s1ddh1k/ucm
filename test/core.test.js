@@ -1283,6 +1283,75 @@ exit 0
         await rm(tempDir, { recursive: true, force: true });
       }
     },
+
+    "stderr가 rate-limit 패턴이면 rate_limited 상태를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-rate-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+cat >/dev/null
+echo "429 quota exceeded" 1>&2
+exit 1
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "text",
+        });
+        assertEqual(result.status, "rate_limited", "rate-limit status");
+        assertEqual(result.exitCode, 1, "exitCode preserved");
+        assert(
+          result.stderr.includes("quota exceeded"),
+          "stderr context preserved",
+        );
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
+    "timeoutMs 초과 시 timeout 상태와 single timeoutKind를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-timeout-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+cat >/dev/null
+echo "partial output"
+sleep 2
+echo "late output"
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "text",
+          timeoutMs: 100,
+        });
+
+        assertEqual(result.status, "timeout", "timeout status returned");
+        assertEqual(result.timeoutKind, "single", "single timeout kind");
+        assert(
+          !result.stdout.includes("late output"),
+          "late stdout is not emitted after timeout",
+        );
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
   });
 
   // ── llmText ──
@@ -2355,6 +2424,31 @@ exit 0
 
   // ── enqueueTaskFileOp ──
   await runGroup("enqueueTaskFileOp", {
+    "taskId가 비어 있으면 즉시 에러를 던진다": () => {
+      let threw = false;
+      try {
+        enqueueTaskFileOp("   ", () => {});
+      } catch (e) {
+        threw = true;
+        assert(e.message.includes("taskId required"), "taskId validation error");
+      }
+      assert(threw, "throws on blank taskId");
+    },
+
+    "operation이 함수가 아니면 즉시 에러를 던진다": () => {
+      let threw = false;
+      try {
+        enqueueTaskFileOp("task-lock-invalid-op", null);
+      } catch (e) {
+        threw = true;
+        assert(
+          e.message.includes("operation must be a function"),
+          "operation validation error",
+        );
+      }
+      assert(threw, "throws on non-function operation");
+    },
+
     "serializes operations for same task id": async () => {
       const events = [];
       let releaseFirst;
@@ -2423,6 +2517,40 @@ exit 0
       });
 
       assertDeepEqual(events, ["first", "second"], "queue recovered");
+    },
+
+    "이전 작업 실패 로그에 taskId와 label을 포함한다": async () => {
+      const logs = [];
+      let release;
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+
+      const first = enqueueTaskFileOp("task-lock-log", async () => {
+        await gate;
+        throw new Error("boom");
+      });
+
+      const second = enqueueTaskFileOp(
+        "task-lock-log",
+        async () => {},
+        {
+          label: "write-meta",
+          log: (line) => logs.push(line),
+        },
+      );
+
+      release();
+      await Promise.all([first.catch(() => {}), second]);
+
+      assert(
+        logs.some((line) =>
+          line.includes(
+            "[task-lock-log] write-meta: prior operation failed (continuing): boom",
+          ),
+        ),
+        "prior failure log includes task id, label, and message",
+      );
     },
   });
 
