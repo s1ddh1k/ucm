@@ -11423,6 +11423,190 @@ async function testCliAnalyzeErrorExitsNonZero() {
   }
 }
 
+async function testCliStartShowsProgressWhenDaemonResponseSlow() {
+  const tempRoot = path.join(
+    "/tmp",
+    `ucsp-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const taskId = "forge-20260224-abcd";
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stats") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { daemonStatus: "running" },
+          })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "start") {
+        setTimeout(() => {
+          conn.end(
+            `${JSON.stringify({
+              id: request.id || null,
+              ok: true,
+              data: { id: taskId, status: "running" },
+            })}\n`,
+          );
+        }, 1300);
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(["start", taskId], {
+      env: { UCM_DIR: tempRoot },
+      timeoutMs: 5000,
+    });
+    assertEqual(result.code, 0, "cli start progress: exits with code 0");
+    assert(
+      (result.stdout || "").includes(`started: ${taskId} → running`),
+      "cli start progress: prints start result",
+    );
+    assert(
+      (result.stderr || "").includes("태스크 시작 진행 중..."),
+      "cli start progress: prints delayed progress message",
+    );
+    assert(
+      (result.stderr || "").includes("태스크 시작 완료"),
+      "cli start progress: prints completion message after progress",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+async function testCliAnalyzeAbortStatusErrorShowsActionableHint() {
+  const tempRoot = path.join(
+    "/tmp",
+    `ucah-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stats") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { daemonStatus: "running" },
+          })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "analyze_project") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { error: "cannot abort task in status: pending" },
+          })}\n`,
+        );
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(
+      ["analyze", "--project", tempRoot],
+      { env: { UCM_DIR: tempRoot }, timeoutMs: 3000 },
+    );
+
+    assertEqual(
+      result.code,
+      1,
+      "cli abort-status hint: exits with code 1 on daemon error",
+    );
+    assert(
+      (result.stderr || "").includes("error: cannot abort task in status: pending"),
+      "cli abort-status hint: surfaces daemon status error",
+    );
+    assert(
+      (result.stderr || "").includes(
+        "hint: 아직 시작되지 않은 태스크입니다. `ucm cancel <task-id>`로 취소하세요.",
+      ),
+      "cli abort-status hint: suggests actionable next step",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
 async function testCliGateApproveErrorShowsActionableHint() {
   const tempRoot = path.join(
     "/tmp",
@@ -16907,6 +17091,8 @@ async function main() {
   testCliTaskIdErrorsIncludeActionHint();
   testCliRejectCommandsRequireConfirmation();
   await testCliAnalyzeErrorExitsNonZero();
+  await testCliStartShowsProgressWhenDaemonResponseSlow();
+  await testCliAnalyzeAbortStatusErrorShowsActionableHint();
   await testCliGateApproveErrorShowsActionableHint();
   await testCliDaemonStopReportsShutdownFailure();
   await testForgeResumeRejectsNonResumableStatus();

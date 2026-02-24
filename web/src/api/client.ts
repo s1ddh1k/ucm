@@ -36,9 +36,29 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await res.json();
+  const rawText = await res.text();
+  let data: unknown = null;
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = rawText;
+    }
+  }
   if (!res.ok) {
-    throw new ApiError(res.status, data.error || res.statusText);
+    const detail =
+      typeof data === "object" && data !== null && "error" in data
+        ? String((data as { error?: unknown }).error || "").trim()
+        : typeof data === "string"
+          ? data.trim()
+          : "";
+    throw new ApiError(res.status, detail || res.statusText || "Request failed");
+  }
+  if (data === null) {
+    throw new ApiError(
+      res.status,
+      "empty response from server. Check daemon status and retry.",
+    );
   }
   return data as T;
 }

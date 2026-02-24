@@ -309,6 +309,10 @@ async function runWithProgress(label, action, options = {}) {
   }
 }
 
+async function socketRequestWithProgress(label, request, options = {}) {
+  return runWithProgress(label, () => socketRequest(request), options);
+}
+
 async function promptYesNo(question, { defaultNo = true } = {}) {
   const readline = require("node:readline");
   const rl = readline.createInterface({
@@ -539,7 +543,10 @@ async function cmdStart(opts) {
     failMissingTaskId("ucm start <task-id>");
   }
 
-  const result = await socketRequest({ method: "start", params: { taskId } });
+  const result = await socketRequestWithProgress("태스크 시작", {
+    method: "start",
+    params: { taskId },
+  });
   console.log(`started: ${result.id} → ${result.status}`);
 }
 
@@ -627,7 +634,10 @@ async function cmdApprove(opts) {
 
   const params = { taskId };
   if (opts.score !== undefined) params.score = opts.score;
-  const result = await socketRequest({ method: "approve", params });
+  const result = await socketRequestWithProgress("태스크 승인", {
+    method: "approve",
+    params,
+  });
   console.log(`approved: ${result.id} → ${result.status}`);
 }
 
@@ -647,7 +657,7 @@ async function cmdReject(opts) {
   });
   if (!confirmed) return;
 
-  const result = await socketRequest({
+  const result = await socketRequestWithProgress("태스크 반려", {
     method: "reject",
     params: { taskId, feedback: opts.feedback },
   });
@@ -662,7 +672,10 @@ async function cmdCancel(opts) {
     failMissingTaskId("ucm cancel <task-id>");
   }
 
-  const result = await socketRequest({ method: "cancel", params: { taskId } });
+  const result = await socketRequestWithProgress("태스크 취소", {
+    method: "cancel",
+    params: { taskId },
+  });
   console.log(`cancelled: ${result.id}`);
 }
 
@@ -723,7 +736,10 @@ async function cmdRetry(opts) {
   if (!taskId) {
     failMissingTaskId("ucm retry <task-id>");
   }
-  const result = await socketRequest({ method: "retry", params: { taskId } });
+  const result = await socketRequestWithProgress("태스크 재시도", {
+    method: "retry",
+    params: { taskId },
+  });
   console.log(`retried: ${result.id} → ${result.status}`);
 }
 
@@ -741,7 +757,10 @@ async function cmdDelete(opts) {
   });
   if (!confirmed) return;
 
-  const result = await socketRequest({ method: "delete", params: { taskId } });
+  const result = await socketRequestWithProgress("태스크 삭제", {
+    method: "delete",
+    params: { taskId },
+  });
   console.log(`deleted: ${result.id}`);
 }
 
@@ -751,7 +770,7 @@ async function cmdGateApprove(opts) {
   if (!taskId) {
     failMissingTaskId("ucm gate approve <task-id>");
   }
-  const result = await socketRequest({
+  const result = await socketRequestWithProgress("스테이지 승인", {
     method: "stage_gate_approve",
     params: { taskId },
   });
@@ -773,7 +792,7 @@ async function cmdGateReject(opts) {
   });
   if (!confirmed) return;
 
-  const result = await socketRequest({
+  const result = await socketRequestWithProgress("스테이지 반려", {
     method: "stage_gate_reject",
     params: { taskId, feedback: opts.feedback },
   });
@@ -788,7 +807,7 @@ async function cmdPriority(opts) {
     console.error("사용법: ucm priority <task-id> <value>");
     process.exit(1);
   }
-  const result = await socketRequest({
+  const result = await socketRequestWithProgress("우선순위 변경", {
     method: "update_priority",
     params: { taskId, priority },
   });
@@ -1425,6 +1444,15 @@ async function cmdAbort(opts) {
   const dag = await TaskDag.load(taskId);
   if (dag.status !== "in_progress") {
     console.error(`중단 불가: 현재 상태 ${dag.status}`);
+    if (dag.status === "pending") {
+      console.error(
+        `hint: 아직 시작되지 않은 태스크입니다. \`ucm cancel ${taskId}\`로 취소하세요.`,
+      );
+    } else {
+      console.error(
+        `hint: 실행 중(in_progress) 태스크만 중단할 수 있습니다. \`ucm status ${taskId}\`로 현재 상태를 확인하세요.`,
+      );
+    }
     process.exit(1);
   }
 
@@ -1436,19 +1464,29 @@ async function cmdAbort(opts) {
   });
   if (!confirmed) return;
 
-  // worktree 정리
+  let cleanupError = null;
   const { removeWorktrees, loadWorkspace } = require("../lib/core/worktree");
-  try {
-    const workspace = await loadWorkspace(taskId);
-    if (workspace) {
-      await removeWorktrees(taskId, workspace.projects);
+  await runWithProgress("태스크 중단", async () => {
+    try {
+      const workspace = await loadWorkspace(taskId);
+      if (workspace) {
+        await removeWorktrees(taskId, workspace.projects);
+      }
+    } catch (error) {
+      cleanupError = error;
     }
-  } catch {}
-
-  dag.status = "aborted";
-  dag.warnings.push("manually aborted by user");
-  await dag.save();
+    dag.status = "aborted";
+    dag.warnings.push("manually aborted by user");
+    await dag.save();
+  });
   console.log(`aborted: ${taskId}`);
+  if (cleanupError) {
+    const worktreePath = path.join(UCM_DIR, "worktrees", taskId);
+    console.error(`warning: worktree 정리 중 오류: ${cleanupError.message}`);
+    console.error(
+      `hint: 잔여 worktree가 있다면 ${worktreePath}를 수동으로 정리하세요.`,
+    );
+  }
 }
 
 async function cmdGc(opts) {
@@ -1914,9 +1952,28 @@ const ERROR_HINTS = {
     "task-id가 누락되었습니다. 명령 뒤에 task-id를 지정해 다시 시도하세요.",
   "invalid taskId format":
     "task-id 형식이 올바르지 않습니다. `forge-YYYYMMDD-xxxx` 형태인지 확인하고, 모르면 `ucm list`로 복사해 사용하세요.",
+  "resume requires taskId":
+    "forge 태스크 재개는 task-id가 필요합니다. 예: `ucm resume <task-id>`. 데몬 재개는 `ucm resume`만 입력하세요.",
+  "task is not pending":
+    "태스크 시작은 pending 상태에서만 가능합니다. `ucm status <task-id>`로 상태를 확인한 뒤 다시 시도하세요.",
+  "task is not failed":
+    "재시도는 failed 상태에서만 가능합니다. `ucm status <task-id>`로 상태를 확인하세요.",
+  "can only delete done/failed tasks":
+    "삭제는 done/failed 상태에서만 가능합니다. 실행 중이면 `ucm cancel <task-id>` 또는 `ucm abort <task-id>`를 먼저 사용하세요.",
+  "cannot resume task in state":
+    "해당 상태에서는 재개할 수 없습니다. 실패/리뷰 상태인지 확인하고 `ucm status <task-id>`로 현재 상태를 점검하세요.",
 };
 
 function resolveErrorHint(message) {
+  const cannotAbort = message.match(/cannot abort task in status:\s*([^\s]+)/i);
+  if (cannotAbort) {
+    const status = cannotAbort[1];
+    if (status === "pending") {
+      return "아직 시작되지 않은 태스크입니다. `ucm cancel <task-id>`로 취소하세요.";
+    }
+    return `현재 상태(${status})에서는 중단할 수 없습니다. 실행 중일 때만 중단 가능합니다. \`ucm status <task-id>\`로 확인하세요.`;
+  }
+
   const invalidTaskId = message.match(/invalid taskId format:\s*([^\s]+)/);
   if (invalidTaskId) {
     return `task-id 형식이 올바르지 않습니다: ${invalidTaskId[1]}. 예: \`forge-20260224-abcd\`. \`ucm list\`로 올바른 ID를 확인하세요.`;
