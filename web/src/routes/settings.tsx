@@ -37,6 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { buildActionErrorMessage } from "@/lib/error";
 import { formatDuration } from "@/lib/format";
 import { useStartDaemon, useStatsQuery, useStopDaemon } from "@/queries/stats";
 import { useDaemonStore } from "@/stores/daemon";
@@ -89,12 +90,12 @@ export default function SettingsPage() {
       setConfirmCleanup(false);
     },
     onError: (error) => {
-      const detail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : "unknown error";
       toast.error(
-        `Cleanup failed: ${detail}. Check daemon logs, then try again.`,
+        buildActionErrorMessage(
+          "Cleanup failed",
+          error,
+          "Check daemon logs, then try again.",
+        ),
       );
     },
   });
@@ -319,8 +320,14 @@ function ProviderCard() {
       const m = data?.model || "unknown";
       toast.success(`LLM switched to ${p}/${m}`);
     },
-    onError: (err) => {
-      toast.error(`Failed to switch: ${err.message}`);
+    onError: (error) => {
+      toast.error(
+        buildActionErrorMessage(
+          "Failed to switch provider/model",
+          error,
+          "Retry after checking daemon and config status.",
+        ),
+      );
     },
   });
 

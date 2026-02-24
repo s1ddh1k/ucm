@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
+import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useProjectCatalogQuery } from "@/queries/projects";
 import { useSubmitTask } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
@@ -70,6 +71,15 @@ export function TaskCreateDialog({
   const priorityInputId = useId();
 
   const submitTask = useSubmitTask();
+  const {
+    clearError: clearSubmitError,
+    pendingStatusMessage,
+    errorMessage: submitErrorMessage,
+  } = useMutationFeedback(submitTask, {
+    action: "Failed to create task",
+    nextStep: "Check your inputs and retry.",
+    pendingMessage: "Creating task...",
+  });
   const { data: projectCatalog } = useProjectCatalogQuery();
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
   const {
@@ -87,11 +97,15 @@ export function TaskCreateDialog({
     if (open && defaultProjectPath) {
       setProject(defaultProjectPath);
     }
-  }, [open, defaultProjectPath]);
+    if (open) {
+      clearSubmitError();
+    }
+  }, [open, defaultProjectPath, clearSubmitError]);
 
   const handleSubmit = () => {
     if (!title.trim()) return;
 
+    clearSubmitError();
     submitTask.mutate(
       {
         title: title.trim(),
@@ -123,18 +137,18 @@ export function TaskCreateDialog({
     }
     if (!nextOpen) {
       closeBrowser();
+      clearSubmitError();
     }
     onOpenChange(nextOpen);
   };
 
   const selectDirectory = (dirPath: string) => {
+    clearSubmitError();
     setProject(dirPath);
     closeBrowser();
   };
 
   const info = PIPELINE_INFO[pipeline];
-  const submitErrorMessage =
-    submitTask.error instanceof Error ? submitTask.error.message : null;
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -155,7 +169,10 @@ export function TaskCreateDialog({
               id={titleInputId}
               placeholder="Task title..."
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                clearSubmitError();
+                setTitle(e.target.value);
+              }}
               autoFocus
             />
           </div>
@@ -171,7 +188,10 @@ export function TaskCreateDialog({
               id={descriptionInputId}
               placeholder="Task description (optional)..."
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => {
+                clearSubmitError();
+                setBody(e.target.value);
+              }}
               className="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
             />
           </div>
@@ -189,9 +209,10 @@ export function TaskCreateDialog({
             {(projectCatalog?.length || 0) > 0 && (
               <Select
                 value={project || "__custom__"}
-                onValueChange={(value) =>
-                  setProject(value === "__custom__" ? "" : value)
-                }
+                onValueChange={(value) => {
+                  clearSubmitError();
+                  setProject(value === "__custom__" ? "" : value);
+                }}
               >
                 <SelectTrigger className="mb-2">
                   <SelectValue placeholder="Select from registered projects" />
@@ -214,6 +235,7 @@ export function TaskCreateDialog({
                 placeholder="~/my-project (optional)"
                 value={project}
                 onChange={(e) => {
+                  clearSubmitError();
                   clearBrowseError();
                   setProject(e.target.value);
                 }}
@@ -245,6 +267,7 @@ export function TaskCreateDialog({
               <div
                 className="mt-2 border rounded-md max-h-48 overflow-auto bg-muted/50"
                 aria-label="Directory browser"
+                aria-busy={browseLoading}
               >
                 <div className="px-3 py-1.5 border-b flex items-center justify-between">
                   <span className="text-xs font-mono truncate">
@@ -294,6 +317,7 @@ export function TaskCreateDialog({
                 value={pipeline}
                 onValueChange={(value) => {
                   if (isPipelineType(value)) {
+                    clearSubmitError();
                     setPipeline(value);
                   }
                 }}
@@ -327,7 +351,10 @@ export function TaskCreateDialog({
                 id={priorityInputId}
                 type="number"
                 value={priority}
-                onChange={(e) => setPriority(e.target.value)}
+                onChange={(e) => {
+                  clearSubmitError();
+                  setPriority(e.target.value);
+                }}
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Higher = sooner
@@ -346,10 +373,14 @@ export function TaskCreateDialog({
               {submitTask.isPending ? "Creating..." : "Create Task"}
             </Button>
           </div>
+          {pendingStatusMessage && (
+            <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+              {pendingStatusMessage}
+            </p>
+          )}
           {submitErrorMessage && (
             <p className="text-xs text-destructive" role="alert">
-              Failed to create task: {submitErrorMessage}. Check your inputs and
-              retry.
+              {submitErrorMessage}
             </p>
           )}
         </div>

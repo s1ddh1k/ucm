@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useStartAutopilot } from "@/queries/autopilot";
 import { useUiStore } from "@/stores/ui";
 
@@ -30,22 +31,32 @@ export function SessionStartDialog({
   const [project, setProject] = useState("");
   const [pipeline, setPipeline] = useState("small");
   const [maxItems, setMaxItems] = useState("50");
+  const projectInputId = useId();
+  const pipelineLabelId = useId();
+  const maxItemsInputId = useId();
   const setSelectedSessionId = useUiStore((s) => s.setSelectedSessionId);
 
   const startAutopilot = useStartAutopilot();
-  const startError =
-    startAutopilot.error instanceof Error ? startAutopilot.error.message : null;
+  const {
+    clearError: clearStartError,
+    pendingStatusMessage,
+    errorMessage: startError,
+  } = useMutationFeedback(startAutopilot, {
+    action: "Failed to start session",
+    nextStep: "Check the project path and try again.",
+    pendingMessage: "Starting session...",
+  });
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      startAutopilot.reset();
+      clearStartError();
     }
     onOpenChange(nextOpen);
   };
 
   const handleStart = () => {
     if (!project.trim()) return;
-    if (startAutopilot.error) startAutopilot.reset();
+    clearStartError();
     startAutopilot.mutate(
       {
         project: project.trim(),
@@ -55,7 +66,7 @@ export function SessionStartDialog({
       {
         onSuccess: (data) => {
           setProject("");
-          startAutopilot.reset();
+          clearStartError();
           if (data?.sessionId) {
             setSelectedSessionId(data.sessionId);
           }
@@ -77,14 +88,18 @@ export function SessionStartDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">
+            <label
+              htmlFor={projectInputId}
+              className="text-sm font-medium mb-1.5 block"
+            >
               Project Path
             </label>
             <Input
+              id={projectInputId}
               placeholder="~/my-project"
               value={project}
               onChange={(e) => {
-                if (startAutopilot.error) startAutopilot.reset();
+                clearStartError();
                 setProject(e.target.value);
               }}
               autoFocus
@@ -93,17 +108,17 @@ export function SessionStartDialog({
 
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="text-sm font-medium mb-1.5 block">
+              <label className="text-sm font-medium mb-1.5 block" id={pipelineLabelId}>
                 Pipeline
               </label>
               <Select
                 value={pipeline}
                 onValueChange={(value) => {
-                  if (startAutopilot.error) startAutopilot.reset();
+                  clearStartError();
                   setPipeline(value);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby={pipelineLabelId}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -116,14 +131,18 @@ export function SessionStartDialog({
             </div>
 
             <div className="w-28">
-              <label className="text-sm font-medium mb-1.5 block">
+              <label
+                htmlFor={maxItemsInputId}
+                className="text-sm font-medium mb-1.5 block"
+              >
                 Max Items
               </label>
               <Input
+                id={maxItemsInputId}
                 type="number"
                 value={maxItems}
                 onChange={(e) => {
-                  if (startAutopilot.error) startAutopilot.reset();
+                  clearStartError();
                   setMaxItems(e.target.value);
                 }}
               />
@@ -132,8 +151,7 @@ export function SessionStartDialog({
 
           {startError && (
             <p className="text-sm text-destructive" role="alert">
-              Failed to start session: {startError}. Check the project path and
-              try again.
+              {startError}
             </p>
           )}
 
@@ -148,6 +166,11 @@ export function SessionStartDialog({
               {startAutopilot.isPending ? "Starting..." : "Start Session"}
             </Button>
           </div>
+          {pendingStatusMessage && (
+            <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+              {pendingStatusMessage}
+            </p>
+          )}
         </div>
       </DialogContent>
     </Dialog>

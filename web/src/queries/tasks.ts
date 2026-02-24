@@ -2,20 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Task } from "@/api/types";
+import { buildActionErrorMessage } from "@/lib/error";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
-
-function mutationErrorMessage(
-  error: unknown,
-  action: string,
-  nextStep: string,
-): string {
-  const detail =
-    error instanceof Error && error.message.trim()
-      ? error.message.trim()
-      : "unknown error";
-  return `${action}: ${detail}. ${nextStep}`;
-}
 
 export function useTasksQuery(status?: string) {
   return useQuery({
@@ -100,9 +89,9 @@ export function useSubmitTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to create task",
+          error,
           "Check required fields and daemon status, then try again.",
         ),
       );
@@ -144,9 +133,9 @@ export function useStartTask() {
         }
       }
       toast.error(
-        mutationErrorMessage(
-          _error,
+        buildActionErrorMessage(
           "Failed to start task",
+          _error,
           "Check daemon status and retry.",
         ),
       );
@@ -169,9 +158,9 @@ export function useApproveTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to approve task",
+          error,
           "Review task logs and diff, then retry.",
         ),
       );
@@ -190,9 +179,9 @@ export function useRejectTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to reject task",
+          error,
           "Check task status and retry.",
         ),
       );
@@ -210,9 +199,9 @@ export function useCancelTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to cancel task",
+          error,
           "Check task status and retry.",
         ),
       );
@@ -230,9 +219,9 @@ export function useRetryTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to retry task",
+          error,
           "Review feedback and logs, then retry.",
         ),
       );
@@ -258,9 +247,9 @@ export function useDeleteTask() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to delete task",
+          error,
           "Try again after checking daemon status.",
         ),
       );
@@ -276,9 +265,9 @@ export function useUpdatePriority() {
     onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to update task priority",
+          error,
           "Check task status and try again.",
         ),
       );
@@ -296,9 +285,9 @@ export function useStageGateApprove() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to approve stage",
+          error,
           "Refresh task status and retry.",
         ),
       );
@@ -317,9 +306,9 @@ export function useStageGateReject() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to reject stage",
+          error,
           "Refresh task status and retry.",
         ),
       );

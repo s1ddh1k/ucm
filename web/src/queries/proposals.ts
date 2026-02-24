@@ -2,18 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Proposal } from "@/api/types";
-
-function mutationErrorMessage(
-  error: unknown,
-  action: string,
-  nextStep: string,
-): string {
-  const detail =
-    error instanceof Error && error.message.trim()
-      ? error.message.trim()
-      : "unknown error";
-  return `${action}: ${detail}. ${nextStep}`;
-}
+import { buildActionErrorMessage } from "@/lib/error";
 
 export function useProposalsQuery(status?: string) {
   return useQuery({
@@ -45,9 +34,9 @@ export function useApproveProposal() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to approve proposal",
+          error,
           "Review the proposal details and retry.",
         ),
       );
@@ -65,9 +54,9 @@ export function useRejectProposal() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to reject proposal",
+          error,
           "Refresh proposals and retry.",
         ),
       );
@@ -98,9 +87,9 @@ export function useDeleteProposal() {
         }
       }
       toast.error(
-        mutationErrorMessage(
-          _error,
+        buildActionErrorMessage(
           "Failed to delete proposal",
+          _error,
           "Try again after refreshing proposals.",
         ),
       );
@@ -125,9 +114,9 @@ export function useSetProposalPriority() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["proposals"] }),
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to update proposal priority",
+          error,
           "Refresh proposals and retry.",
         ),
       );
@@ -154,9 +143,9 @@ export function useRunObserver() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Observer run failed",
+          error,
           "Check daemon status and try again.",
         ),
       );
@@ -172,9 +161,9 @@ export function useAnalyzeProject() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to analyze project",
+          error,
           "Check project path and daemon status, then retry.",
         ),
       );
@@ -190,9 +179,9 @@ export function useResearchProject() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to start research",
+          error,
           "Check project path and daemon status, then retry.",
         ),
       );

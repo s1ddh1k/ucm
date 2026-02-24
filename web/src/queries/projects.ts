@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { buildActionErrorMessage } from "@/lib/error";
 
 export interface ProjectCatalogItem {
   path: string;
@@ -28,18 +29,6 @@ function normalizeCatalog(raw: unknown): ProjectCatalogItem[] {
   return [...unique.values()].sort((a, b) =>
     (a.name || a.path).localeCompare(b.name || b.path),
   );
-}
-
-function mutationErrorMessage(
-  error: unknown,
-  action: string,
-  nextStep: string,
-): string {
-  const detail =
-    error instanceof Error && error.message.trim()
-      ? error.message.trim()
-      : "unknown error";
-  return `${action}: ${detail}. ${nextStep}`;
 }
 
 export function useProjectCatalogQuery() {
@@ -79,9 +68,9 @@ export function useUpsertProjectCatalogItem() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to add project",
+          error,
           "Check the project path and try again.",
         ),
       );
@@ -106,9 +95,9 @@ export function useRemoveProjectCatalogItem() {
     },
     onError: (error) => {
       toast.error(
-        mutationErrorMessage(
-          error,
+        buildActionErrorMessage(
           "Failed to remove project",
+          error,
           "Retry from Projects after checking daemon and config status.",
         ),
       );

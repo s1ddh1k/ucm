@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
+import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useUpsertProjectCatalogItem } from "@/queries/projects";
 
 interface ProjectAddDialogProps {
@@ -35,6 +36,15 @@ export function ProjectAddDialog({
   const nameInputId = useId();
   const upsertProject = useUpsertProjectCatalogItem();
   const {
+    clearError: clearSubmitError,
+    pendingStatusMessage,
+    errorMessage: submitErrorMessage,
+  } = useMutationFeedback(upsertProject, {
+    action: "Failed to add project",
+    nextStep: "Verify the path and try again.",
+    pendingMessage: "Adding project...",
+  });
+  const {
     browsing,
     loading: browseLoading,
     browseResult,
@@ -49,12 +59,14 @@ export function ProjectAddDialog({
     if (open) {
       setPath(defaultPath || "");
       setName("");
+      clearSubmitError();
     } else {
       closeBrowser();
     }
-  }, [open, defaultPath, closeBrowser]);
+  }, [open, defaultPath, closeBrowser, clearSubmitError]);
 
   const selectDirectory = (dirPath: string) => {
+    clearSubmitError();
     setPath(dirPath);
     closeBrowser();
     setShowNewFolder(false);
@@ -80,6 +92,7 @@ export function ProjectAddDialog({
     if (!path.trim()) return;
     const nextPath = path.trim();
     const nextName = name.trim() || undefined;
+    clearSubmitError();
     upsertProject.mutate(
       { path: nextPath, name: nextName },
       {
@@ -90,8 +103,6 @@ export function ProjectAddDialog({
       },
     );
   };
-  const submitErrorMessage =
-    upsertProject.error instanceof Error ? upsertProject.error.message : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,6 +126,7 @@ export function ProjectAddDialog({
                 placeholder="~/git/my-project"
                 value={path}
                 onChange={(e) => {
+                  clearSubmitError();
                   clearBrowseError();
                   setPath(e.target.value);
                 }}
@@ -146,6 +158,7 @@ export function ProjectAddDialog({
               <div
                 className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40"
                 aria-label="Directory browser"
+                aria-busy={browseLoading}
               >
                 <div className="px-3 py-1.5 border-b flex items-center justify-between gap-2">
                   <span className="text-xs font-mono truncate">
@@ -223,7 +236,10 @@ export function ProjectAddDialog({
               id={nameInputId}
               placeholder="e.g. Console Frontend"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                clearSubmitError();
+                setName(e.target.value);
+              }}
             />
           </div>
 
@@ -238,10 +254,14 @@ export function ProjectAddDialog({
               {upsertProject.isPending ? "Adding..." : "Add Project"}
             </Button>
           </div>
+          {pendingStatusMessage && (
+            <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+              {pendingStatusMessage}
+            </p>
+          )}
           {submitErrorMessage && (
             <p className="text-xs text-destructive" role="alert">
-              Failed to add project: {submitErrorMessage}. Verify the path and
-              try again.
+              {submitErrorMessage}
             </p>
           )}
         </div>
