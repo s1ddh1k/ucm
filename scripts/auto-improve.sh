@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
+# mise로 설치된 도구(bun 등)를 비대화형 셸에서도 사용 가능하게 활성화
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate bash)"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROMPTS_DIR="$SCRIPT_DIR/prompts"
 ORIG_CWD="$(pwd)"
