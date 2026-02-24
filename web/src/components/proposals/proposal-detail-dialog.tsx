@@ -1,4 +1,4 @@
-import { ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
+import { RotateCw, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
 import type { Proposal } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ interface ProposalDetailDialogProps {
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onDelete: (id: string) => void;
+  deletePending?: boolean;
 }
 
 export function ProposalDetailDialog({
@@ -29,6 +30,7 @@ export function ProposalDetailDialog({
   onApprove,
   onReject,
   onDelete,
+  deletePending = false,
 }: ProposalDetailDialogProps) {
   if (!proposal) return null;
 
@@ -106,9 +108,15 @@ export function ProposalDetailDialog({
             <Button
               variant="outline"
               size="sm"
+              disabled={deletePending}
               onClick={() => onDelete(proposal.id)}
             >
-              <Trash2 className="h-4 w-4" /> Delete
+              {deletePending ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}{" "}
+              {deletePending ? "Deleting..." : "Delete"}
             </Button>
           </div>
         </div>

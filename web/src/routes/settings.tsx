@@ -8,7 +8,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { StageApprovalConfig } from "@/api/types";
@@ -29,6 +29,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatDuration } from "@/lib/format";
 import { useStartDaemon, useStatsQuery, useStopDaemon } from "@/queries/stats";
 import { useDaemonStore } from "@/stores/daemon";
@@ -46,6 +53,7 @@ const GATE_STAGES = [
 ] as const;
 
 export default function SettingsPage() {
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
   const { data: stats } = useStatsQuery();
   const daemonStatus = useDaemonStore((s) => s.status);
   const setStatus = useDaemonStore((s) => s.setStatus);
@@ -74,7 +82,20 @@ export default function SettingsPage() {
 
   const runCleanup = useMutation({
     mutationFn: () => api.cleanup.run(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Cleanup completed.");
+      setConfirmCleanup(false);
+    },
+    onError: (error) => {
+      const detail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "unknown error";
+      toast.error(
+        `Cleanup failed: ${detail}. Check daemon logs, then try again.`,
+      );
+    },
   });
 
   return (
@@ -155,7 +176,7 @@ export default function SettingsPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => runCleanup.mutate()}
+            onClick={() => setConfirmCleanup(true)}
             disabled={runCleanup.isPending}
           >
             <Trash2 className="h-4 w-4" /> Run Cleanup
@@ -214,6 +235,44 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={confirmCleanup}
+        onOpenChange={(open) => {
+          if (!runCleanup.isPending) setConfirmCleanup(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run Cleanup?</DialogTitle>
+            <DialogDescription>
+              This removes completed/failed task worktrees, logs, and artifacts
+              older than your retention window. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmCleanup(false)}
+              disabled={runCleanup.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => runCleanup.mutate()}
+              disabled={runCleanup.isPending}
+            >
+              {runCleanup.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}{" "}
+              {runCleanup.isPending ? "Cleaning..." : "Run Cleanup"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

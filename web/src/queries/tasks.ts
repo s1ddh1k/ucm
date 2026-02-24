@@ -1,8 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Task } from "@/api/types";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
+
+function mutationErrorMessage(
+  error: unknown,
+  action: string,
+  nextStep: string,
+): string {
+  const detail =
+    error instanceof Error && error.message.trim()
+      ? error.message.trim()
+      : "unknown error";
+  return `${action}: ${detail}. ${nextStep}`;
+}
 
 export function useTasksQuery(status?: string) {
   return useQuery({
@@ -81,7 +94,19 @@ export function useSubmitTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.tasks.submit,
-    onSuccess: () => invalidateTaskQueries(qc),
+    onSuccess: () => {
+      invalidateTaskQueries(qc);
+      toast.success("Task created.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to create task",
+          "Check required fields and daemon status, then try again.",
+        ),
+      );
+    },
   });
 }
 
@@ -118,8 +143,18 @@ export function useStartTask() {
           qc.setQueryData(queryKey, snapshot);
         }
       }
+      toast.error(
+        mutationErrorMessage(
+          _error,
+          "Failed to start task",
+          "Check daemon status and retry.",
+        ),
+      );
     },
-    onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, taskId) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Task started.");
+    },
   });
 }
 
@@ -128,7 +163,19 @@ export function useApproveTask() {
   return useMutation({
     mutationFn: ({ taskId, score }: { taskId: string; score?: number }) =>
       api.tasks.approve(taskId, score),
-    onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, { taskId }) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Task approved. Merge is in progress.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to approve task",
+          "Review task logs and diff, then retry.",
+        ),
+      );
+    },
   });
 }
 
@@ -137,7 +184,19 @@ export function useRejectTask() {
   return useMutation({
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback?: string }) =>
       api.tasks.reject(taskId, feedback),
-    onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, { taskId, feedback }) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success(feedback ? "Task sent back with feedback." : "Task rejected.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to reject task",
+          "Check task status and retry.",
+        ),
+      );
+    },
   });
 }
 
@@ -145,7 +204,19 @@ export function useCancelTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.cancel(taskId),
-    onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, taskId) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Task cancelled.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to cancel task",
+          "Check task status and retry.",
+        ),
+      );
+    },
   });
 }
 
@@ -153,7 +224,19 @@ export function useRetryTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.retry(taskId),
-    onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, taskId) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Task retry started.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to retry task",
+          "Review feedback and logs, then retry.",
+        ),
+      );
+    },
   });
 }
 
@@ -171,6 +254,16 @@ export function useDeleteTask() {
       if (useUiStore.getState().selectedTaskId === taskId) {
         useUiStore.getState().setSelectedTaskId(null);
       }
+      toast.success("Task deleted.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to delete task",
+          "Try again after checking daemon status.",
+        ),
+      );
     },
   });
 }
@@ -181,6 +274,15 @@ export function useUpdatePriority() {
     mutationFn: ({ taskId, priority }: { taskId: string; priority: number }) =>
       api.tasks.updatePriority(taskId, priority),
     onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to update task priority",
+          "Check task status and try again.",
+        ),
+      );
+    },
   });
 }
 
@@ -188,7 +290,19 @@ export function useStageGateApprove() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.stageGateApprove(taskId),
-    onSuccess: (_data, taskId) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, taskId) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Stage approved. Task resumed.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to approve stage",
+          "Refresh task status and retry.",
+        ),
+      );
+    },
   });
 }
 
@@ -197,6 +311,18 @@ export function useStageGateReject() {
   return useMutation({
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback?: string }) =>
       api.tasks.stageGateReject(taskId, feedback),
-    onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
+    onSuccess: (_data, { taskId }) => {
+      invalidateTaskQueries(qc, taskId);
+      toast.success("Stage rejected. Task moved to failed state.");
+    },
+    onError: (error) => {
+      toast.error(
+        mutationErrorMessage(
+          error,
+          "Failed to reject stage",
+          "Refresh task status and retry.",
+        ),
+      );
+    },
   });
 }

@@ -5,7 +5,9 @@ import {
   LayoutGrid,
   Lightbulb,
   List,
+  RotateCw,
   Search as SearchIcon,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -20,6 +22,13 @@ import { StatusDot } from "@/components/shared/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -52,6 +61,7 @@ import { useUiStore } from "@/stores/ui";
 export default function ProposalsPage() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Proposal | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -215,8 +225,22 @@ export default function ProposalsPage() {
     setDetailOpen(false);
   };
   const handleDelete = (id: string) => {
-    deleteProposal.mutate(id);
-    if (detailProposal?.id === id) setDetailOpen(false);
+    if (deleteProposal.isPending) return;
+    const target =
+      (proposals || []).find((proposal) => proposal.id === id) ||
+      (detailProposal?.id === id ? detailProposal : null);
+    if (!target) return;
+    setDeleteTarget(target);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    deleteProposal.mutate(deleteTarget.id, {
+      onSuccess: () => {
+        if (detailProposal?.id === deleteTarget.id) setDetailOpen(false);
+        setDeleteTarget(null);
+      },
+    });
   };
 
   useEffect(() => {
@@ -472,6 +496,9 @@ export default function ProposalsPage() {
               onApprove={() => handleApprove(proposal.id)}
               onReject={() => handleReject(proposal.id)}
               onDelete={() => handleDelete(proposal.id)}
+              deletePending={
+                deleteProposal.isPending && deleteTarget?.id === proposal.id
+              }
               onPriorityUp={() =>
                 setPriority.mutate({ proposalId: proposal.id, delta: 1 })
               }
@@ -494,7 +521,53 @@ export default function ProposalsPage() {
         onApprove={handleApprove}
         onReject={handleReject}
         onDelete={handleDelete}
+        deletePending={
+          deleteProposal.isPending && deleteTarget?.id === detailProposal?.id
+        }
       />
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleteProposal.isPending) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Proposal?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the proposal and its evaluation history.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTarget && (
+            <p className="text-sm font-medium line-clamp-2">
+              {deleteTarget.title}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteProposal.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteProposal.isPending}
+            >
+              {deleteProposal.isPending ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {deleteProposal.isPending ? "Deleting..." : "Delete Proposal"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

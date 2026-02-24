@@ -1,4 +1,11 @@
-import { ArrowDown, ArrowUp, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  RotateCw,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+} from "lucide-react";
 import type { Proposal } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +19,7 @@ interface ProposalCardProps {
   onApprove: () => void;
   onReject: () => void;
   onDelete: () => void;
+  deletePending?: boolean;
   onPriorityUp: () => void;
   onPriorityDown: () => void;
   onClick: () => void;
@@ -22,6 +30,7 @@ export function ProposalCard({
   onApprove,
   onReject,
   onDelete,
+  deletePending = false,
   onPriorityUp,
   onPriorityDown,
   onClick,
@@ -132,12 +141,17 @@ export function ProposalCard({
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-destructive"
+              disabled={deletePending}
               onClick={(e) => {
                 stop(e);
                 onDelete();
               }}
             >
-              <Trash2 className="h-3 w-3" />
+              {deletePending ? (
+                <RotateCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3" />
+              )}
             </Button>
           </div>
         </div>

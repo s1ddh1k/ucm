@@ -5,6 +5,7 @@ import {
   ListTodo,
   MoreVertical,
   Plus,
+  RotateCw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -16,6 +17,13 @@ import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +62,9 @@ type ProjectSummary = {
 export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [removeCandidate, setRemoveCandidate] = useState<ProjectSummary | null>(
+    null,
+  );
   const navigate = useNavigate();
   const { data: tasks, isLoading: tasksLoading } = useTasksQuery();
   const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery();
@@ -66,6 +77,20 @@ export default function ProjectsPage() {
   const setProposalProjectFilter = useUiStore(
     (s) => s.setProposalProjectFilter,
   );
+
+  const confirmRemoveProject = () => {
+    if (!removeCandidate) return;
+    removeCatalogItem.mutate(removeCandidate.path, {
+      onSuccess: () => {
+        if (activeProjectKey === removeCandidate.key) {
+          clearActiveProject();
+          setTaskProjectFilter("");
+          setProposalProjectFilter("");
+        }
+        setRemoveCandidate(null);
+      },
+    });
+  };
 
   const projectSummaries = useMemo(() => {
     const map = new Map<string, ProjectSummary>();
@@ -293,7 +318,7 @@ export default function ProjectsPage() {
                                 className="text-destructive"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  removeCatalogItem.mutate(project.path);
+                                  setRemoveCandidate(project);
                                 }}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" /> Remove
@@ -354,6 +379,52 @@ export default function ProjectsPage() {
           navigate(`/projects/${encodeProjectKeyForRoute(key)}`);
         }}
       />
+
+      <Dialog
+        open={Boolean(removeCandidate)}
+        onOpenChange={(open) => {
+          if (!open && !removeCatalogItem.isPending) setRemoveCandidate(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Project From Catalog?</DialogTitle>
+            <DialogDescription>
+              This removes the project from workspace navigation only. Tasks and
+              proposals remain, but may show under unknown scope until
+              re-registered.
+            </DialogDescription>
+          </DialogHeader>
+          {removeCandidate && (
+            <p className="text-sm">
+              <span className="font-medium">{removeCandidate.label}</span>
+              <span className="text-muted-foreground"> · </span>
+              <span className="font-mono text-xs">{removeCandidate.path}</span>
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setRemoveCandidate(null)}
+              disabled={removeCatalogItem.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmRemoveProject}
+              disabled={removeCatalogItem.isPending}
+            >
+              {removeCatalogItem.isPending ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {removeCatalogItem.isPending ? "Removing..." : "Remove Project"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
