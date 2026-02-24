@@ -60,6 +60,11 @@ Usage:
     ucm resume                                데몬 재개 (인자 없이)
     ucm stats                                 통계 조회
 
+  Merge Queue:
+    ucm merge-queue                           머지 큐 상태 표시
+    ucm merge-queue retry <task-id>           실패 항목 재시도
+    ucm merge-queue skip <task-id>            큐에서 제거
+
   Maintenance:
     ucm gc [--days N]                         오래된 태스크 정리
     ucm observe [--status]                    수동 관찰 트리거
@@ -1151,6 +1156,65 @@ async function cmdResearch(opts) {
   console.log(`${result.proposalCount} proposals created`);
 }
 
+async function cmdMergeQueue(opts) {
+  await ensureDaemon();
+
+  const subcommand = opts.positional[0];
+
+  if (subcommand === "retry") {
+    const taskId = opts.positional[1];
+    if (!taskId) { console.error("task-id 필수: ucm merge-queue retry <task-id>"); process.exit(1); }
+    const result = await socketRequest({ method: "merge_queue_retry", params: { taskId } });
+    console.log(`merge queue retry: ${result.id} → ${result.status}`);
+    return;
+  }
+
+  if (subcommand === "skip") {
+    const taskId = opts.positional[1];
+    if (!taskId) { console.error("task-id 필수: ucm merge-queue skip <task-id>"); process.exit(1); }
+    const result = await socketRequest({ method: "merge_queue_skip", params: { taskId } });
+    console.log(`merge queue skip: ${result.id} → ${result.status}`);
+    return;
+  }
+
+  // default: status
+  const params = {};
+  if (opts.project) params.project = path.resolve(opts.project);
+  const status = await socketRequest({ method: "merge_queue_status", params });
+
+  if (typeof status === "object" && !Array.isArray(status)) {
+    const projects = Object.keys(status);
+    if (projects.length === 0) {
+      console.log("(merge queue empty)");
+      return;
+    }
+    for (const project of projects) {
+      const queue = status[project];
+      console.log(`\n[${path.basename(project)}] (${queue.queueLength} entries${queue.processing ? ", processing" : ""})`);
+      if (queue.current) {
+        const rebase = queue.current.rebaseCount > 0 ? ` (rebase: ${queue.current.rebaseCount})` : "";
+        console.log(`  ▶ ${queue.current.taskId}  ${queue.current.status}${rebase}`);
+      }
+      for (const entry of queue.entries) {
+        const rebase = entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
+        console.log(`    ${entry.taskId}  ${entry.status}${rebase}`);
+      }
+    }
+  } else if (status && (status.entries || status.current)) {
+    console.log(`\n[${path.basename(status.project || "unknown")}] (${status.queueLength} entries${status.processing ? ", processing" : ""})`);
+    if (status.current) {
+      const rebase = status.current.rebaseCount > 0 ? ` (rebase: ${status.current.rebaseCount})` : "";
+      console.log(`  ▶ ${status.current.taskId}  ${status.current.status}${rebase}`);
+    }
+    for (const entry of status.entries) {
+      const rebase = entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
+      console.log(`    ${entry.taskId}  ${entry.status}${rebase}`);
+    }
+  } else {
+    console.log("(merge queue empty)");
+  }
+}
+
 async function cmdDaemon(opts) {
   const subcommand = opts.positional[0];
   if (subcommand === "start") {
@@ -1290,6 +1354,8 @@ async function main() {
     case "priority": await cmdPriority(opts); break;
     case "diff": await cmdDiff(opts); break;
     case "logs": await cmdLogs(opts); break;
+    // Merge queue
+    case "merge-queue": await cmdMergeQueue(opts); break;
     // Daemon control
     case "daemon": await cmdDaemon(opts); break;
     case "pause": await cmdPause(); break;

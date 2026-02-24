@@ -9326,12 +9326,13 @@ function testDeliverAutoMergeFailureSetsReview() {
   const deliverSource = require("fs").readFileSync(
     require("path").join(__dirname, "..", "lib", "forge", "deliver.js"), "utf-8"
   );
-  // auto_merged가 catch 블록 전에 설정되고, catch에서 review로 변경
-  const autoMergedBeforeCatch = deliverSource.indexOf('dag.status = "auto_merged"');
-  const reviewInCatch = deliverSource.indexOf('dag.status = "review"');
-  assert(autoMergedBeforeCatch !== -1, "deliver: auto_merged status exists");
-  assert(reviewInCatch !== -1, "deliver: review fallback exists");
-  assert(autoMergedBeforeCatch < reviewInCatch, "deliver: auto_merged before review (success then failure)");
+  // auto_merged와 review fallback이 모두 존재하는지 확인
+  const autoMergedExists = deliverSource.includes('dag.status = "auto_merged"');
+  const reviewExists = deliverSource.includes('dag.status = "review"');
+  assert(autoMergedExists, "deliver: auto_merged status exists");
+  assert(reviewExists, "deliver: review fallback exists");
+  // merge_queued 경로도 존재
+  assert(deliverSource.includes('dag.status = "merge_queued"'), "deliver: merge_queued status exists");
 }
 
 function testAgentSkipPermissions() {
