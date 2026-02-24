@@ -1,5 +1,7 @@
 import {
+  AlertCircle,
   Check,
+  Loader2,
   MessageSquare,
   Pause,
   Play,
@@ -9,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { EmptyState } from "@/components/shared/empty-state";
 import { StatusDot } from "@/components/shared/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +37,13 @@ interface SessionDetailProps {
 }
 
 export function SessionDetail({ sessionId }: SessionDetailProps) {
-  const { data: session } = useAutopilotSessionQuery(sessionId);
+  const {
+    data: session,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useAutopilotSessionQuery(sessionId);
   const [feedbackText, setFeedbackText] = useState("");
   const [directiveText, setDirectiveText] = useState("");
 
@@ -47,7 +56,48 @@ export function SessionDetail({ sessionId }: SessionDetailProps) {
   const addDirective = useAddDirective();
   const deleteDirective = useDeleteDirective();
 
-  if (!session) return null;
+  const sessionError =
+    error instanceof Error ? error.message : "Failed to load session details.";
+
+  if (isLoading && !session) {
+    return (
+      <div
+        className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>Loading session details...</span>
+      </div>
+    );
+  }
+
+  if (isError && !session) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="Failed to load session"
+        description={sessionError}
+        action={
+          <Button size="sm" variant="outline" onClick={() => refetch()}>
+            Retry
+          </Button>
+        }
+        className="h-full"
+      />
+    );
+  }
+
+  if (!session) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="Session not available"
+        description="The session was not found. Select another session from the list."
+        className="h-full"
+      />
+    );
+  }
 
   const progress =
     session.stats.totalItems > 0

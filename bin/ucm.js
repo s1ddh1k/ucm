@@ -35,7 +35,7 @@ Usage:
     ucm forge <description> [options]         태스크 실행
     ucm forge --file <file.md> [options]      파일에서 태스크 실행
     ucm resume <id> [--from <stage>]          중단된 태스크 재실행
-    ucm abort <id>                            실행 중인 태스크 중단
+    ucm abort <id> [--force]                  실행 중인 태스크 중단
 
   Task management (daemon):
     ucm submit <file.md>                      태스크 파일 제출
@@ -252,6 +252,61 @@ function readStdin() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatElapsed(ms) {
+  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+async function runWithProgress(label, action, options = {}) {
+  const startDelayMs =
+    Number.isFinite(Number(options.startDelayMs)) &&
+    Number(options.startDelayMs) > 0
+      ? Number(options.startDelayMs)
+      : 1000;
+  const intervalMs =
+    Number.isFinite(Number(options.intervalMs)) &&
+    Number(options.intervalMs) > 0
+      ? Number(options.intervalMs)
+      : 2000;
+
+  const startedAt = Date.now();
+  let progressShown = false;
+  let startTimer = null;
+  let progressTimer = null;
+
+  const emitProgress = () => {
+    progressShown = true;
+    const elapsed = formatElapsed(Date.now() - startedAt);
+    console.error(`${label} 진행 중... (${elapsed})`);
+  };
+
+  startTimer = setTimeout(() => {
+    emitProgress();
+    progressTimer = setInterval(emitProgress, intervalMs);
+  }, startDelayMs);
+
+  try {
+    const result = await action();
+    if (progressShown) {
+      const elapsed = formatElapsed(Date.now() - startedAt);
+      console.error(`${label} 완료 (${elapsed})`);
+    }
+    return result;
+  } catch (error) {
+    if (progressShown) {
+      const elapsed = formatElapsed(Date.now() - startedAt);
+      console.error(`${label} 실패 (${elapsed})`);
+    }
+    throw error;
+  } finally {
+    if (startTimer) clearTimeout(startTimer);
+    if (progressTimer) clearInterval(progressTimer);
+  }
 }
 
 async function promptYesNo(question, { defaultNo = true } = {}) {
@@ -1373,6 +1428,14 @@ async function cmdAbort(opts) {
     process.exit(1);
   }
 
+  const confirmed = await confirmDangerousAction({
+    force: opts.force,
+    commandHint: `ucm abort ${taskId}`,
+    question: `태스크 ${taskId}를 중단합니다. 진행 중 변경이 중단되고 worktree가 정리됩니다. 계속할까요? [y/N] `,
+    cancelledMessage: `cancelled: ${taskId} (중단하지 않음)`,
+  });
+  if (!confirmed) return;
+
   // worktree 정리
   const { removeWorktrees, loadWorkspace } = require("../lib/core/worktree");
   try {
@@ -1406,11 +1469,14 @@ async function cmdGc(opts) {
 async function cmdAnalyze(opts) {
   await ensureDaemon();
   const project = opts.project ? path.resolve(opts.project) : process.cwd();
-  console.error(`analyzing ${path.basename(project)}...`);
-  const result = await socketRequest({
-    method: "analyze_project",
-    params: { project },
-  });
+  const projectName = path.basename(project);
+  console.error(`analyzing ${projectName}...`);
+  const result = await runWithProgress(`${projectName} 분석`, () =>
+    socketRequest({
+      method: "analyze_project",
+      params: { project },
+    }),
+  );
   if (result.error) {
     throw new Error(result.error);
   }
@@ -1427,11 +1493,14 @@ async function cmdAnalyze(opts) {
 async function cmdResearch(opts) {
   await ensureDaemon();
   const project = opts.project ? path.resolve(opts.project) : process.cwd();
-  console.error(`researching ${path.basename(project)}...`);
-  const result = await socketRequest({
-    method: "research_project",
-    params: { project },
-  });
+  const projectName = path.basename(project);
+  console.error(`researching ${projectName}...`);
+  const result = await runWithProgress(`${projectName} 리서치`, () =>
+    socketRequest({
+      method: "research_project",
+      params: { project },
+    }),
+  );
   if (result.error) {
     throw new Error(result.error);
   }
@@ -1833,9 +1902,16 @@ const ERROR_HINTS = {
     "우선순위 값이 숫자가 아닙니다. 예: `ucm priority <task-id> 10`",
   "taskId required":
     "task-id가 누락되었습니다. 명령 뒤에 task-id를 지정해 다시 시도하세요.",
+  "invalid taskId format":
+    "task-id 형식이 올바르지 않습니다. `forge-YYYYMMDD-xxxx` 형태인지 확인하고, 모르면 `ucm list`로 복사해 사용하세요.",
 };
 
 function resolveErrorHint(message) {
+  const invalidTaskId = message.match(/invalid taskId format:\s*([^\s]+)/);
+  if (invalidTaskId) {
+    return `task-id 형식이 올바르지 않습니다: ${invalidTaskId[1]}. 예: \`forge-20260224-abcd\`. \`ucm list\`로 올바른 ID를 확인하세요.`;
+  }
+
   const noPendingGate = message.match(/no pending gate for task:\s*([^\s]+)/);
   if (noPendingGate) {
     const taskId = noPendingGate[1];

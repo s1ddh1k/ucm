@@ -33,9 +33,19 @@ export function SessionStartDialog({
   const setSelectedSessionId = useUiStore((s) => s.setSelectedSessionId);
 
   const startAutopilot = useStartAutopilot();
+  const startError =
+    startAutopilot.error instanceof Error ? startAutopilot.error.message : null;
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      startAutopilot.reset();
+    }
+    onOpenChange(nextOpen);
+  };
 
   const handleStart = () => {
     if (!project.trim()) return;
+    if (startAutopilot.error) startAutopilot.reset();
     startAutopilot.mutate(
       {
         project: project.trim(),
@@ -45,6 +55,7 @@ export function SessionStartDialog({
       {
         onSuccess: (data) => {
           setProject("");
+          startAutopilot.reset();
           if (data?.sessionId) {
             setSelectedSessionId(data.sessionId);
           }
@@ -55,7 +66,7 @@ export function SessionStartDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Start Autopilot Session</DialogTitle>
@@ -72,7 +83,10 @@ export function SessionStartDialog({
             <Input
               placeholder="~/my-project"
               value={project}
-              onChange={(e) => setProject(e.target.value)}
+              onChange={(e) => {
+                if (startAutopilot.error) startAutopilot.reset();
+                setProject(e.target.value);
+              }}
               autoFocus
             />
           </div>
@@ -82,7 +96,13 @@ export function SessionStartDialog({
               <label className="text-sm font-medium mb-1.5 block">
                 Pipeline
               </label>
-              <Select value={pipeline} onValueChange={setPipeline}>
+              <Select
+                value={pipeline}
+                onValueChange={(value) => {
+                  if (startAutopilot.error) startAutopilot.reset();
+                  setPipeline(value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -102,13 +122,23 @@ export function SessionStartDialog({
               <Input
                 type="number"
                 value={maxItems}
-                onChange={(e) => setMaxItems(e.target.value)}
+                onChange={(e) => {
+                  if (startAutopilot.error) startAutopilot.reset();
+                  setMaxItems(e.target.value);
+                }}
               />
             </div>
           </div>
 
+          {startError && (
+            <p className="text-sm text-destructive" role="alert">
+              Failed to start session: {startError}. Check the project path and
+              try again.
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button

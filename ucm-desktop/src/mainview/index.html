@@ -48,6 +48,15 @@
       color: rgba(255, 255, 255, 0.5);
       margin-top: 4px;
     }
+    .note {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.35);
+      margin-top: 8px;
+      min-height: 16px;
+    }
+    .note.warn {
+      color: rgba(255, 196, 125, 0.9);
+    }
     .dots::after {
       content: '';
       animation: dots 1.5s steps(4, end) infinite;
@@ -95,10 +104,51 @@
         <circle cx="32" cy="32" r="3" fill="rgba(200,230,255,0.9)"/>
       </svg>
     </div>
-    <div class="status">Starting UCM<span class="dots"></span></div>
+    <div class="status"><span data-status>Starting daemon</span><span class="dots"></span></div>
+    <div class="note" data-note>Preparing local services...</div>
     <div class="bar-container">
       <div class="bar"></div>
     </div>
   </div>
+  <script>
+    const statusEl = document.querySelector("[data-status]");
+    const noteEl = document.querySelector("[data-note]");
+    const checkpoints = [
+      {
+        atMs: 0,
+        status: "Starting daemon",
+        note: "Preparing local services...",
+      },
+      {
+        atMs: 3500,
+        status: "Loading dashboard",
+        note: "Connecting to localhost:17173",
+      },
+      {
+        atMs: 10000,
+        status: "Still starting",
+        note: "Large projects can take a bit longer on first run.",
+      },
+    ];
+    const startedAt = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - startedAt;
+      let current = checkpoints[0];
+      for (const step of checkpoints) {
+        if (elapsed >= step.atMs) current = step;
+      }
+      if (statusEl) statusEl.textContent = current.status;
+      if (noteEl) {
+        noteEl.textContent = current.note;
+        if (elapsed >= 18000) {
+          noteEl.classList.add("warn");
+          noteEl.textContent =
+            "Startup is delayed. If this persists, restart UCM Desktop.";
+        }
+      }
+    };
+    tick();
+    setInterval(tick, 1000);
+  </script>
 </body>
 </html>
