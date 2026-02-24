@@ -1,0 +1,13 @@
+{
+  "name": "ucm-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "dev": "electrobun dev",
+    "build": "electrobun build --env=stable",
+    "build:dev": "electrobun build --env=dev"
+  },
+  "devDependencies": {
+    "electrobun": "^1.0.0"
+  }
+}

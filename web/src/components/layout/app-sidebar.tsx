@@ -79,8 +79,18 @@ export function AppSidebar() {
     >
       {/* Logo */}
       <div className="flex h-14 items-center px-4 gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm shrink-0">
-          U
+        <div className="flex h-8 w-8 items-center justify-center shrink-0">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8">
+            <rect x="0" y="0" width="64" height="64" rx="14" fill="#0a0a0f"/>
+            <path d="M32 8L55 20.5V45.5L32 58L9 45.5V20.5L32 8Z" stroke="#3b82f6" strokeWidth="2.5" fill="none"/>
+            <circle cx="32" cy="10" r="4" fill="#60a5fa"/>
+            <circle cx="53" cy="44" r="4" fill="#60a5fa"/>
+            <circle cx="11" cy="44" r="4" fill="#60a5fa"/>
+            <line x1="32" y1="10" x2="53" y2="44" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
+            <line x1="53" y1="44" x2="11" y2="44" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
+            <line x1="11" y1="44" x2="32" y2="10" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
+            <circle cx="32" cy="33" r="3" fill="#93c5fd"/>
+          </svg>
         </div>
         {!collapsed && <span className="font-semibold text-foreground">UCM</span>}
       </div>

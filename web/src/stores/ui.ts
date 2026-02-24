@@ -50,7 +50,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  theme: (localStorage.getItem("ucm-theme") as Theme) || "dark",
+  theme: (localStorage.getItem("ucm-theme") as Theme) || "light",
   setTheme: (theme) => {
     localStorage.setItem("ucm-theme", theme);
     applyTheme(theme);
