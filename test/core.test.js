@@ -734,6 +734,7 @@ title: line1\\nline2
       dag.addTokenUsage(500, 250);
       dag.recordStage("implement", "pass", 3000, { input: 500, output: 250 });
       dag.warnings.push("test warning");
+      dag.currentStage = "verify";
 
       const json = dag.toJSON();
       const restored = new TaskDag(json);
@@ -744,6 +745,12 @@ title: line1\\nline2
       assertEqual(restored.tasks.length, 1, "tasks preserved");
       assertEqual(restored.tasks[0].id, "s1", "task id preserved");
       assertDeepEqual(restored.tokenUsage, { input: 500, output: 250 }, "tokenUsage preserved");
+      assertEqual(restored.currentStage, "verify", "currentStage preserved");
+      assertEqual(restored.stageHistory.length, 1, "stageHistory preserved");
+      assertEqual(restored.stageHistory[0].stage, "implement", "stageHistory entry stage");
+      assertEqual(restored.stageHistory[0].status, "pass", "stageHistory entry status");
+      assertEqual(restored.warnings.length, 1, "warnings preserved");
+      assertEqual(restored.warnings[0], "test warning", "warning content preserved");
     },
   });
 
