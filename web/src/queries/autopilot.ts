@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
 export function useAutopilotStatusQuery() {
@@ -77,8 +77,13 @@ export function useRejectAutopilotItem() {
 export function useFeedbackAutopilotItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ sessionId, feedback }: { sessionId: string; feedback: string }) =>
-      api.autopilot.feedbackItem(sessionId, feedback),
+    mutationFn: ({
+      sessionId,
+      feedback,
+    }: {
+      sessionId: string;
+      feedback: string;
+    }) => api.autopilot.feedbackItem(sessionId, feedback),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["autopilot"] }),
   });
 }
@@ -95,8 +100,15 @@ export function useAddDirective() {
 export function useEditDirective() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ sessionId, directiveId, text }: { sessionId: string; directiveId: string; text: string }) =>
-      api.autopilot.directives.edit(sessionId, directiveId, text),
+    mutationFn: ({
+      sessionId,
+      directiveId,
+      text,
+    }: {
+      sessionId: string;
+      directiveId: string;
+      text: string;
+    }) => api.autopilot.directives.edit(sessionId, directiveId, text),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["autopilot"] }),
   });
 }
@@ -104,8 +116,13 @@ export function useEditDirective() {
 export function useDeleteDirective() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ sessionId, directiveId }: { sessionId: string; directiveId: string }) =>
-      api.autopilot.directives.delete(sessionId, directiveId),
+    mutationFn: ({
+      sessionId,
+      directiveId,
+    }: {
+      sessionId: string;
+      directiveId: string;
+    }) => api.autopilot.directives.delete(sessionId, directiveId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["autopilot"] }),
   });
 }

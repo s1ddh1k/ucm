@@ -37,7 +37,7 @@ Options:
   -m, --model <model>        Model to use (default: backend default)
       --max-turns <N>        Max agentic turns per iteration (claude only)
       --allowedTools <tools> Comma-separated allowed tools (claude only)
-      --no-commit            Do not auto-commit changes
+      --no-commit            (deprecated, no-op)
       --max-failures <N>     Consecutive non-limit failures before stopping (default: 5)
       --max-rate-retries <N> Max rate-limit retries before stopping (default: 20)
       --backoff-initial <s>  Initial rate-limit backoff in seconds (default: 60)
@@ -311,7 +311,6 @@ LOG_DIR=".auto-improve-logs"
 MODEL=""
 MAX_TURNS=""
 ALLOWED_TOOLS=""
-NO_COMMIT=false
 MAX_CONSECUTIVE_FAILURES=5
 MAX_RATE_RETRIES=20
 BACKOFF_INITIAL=60
@@ -319,6 +318,7 @@ BACKOFF_MAX=1800
 PROMPT=""
 PROMPT_FILE=""
 PROMPT_NUMBER=""
+PROMPT_FIXED=""
 
 # ── parse args ──
 
@@ -327,7 +327,7 @@ while [[ $# -gt 0 ]]; do
     --codex)     BACKEND=codex; shift ;;
     --claude)    BACKEND=claude; shift ;;
     --list)      list_prompts; exit 0 ;;
-    --no-commit) NO_COMMIT=true; shift ;;
+    --no-commit) shift ;; # deprecated, no-op
     -C|--cwd)
       require_arg "$1" "${2:-}" "$#"
       CWD="$2"; shift 2 ;;
@@ -427,15 +427,21 @@ if [[ -n "$PROMPT_FILE" ]]; then
     echo "[error] prompt file not found: $PROMPT_FILE" >&2; exit 2
   fi
   PROMPT="$(cat "$PROMPT_FILE")"
-  echo "[info] prompt: $PROMPT_FILE" >&2
-elif [[ -z "$PROMPT" ]]; then
-  if [[ -n "$PROMPT_NUMBER" ]]; then
-    PROMPT_FILE=$(resolve_prompt_by_number "$PROMPT_NUMBER")
-  else
-    PROMPT_FILE=$(random_prompt_file)
-  fi
+  PROMPT_FIXED=1
+  echo "[info] prompt: $PROMPT_FILE (fixed)" >&2
+elif [[ -n "$PROMPT" ]]; then
+  PROMPT_FIXED=1
+  echo "[info] prompt: inline (fixed)" >&2
+elif [[ -n "$PROMPT_NUMBER" ]]; then
+  PROMPT_FILE=$(resolve_prompt_by_number "$PROMPT_NUMBER")
   PROMPT="$(cat "$PROMPT_FILE")"
-  echo "[info] prompt: $PROMPT_FILE" >&2
+  PROMPT_FIXED=1
+  echo "[info] prompt: $PROMPT_FILE (fixed)" >&2
+else
+  # 첫 iteration은 여기서 랜덤, 이후는 루프 안에서 매번 랜덤
+  PROMPT_FILE=$(random_prompt_file)
+  PROMPT="$(cat "$PROMPT_FILE")"
+  echo "[info] prompt: random (changes each iteration)" >&2
 fi
 
 if [[ -z "$PROMPT" ]]; then
@@ -528,8 +534,17 @@ BACKOFF_CURRENT="$BACKOFF_INITIAL"
 i=1
 while [[ "$i" -le "$MAX_ITERATIONS" ]]; do
   echo "" | tee -a "$RUN_LOG"
+  # 번호 지정 없으면 매 iteration마다 랜덤 프롬프트 선택
+  if [[ -z "$PROMPT_NUMBER" && -z "$PROMPT_FIXED" ]]; then
+    PROMPT_FILE=$(random_prompt_file)
+    PROMPT="$(cat "$PROMPT_FILE")"
+    local_prompt_name=$(basename "$PROMPT_FILE" .md)
+  else
+    local_prompt_name="${PROMPT_FILE:+$(basename "$PROMPT_FILE" .md)}"
+  fi
+
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$RUN_LOG"
-  echo "[iter:$i/$MAX_ITERATIONS] $(date '+%H:%M:%S') $BACKEND" | tee -a "$RUN_LOG"
+  echo "[iter:$i/$MAX_ITERATIONS] $(date '+%H:%M:%S') $BACKEND ${local_prompt_name:+[$local_prompt_name]}" | tee -a "$RUN_LOG"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" | tee -a "$RUN_LOG"
 
   OUT_FILE="$LOG_DIR/iter-${START_TS}-${i}.log"
@@ -573,24 +588,13 @@ while [[ "$i" -le "$MAX_ITERATIONS" ]]; do
   RATE_RETRIES=0
   BACKOFF_CURRENT="$BACKOFF_INITIAL"
 
-  # auto-commit
-  if [[ "$NO_COMMIT" == false ]]; then
-    (
-      cd "$CWD"
-      if ! git diff --quiet HEAD 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard 2>/dev/null)" ]]; then
-        echo "[iter:$i] committing changes..." | tee -a "$RUN_LOG"
-        git add -u
-        # also stage new files created by the agent (but respect .gitignore)
-        git add --intent-to-add . 2>/dev/null
-        git add -u
-        git commit -m "auto-improve($BACKEND): iteration $i
-
-Automated by auto-improve.sh" --no-verify 2>&1 | tee -a "$RUN_LOG"
-      else
-        echo "[iter:$i] no changes to commit" | tee -a "$RUN_LOG"
-      fi
-    )
-  fi
+  # warn if agent left uncommitted changes
+  (
+    cd "$CWD"
+    if ! git diff --quiet HEAD 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+      echo "[iter:$i] WARNING: uncommitted changes remain" | tee -a "$RUN_LOG"
+    fi
+  )
 
   echo "[iter:$i] done" | tee -a "$RUN_LOG"
   i=$((i + 1))

@@ -1,10 +1,10 @@
 // test/helpers/web-test-infra.js — test infrastructure for web/ frontend
 // Extends TestEnvironment to also start Vite dev server proxying to the UI server
 
-const { spawn } = require("child_process");
-const path = require("path");
-const http = require("http");
-const net = require("net");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+const http = require("node:http");
+const net = require("node:net");
 const { TestEnvironment } = require("./test-infra.js");
 const { trackPid, killDaemon } = require("./cleanup.js");
 
@@ -40,7 +40,7 @@ class WebTestEnvironment extends TestEnvironment {
           VITE_API_TARGET: `http://localhost:${this.uiPort}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
-      }
+      },
     );
     trackPid(this.viteProcess.pid);
 
@@ -55,15 +55,18 @@ class WebTestEnvironment extends TestEnvironment {
     const deadline = Date.now() + timeoutMs;
     return new Promise((resolve, reject) => {
       const attempt = () => {
-        if (Date.now() > deadline) return reject(new Error("Vite dev server not ready"));
-        http.get(`http://localhost:${this.vitePort}`, (res) => {
-          let data = "";
-          res.on("data", (chunk) => (data += chunk));
-          res.on("end", () => {
-            if (res.statusCode === 200) resolve();
-            else setTimeout(attempt, 300);
-          });
-        }).on("error", () => setTimeout(attempt, 300));
+        if (Date.now() > deadline)
+          return reject(new Error("Vite dev server not ready"));
+        http
+          .get(`http://localhost:${this.vitePort}`, (res) => {
+            let data = "";
+            res.on("data", (chunk) => (data += chunk));
+            res.on("end", () => {
+              if (res.statusCode === 200) resolve();
+              else setTimeout(attempt, 300);
+            });
+          })
+          .on("error", () => setTimeout(attempt, 300));
       };
       attempt();
     });

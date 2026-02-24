@@ -1,15 +1,26 @@
 #!/usr/bin/env node
-const { spawn, execFileSync } = require("child_process");
-const { readFile, writeFile, mkdir, rm, cp } = require("fs/promises");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
-const net = require("net");
+const { spawn, execFileSync } = require("node:child_process");
+const { readFile, writeFile, mkdir, rm, cp } = require("node:fs/promises");
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
+const net = require("node:net");
 
 const {
-  SOCK_PATH, PID_PATH, LOG_PATH, UCM_DIR, TASKS_DIR, SOURCE_ROOT,
-  SOCKET_READY_TIMEOUT_MS, SOCKET_POLL_INTERVAL_MS, CLIENT_TIMEOUT_MS,
-  parseTaskFile, cleanStaleFiles, readPid, isProcessAlive,
+  SOCK_PATH,
+  PID_PATH,
+  LOG_PATH,
+  UCM_DIR,
+  TASKS_DIR,
+  SOURCE_ROOT,
+  SOCKET_READY_TIMEOUT_MS,
+  SOCKET_POLL_INTERVAL_MS,
+  CLIENT_TIMEOUT_MS,
+  DEFAULT_CONFIG,
+  parseTaskFile,
+  cleanStaleFiles,
+  readPid,
+  isProcessAlive,
 } = require("../lib/ucmd.js");
 const { createSocketClient } = require("../lib/socket-client.js");
 
@@ -39,7 +50,7 @@ Usage:
     ucm reject <task-id> [--feedback "..."]   태스크 반려
     ucm cancel <task-id>                      태스크 취소
     ucm retry <task-id>                       실패한 태스크 재시도
-    ucm delete <task-id>                      태스크 삭제
+    ucm delete <task-id> [--force]            태스크 삭제
     ucm priority <task-id> <N>                우선순위 변경
     ucm gate approve <task-id>                스테이지 승인
     ucm gate reject <task-id>                 스테이지 반려
@@ -94,9 +105,9 @@ Options:
   --days <N>           gc 대상 일 수 (기본: 30)
   --follow, -f         로그 follow 모드
   --watch, -w          watch 모드
-  --port <N>           UI 서버 포트 (기본: 17172)
+  --port <N>           UI 서버 포트 (기본: ${DEFAULT_CONFIG.uiPort})
   --dev                프론트엔드 개발 모드
-  --force              강제 실행
+  --force              확인 없이 강제 실행 (예: delete)
   --help               도움말`;
 
 function tryOpenDashboard(url) {
@@ -117,11 +128,15 @@ function tryOpenDashboard(url) {
   try {
     const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
     child.on("error", () => {
-      console.error(`브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`);
+      console.error(
+        `브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`,
+      );
     });
     child.unref();
   } catch {
-    console.error(`브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`);
+    console.error(
+      `브라우저를 자동으로 열지 못했습니다. 직접 접속하세요: ${url}`,
+    );
   }
 }
 
@@ -171,32 +186,51 @@ function parseArgs(argv) {
       const pkg = require("../package.json");
       console.log(pkg.version);
       process.exit(0);
-    } else if (args[i] === "--status") { opts.status = readOptionValue("--status"); }
-    else if (args[i] === "--project") { opts.project = readOptionValue("--project"); }
-    else if (args[i] === "--title") { opts.title = readOptionValue("--title"); }
-    else if (args[i] === "--priority") { opts.priority = readIntegerOption("--priority"); }
-    else if (args[i] === "--feedback") { opts.feedback = readOptionValue("--feedback"); }
-    else if (args[i] === "--lines") { opts.lines = readIntegerOption("--lines", { min: 1 }); }
-    else if (args[i] === "--score") { opts.score = readIntegerOption("--score"); }
-    else if (args[i] === "--port") { opts.port = readIntegerOption("--port", { min: 1, max: 65535 }); }
-    else if (args[i] === "--dev") { opts.dev = true; }
+    } else if (args[i] === "--status") {
+      opts.status = readOptionValue("--status");
+    } else if (args[i] === "--project") {
+      opts.project = readOptionValue("--project");
+    } else if (args[i] === "--title") {
+      opts.title = readOptionValue("--title");
+    } else if (args[i] === "--priority") {
+      opts.priority = readIntegerOption("--priority");
+    } else if (args[i] === "--feedback") {
+      opts.feedback = readOptionValue("--feedback");
+    } else if (args[i] === "--lines") {
+      opts.lines = readIntegerOption("--lines", { min: 1 });
+    } else if (args[i] === "--score") {
+      opts.score = readIntegerOption("--score");
+    } else if (args[i] === "--port") {
+      opts.port = readIntegerOption("--port", { min: 1, max: 65535 });
+    } else if (args[i] === "--dev") {
+      opts.dev = true;
+    }
     // Forge-specific flags
-    else if (args[i] === "--pipeline") { opts.pipeline = readOptionValue("--pipeline"); }
-    else if (args[i] === "--autopilot") { opts.autopilot = true; }
-    else if (args[i] === "--file") { opts.file = readOptionValue("--file"); }
-    else if (args[i] === "--from") { opts.from = readOptionValue("--from"); }
-    else if (args[i] === "--budget") { opts.budget = readIntegerOption("--budget", { min: 0 }); }
-    else if (args[i] === "--days") { opts.days = readIntegerOption("--days", { min: 1 }); }
-    else if (args[i] === "--follow" || args[i] === "-f") { opts.follow = true; }
-    else if (args[i] === "--watch" || args[i] === "-w") {
+    else if (args[i] === "--pipeline") {
+      opts.pipeline = readOptionValue("--pipeline");
+    } else if (args[i] === "--autopilot") {
+      opts.autopilot = true;
+    } else if (args[i] === "--file") {
+      opts.file = readOptionValue("--file");
+    } else if (args[i] === "--from") {
+      opts.from = readOptionValue("--from");
+    } else if (args[i] === "--budget") {
+      opts.budget = readIntegerOption("--budget", { min: 0 });
+    } else if (args[i] === "--days") {
+      opts.days = readIntegerOption("--days", { min: 1 });
+    } else if (args[i] === "--follow" || args[i] === "-f") {
+      opts.follow = true;
+    } else if (args[i] === "--watch" || args[i] === "-w") {
       // Keep --watch as a backward-compatible alias for --follow in `logs`.
       opts.watch = true;
       opts.follow = true;
-    }
-    else if (args[i] === "--background" || args[i] === "--bg") { opts.background = true; }
-    else if (args[i] === "--verbose" || args[i] === "-v") { opts.verbose = true; }
-    else if (args[i] === "--force") { opts.force = true; }
-    else if (args[i].startsWith("-")) {
+    } else if (args[i] === "--background" || args[i] === "--bg") {
+      opts.background = true;
+    } else if (args[i] === "--verbose" || args[i] === "-v") {
+      opts.verbose = true;
+    } else if (args[i] === "--force") {
+      opts.force = true;
+    } else if (args[i].startsWith("-")) {
       console.error(`알 수 없는 옵션: ${args[i]}`);
       process.exit(1);
     } else {
@@ -221,6 +255,24 @@ function readStdin() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function promptYesNo(question, { defaultNo = true } = {}) {
+  const readline = require("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      const normalized = String(answer || "")
+        .trim()
+        .toLowerCase();
+      if (!normalized) return resolve(!defaultNo);
+      resolve(normalized === "y" || normalized === "yes");
+    });
+  });
 }
 
 function splitLogLines(logText) {
@@ -262,7 +314,11 @@ async function ensureDaemon() {
     await socketRequest({ method: "stats", params: {} });
     return;
   } catch (e) {
-    if (e.code !== "ECONNREFUSED" && e.code !== "ENOENT" && e.message !== "TIMEOUT") {
+    if (
+      e.code !== "ECONNREFUSED" &&
+      e.code !== "ENOENT" &&
+      e.message !== "TIMEOUT"
+    ) {
       throw e;
     }
   }
@@ -364,9 +420,12 @@ async function cmdList(opts) {
     console.log(`\n[${state}]`);
     for (const task of stateTasks) {
       const project = task.project ? ` (${path.basename(task.project)})` : "";
-      const stage = task.currentStage && (state === "running" || state === "review")
-        ? (task.stageGate ? ` ⏸ ${task.currentStage}` : ` → ${task.currentStage}`)
-        : "";
+      const stage =
+        task.currentStage && (state === "running" || state === "review")
+          ? task.stageGate
+            ? ` ⏸ ${task.currentStage}`
+            : ` → ${task.currentStage}`
+          : "";
       console.log(`  ${task.id}  ${task.title}${project}${stage}`);
     }
   }
@@ -376,7 +435,10 @@ async function cmdStart(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm start <task-id>"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수: ucm start <task-id>");
+    process.exit(1);
+  }
 
   const result = await socketRequest({ method: "start", params: { taskId } });
   console.log(`started: ${result.id} → ${result.status}`);
@@ -409,7 +471,9 @@ async function cmdStatus(opts) {
   if (task.project) console.log(`project:  ${task.project}`);
   if (task.pipelineType) console.log(`pipeline: ${task.pipelineType}`);
   if (task.currentStage) {
-    const stageLabel = task.stageGate ? `${task.currentStage} (⏸ awaiting approval)` : task.currentStage;
+    const stageLabel = task.stageGate
+      ? `${task.currentStage} (⏸ awaiting approval)`
+      : task.currentStage;
     console.log(`stage:    ${stageLabel}`);
   }
   if (task.created) console.log(`created:  ${task.created}`);
@@ -420,19 +484,29 @@ async function cmdStatus(opts) {
   // Token usage
   if (task.tokenUsage) {
     const tu = task.tokenUsage;
-    const fmt = (n) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const fmt = (n) =>
+      n >= 1000000
+        ? `${(n / 1000000).toFixed(1)}M`
+        : n >= 1000
+          ? `${(n / 1000).toFixed(1)}k`
+          : String(n);
     const input = tu.input || tu.inputTokens || 0;
     const output = tu.output || tu.outputTokens || 0;
-    console.log(`tokens:   ${fmt(input)} in / ${fmt(output)} out (${fmt(input + output)} total)`);
+    console.log(
+      `tokens:   ${fmt(input)} in / ${fmt(output)} out (${fmt(input + output)} total)`,
+    );
   }
 
   // Stage history
   if (task.stageHistory && task.stageHistory.length > 0) {
     console.log(`\nstage history:`);
     for (const s of task.stageHistory) {
-      const status = s.status === "pass" ? "✓" : s.status === "fail" ? "✗" : "·";
+      const status =
+        s.status === "pass" ? "✓" : s.status === "fail" ? "✗" : "·";
       const dur = s.durationMs ? ` (${(s.durationMs / 1000).toFixed(1)}s)` : "";
-      const tokens = s.tokenUsage ? ` [${((s.tokenUsage.input || 0) + (s.tokenUsage.output || 0))} tok]` : "";
+      const tokens = s.tokenUsage
+        ? ` [${(s.tokenUsage.input || 0) + (s.tokenUsage.output || 0)} tok]`
+        : "";
       console.log(`  ${status} ${s.stage}${dur}${tokens}`);
     }
   }
@@ -448,7 +522,10 @@ async function cmdApprove(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수");
+    process.exit(1);
+  }
 
   const params = { taskId };
   if (opts.score !== undefined) params.score = opts.score;
@@ -460,7 +537,10 @@ async function cmdReject(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수");
+    process.exit(1);
+  }
 
   const result = await socketRequest({
     method: "reject",
@@ -473,7 +553,10 @@ async function cmdCancel(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수");
+    process.exit(1);
+  }
 
   const result = await socketRequest({ method: "cancel", params: { taskId } });
   console.log(`cancelled: ${result.id}`);
@@ -483,7 +566,10 @@ async function cmdDiff(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수");
+    process.exit(1);
+  }
 
   const diffs = await socketRequest({ method: "diff", params: { taskId } });
   for (const entry of diffs) {
@@ -496,7 +582,10 @@ async function cmdLogs(opts) {
   await ensureDaemon();
 
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수");
+    process.exit(1);
+  }
 
   const logs = await socketRequest({
     method: "logs",
@@ -518,7 +607,7 @@ async function cmdLogs(opts) {
     const currentLines = splitLogLines(currentLogs);
     const newLines = appendedLogLines(lastLines, currentLines);
     if (newLines.length > 0) {
-      process.stdout.write(newLines.join("\n") + "\n");
+      process.stdout.write(`${newLines.join("\n")}\n`);
     }
     lastLines = currentLines;
 
@@ -529,7 +618,10 @@ async function cmdLogs(opts) {
 async function cmdRetry(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm retry <task-id>"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수: ucm retry <task-id>");
+    process.exit(1);
+  }
   const result = await socketRequest({ method: "retry", params: { taskId } });
   console.log(`retried: ${result.id} → ${result.status}`);
 }
@@ -537,7 +629,26 @@ async function cmdRetry(opts) {
 async function cmdDelete(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm delete <task-id>"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수: ucm delete <task-id>");
+    process.exit(1);
+  }
+  if (!opts.force) {
+    if (!process.stdin.isTTY || !process.stderr.isTTY) {
+      console.error(
+        `삭제 확인을 받을 수 없습니다(비대화형 입력). 계속하려면 \`ucm delete ${taskId} --force\`를 사용하세요.`,
+      );
+      process.exit(1);
+    }
+    const confirmed = await promptYesNo(
+      `태스크 ${taskId}를 삭제합니다. 로그/아티팩트도 함께 제거됩니다. 계속할까요? [y/N] `,
+      { defaultNo: true },
+    );
+    if (!confirmed) {
+      console.log(`cancelled: ${taskId} (삭제하지 않음)`);
+      return;
+    }
+  }
   const result = await socketRequest({ method: "delete", params: { taskId } });
   console.log(`deleted: ${result.id}`);
 }
@@ -545,25 +656,43 @@ async function cmdDelete(opts) {
 async function cmdGateApprove(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm gate approve <task-id>"); process.exit(1); }
-  const result = await socketRequest({ method: "stage_gate_approve", params: { taskId } });
+  if (!taskId) {
+    console.error("task-id 필수: ucm gate approve <task-id>");
+    process.exit(1);
+  }
+  const result = await socketRequest({
+    method: "stage_gate_approve",
+    params: { taskId },
+  });
   console.log(`gate approved: ${result.id}`);
 }
 
 async function cmdGateReject(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm gate reject <task-id>"); process.exit(1); }
-  const result = await socketRequest({ method: "stage_gate_reject", params: { taskId, feedback: opts.feedback } });
+  if (!taskId) {
+    console.error("task-id 필수: ucm gate reject <task-id>");
+    process.exit(1);
+  }
+  const result = await socketRequest({
+    method: "stage_gate_reject",
+    params: { taskId, feedback: opts.feedback },
+  });
   console.log(`gate rejected: ${result.id}`);
 }
 
 async function cmdPriority(opts) {
   await ensureDaemon();
   const taskId = opts.positional[0];
-  const priority = parseInt(opts.positional[1]);
-  if (!taskId || isNaN(priority)) { console.error("사용법: ucm priority <task-id> <value>"); process.exit(1); }
-  const result = await socketRequest({ method: "update_priority", params: { taskId, priority } });
+  const priority = parseInt(opts.positional[1], 10);
+  if (!taskId || Number.isNaN(priority)) {
+    console.error("사용법: ucm priority <task-id> <value>");
+    process.exit(1);
+  }
+  const result = await socketRequest({
+    method: "update_priority",
+    params: { taskId, priority },
+  });
   console.log(`priority updated: ${result.id} → ${result.priority}`);
 }
 
@@ -601,7 +730,10 @@ async function cmdObserve(opts) {
   await ensureDaemon();
 
   if (opts.status) {
-    const status = await socketRequest({ method: "observe_status", params: {} });
+    const status = await socketRequest({
+      method: "observe_status",
+      params: {},
+    });
     console.log(`cycle:          ${status.cycle}`);
     console.log(`last run:       ${status.lastRunAt || "(never)"}`);
     console.log(`enabled:        ${status.observerConfig.enabled}`);
@@ -611,14 +743,18 @@ async function cmdObserve(opts) {
       console.log(`\nlatest snapshot:`);
       console.log(`  timestamp:    ${status.latestSnapshot.timestamp}`);
       console.log(`  tasks:        ${status.latestSnapshot.taskCount ?? "-"}`);
-      console.log(`  success rate: ${status.latestSnapshot.successRate != null ? (status.latestSnapshot.successRate * 100).toFixed(1) + "%" : "-"}`);
+      console.log(
+        `  success rate: ${status.latestSnapshot.successRate != null ? `${(status.latestSnapshot.successRate * 100).toFixed(1)}%` : "-"}`,
+      );
     }
     return;
   }
 
   console.log("running observer...");
   const result = await socketRequest({ method: "observe", params: {} });
-  console.log(`cycle ${result.cycle}: ${result.proposalCount} proposal(s) created`);
+  console.log(
+    `cycle ${result.cycle}: ${result.proposalCount} proposal(s) created`,
+  );
   if (result.error) console.log(`error: ${result.error}`);
 }
 
@@ -645,10 +781,18 @@ async function cmdProposals(opts) {
   for (const [status, statusProposals] of Object.entries(grouped)) {
     console.log(`\n[${status}]`);
     for (const proposal of statusProposals) {
-      const priority = proposal.priority ? ` (priority: ${proposal.priority})` : "";
-      const project = proposal.project ? ` → ${path.basename(proposal.project)}` : "";
-      const verdict = proposal.evaluation?.verdict ? ` [${proposal.evaluation.verdict}]` : "";
-      console.log(`  ${proposal.id}  [${proposal.category}/${proposal.risk}] ${proposal.title}${project}${priority}${verdict}`);
+      const priority = proposal.priority
+        ? ` (priority: ${proposal.priority})`
+        : "";
+      const project = proposal.project
+        ? ` → ${path.basename(proposal.project)}`
+        : "";
+      const verdict = proposal.evaluation?.verdict
+        ? ` [${proposal.evaluation.verdict}]`
+        : "";
+      console.log(
+        `  ${proposal.id}  [${proposal.category}/${proposal.risk}] ${proposal.title}${project}${priority}${verdict}`,
+      );
     }
   }
 }
@@ -672,12 +816,23 @@ async function cmdProposal(opts) {
       });
       console.log(`proposal: ${result.proposalId} (${result.status})`);
       if (result.evaluation) {
-        console.log(`verdict:  ${result.evaluation.verdict} (score: ${result.evaluation.score})`);
+        console.log(
+          `verdict:  ${result.evaluation.verdict} (score: ${result.evaluation.score})`,
+        );
         const d = result.evaluation.delta;
         if (d) {
-          if (d.successRate != null) console.log(`  successRate:  ${d.successRate > 0 ? "+" : ""}${(d.successRate * 100).toFixed(1)}%`);
-          if (d.firstPassRate != null) console.log(`  firstPassRate: ${d.firstPassRate > 0 ? "+" : ""}${(d.firstPassRate * 100).toFixed(1)}%`);
-          if (d.avgPipelineDurationMs != null) console.log(`  avgDuration:  ${d.avgPipelineDurationMs > 0 ? "+" : ""}${d.avgPipelineDurationMs}ms`);
+          if (d.successRate != null)
+            console.log(
+              `  successRate:  ${d.successRate > 0 ? "+" : ""}${(d.successRate * 100).toFixed(1)}%`,
+            );
+          if (d.firstPassRate != null)
+            console.log(
+              `  firstPassRate: ${d.firstPassRate > 0 ? "+" : ""}${(d.firstPassRate * 100).toFixed(1)}%`,
+            );
+          if (d.avgPipelineDurationMs != null)
+            console.log(
+              `  avgDuration:  ${d.avgPipelineDurationMs > 0 ? "+" : ""}${d.avgPipelineDurationMs}ms`,
+            );
         }
       } else {
         console.log("(no evaluation yet)");
@@ -740,7 +895,9 @@ async function cmdRelease(opts) {
   console.log("릴리즈 전 테스트 실행...");
   try {
     execFileSync("node", [path.join(SOURCE_ROOT, "test", "ucm.test.js")], {
-      cwd: SOURCE_ROOT, stdio: "inherit", timeout: 60000,
+      cwd: SOURCE_ROOT,
+      stdio: "inherit",
+      timeout: 60000,
     });
     console.log("테스트 통과");
   } catch {
@@ -757,7 +914,9 @@ async function cmdRelease(opts) {
     });
     console.log("대시보드 빌드 통과");
   } catch {
-    console.error("대시보드 빌드 실패 — 릴리즈 중단. --force로 건너뛸 수 있습니다.");
+    console.error(
+      "대시보드 빌드 실패 — 릴리즈 중단. --force로 건너뛸 수 있습니다.",
+    );
     if (!opts.force) process.exit(1);
   }
 
@@ -771,7 +930,16 @@ async function cmdRelease(opts) {
   await mkdir(releaseDir, { recursive: true });
 
   // copy source directories and files
-  const items = ["bin", "lib", "templates", "skill", "scripts", "web/dist", "package.json", "package-lock.json"];
+  const items = [
+    "bin",
+    "lib",
+    "templates",
+    "skill",
+    "scripts",
+    "web/dist",
+    "package.json",
+    "package-lock.json",
+  ];
   for (const item of items) {
     const src = path.join(SOURCE_ROOT, item);
     const dst = path.join(releaseDir, item);
@@ -792,15 +960,21 @@ async function cmdRelease(opts) {
 
   // shutdown existing release daemon if running
   try {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve, _reject) => {
       const conn = net.createConnection(releaseSockPath);
       conn.on("connect", () => {
-        conn.write(JSON.stringify({ id: "shutdown", method: "shutdown", params: {} }) + "\n");
+        conn.write(
+          JSON.stringify({ id: "shutdown", method: "shutdown", params: {} }) +
+            "\n",
+        );
         conn.end();
         resolve();
       });
       conn.on("error", () => resolve());
-      setTimeout(() => { conn.destroy(); resolve(); }, 2000);
+      setTimeout(() => {
+        conn.destroy();
+        resolve();
+      }, 2000);
     });
     // wait for old daemon to exit
     await new Promise((r) => setTimeout(r, 2000));
@@ -845,14 +1019,21 @@ async function cmdChat() {
   const CHAT_DIR = path.join(UCM_DIR, "chat");
   const CHAT_NOTES_PATH = path.join(CHAT_DIR, "notes.md");
 
-  const template = await readFile(path.join(TEMPLATES_DIR, "ucm-chat-system.md"), "utf-8");
+  const template = await readFile(
+    path.join(TEMPLATES_DIR, "ucm-chat-system.md"),
+    "utf-8",
+  );
   const systemPrompt = template
     .replace(/\{\{CWD\}\}/g, process.cwd())
     .replace("{{NOTES_PATH}}", CHAT_NOTES_PATH);
 
-  const child = spawn("claude", ["--system-prompt", systemPrompt, "--dangerously-skip-permissions"], {
-    stdio: "inherit",
-  });
+  const child = spawn(
+    "claude",
+    ["--system-prompt", systemPrompt, "--dangerously-skip-permissions"],
+    {
+      stdio: "inherit",
+    },
+  );
 
   await new Promise((resolve, reject) => {
     child.on("close", (code) => resolve(code));
@@ -869,8 +1050,11 @@ function createQuestionHandler() {
       console.error(`    ${i + 1}. ${options[i].label}`);
     }
 
-    const readline = require("readline");
-    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    const readline = require("node:readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
     const answer = await new Promise((resolve) => {
       rl.question("  선택 (번호 또는 직접 입력): ", (ans) => {
         rl.close();
@@ -878,7 +1062,7 @@ function createQuestionHandler() {
       });
     });
 
-    const num = parseInt(answer);
+    const num = parseInt(answer, 10);
     if (num >= 1 && num <= options.length) {
       return options[num - 1].label;
     }
@@ -897,20 +1081,32 @@ function createEventHandler(opts) {
   }
 
   const STAGE_EST = {
-    intake: "~1-5min", clarify: "~3-10min", specify: "~3-15min", decompose: "~3-10min",
-    design: "~5-20min", implement: "~10-45min", verify: "~5-20min", polish: "~10-60min", integrate: "~5-20min", deliver: "~1-5min",
+    intake: "~1-5min",
+    clarify: "~3-10min",
+    specify: "~3-15min",
+    decompose: "~3-10min",
+    design: "~5-20min",
+    implement: "~10-45min",
+    verify: "~5-20min",
+    polish: "~10-60min",
+    integrate: "~5-20min",
+    deliver: "~1-5min",
   };
 
   return (event, data) => {
     if (event === "stage:start") {
       stageIndex++;
       const est = STAGE_EST[data.stage] || "";
-      console.error(`\n── [${elapsed()}] ${data.stage} (step ${stageIndex})${est ? " " + est : ""} ──`);
+      console.error(
+        `\n── [${elapsed()}] ${data.stage} (step ${stageIndex})${est ? ` ${est}` : ""} ──`,
+      );
     } else if (event === "stage:complete") {
       const sec = Math.round(data.durationMs / 1000);
       console.error(`  ${data.status} (${sec}s)`);
     } else if (event === "gate:result") {
-      console.error(`  [${data.gate}] ${data.result} (iteration ${data.iteration})`);
+      console.error(
+        `  [${data.gate}] ${data.result} (iteration ${data.iteration})`,
+      );
     } else if (event === "subtask:start") {
       console.error(`\n  >> subtask: ${data.subtaskId} — ${data.title}`);
     } else if (event === "subtask:complete") {
@@ -919,13 +1115,21 @@ function createEventHandler(opts) {
       const chunk = data.chunk || "";
       if (opts.verbose) {
         console.error(`  ${chunk.slice(0, 200)}`);
-      } else if (chunk.startsWith("[tool]") || chunk.startsWith("[") || chunk.startsWith("---")) {
+      } else if (
+        chunk.startsWith("[tool]") ||
+        chunk.startsWith("[") ||
+        chunk.startsWith("---")
+      ) {
         console.error(`  ${chunk.slice(0, 120)}`);
       }
     } else if (event === "warning:budget") {
-      console.error(`\n  !! budget ${data.percent}%: ${data.used}/${data.budget} tokens`);
+      console.error(
+        `\n  !! budget ${data.percent}%: ${data.used}/${data.budget} tokens`,
+      );
     } else if (event === "notice:budget") {
-      console.error(`  [budget] ${data.percent}%: ${data.used}/${data.budget} tokens`);
+      console.error(
+        `  [budget] ${data.percent}%: ${data.used}/${data.budget} tokens`,
+      );
     } else if (event === "pipeline:error") {
       console.error(`\n[${elapsed()}] error: ${data.error}`);
     } else if (event === "pipeline:complete") {
@@ -941,13 +1145,18 @@ async function cmdForge(opts) {
   } else if (opts.positional.length > 0) {
     input = opts.positional.join(" ");
   } else {
-    console.error("태스크 설명 필수: ucm forge \"설명\" 또는 ucm forge --file <file.md>");
+    console.error(
+      '태스크 설명 필수: ucm forge "설명" 또는 ucm forge --file <file.md>',
+    );
     process.exit(1);
   }
 
   const project = opts.project ? path.resolve(opts.project) : process.cwd();
 
-  if (opts.pipeline && !["trivial", "small", "medium", "large"].includes(opts.pipeline)) {
+  if (
+    opts.pipeline &&
+    !["trivial", "small", "medium", "large"].includes(opts.pipeline)
+  ) {
     if (opts.pipeline.includes(",")) {
       const { STAGE_ARTIFACTS } = require("../lib/core/constants");
       const validStages = new Set(Object.keys(STAGE_ARTIFACTS));
@@ -983,7 +1192,9 @@ async function cmdForge(opts) {
         },
       });
       console.log(result.taskId);
-      console.error("background task started. Use `ucm status <id>` or `ucm logs <id>` to monitor.");
+      console.error(
+        "background task started. Use `ucm status <id>` or `ucm logs <id>` to monitor.",
+      );
       return;
     } catch (e) {
       console.error(`daemon 위임 실패, foreground로 실행합니다: ${e.message}`);
@@ -1003,8 +1214,13 @@ async function cmdForge(opts) {
   });
 
   // 토큰 사용량 표시
-  if (dag.tokenUsage && (dag.tokenUsage.input > 0 || dag.tokenUsage.output > 0)) {
-    console.error(`\ntokens: ${dag.tokenUsage.input} in / ${dag.tokenUsage.output} out`);
+  if (
+    dag.tokenUsage &&
+    (dag.tokenUsage.input > 0 || dag.tokenUsage.output > 0)
+  ) {
+    console.error(
+      `\ntokens: ${dag.tokenUsage.input} in / ${dag.tokenUsage.output} out`,
+    );
   }
 
   console.log(dag.id);
@@ -1012,7 +1228,10 @@ async function cmdForge(opts) {
 
 async function cmdForgeResume(opts) {
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm resume <id>"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수: ucm resume <id>");
+    process.exit(1);
+  }
 
   const project = await resolveForgeResumeProject(taskId, opts.project);
 
@@ -1035,7 +1254,9 @@ async function cmdForgeResume(opts) {
         },
       });
       console.log(result.taskId);
-      console.error("background resume started. Use `ucm status <id>` or `ucm logs <id>` to monitor.");
+      console.error(
+        "background resume started. Use `ucm status <id>` or `ucm logs <id>` to monitor.",
+      );
       return;
     } catch (e) {
       console.error(`daemon 위임 실패, foreground로 실행합니다: ${e.message}`);
@@ -1054,8 +1275,13 @@ async function cmdForgeResume(opts) {
     onQuestion: opts.autopilot ? null : createQuestionHandler(),
   });
 
-  if (dag.tokenUsage && (dag.tokenUsage.input > 0 || dag.tokenUsage.output > 0)) {
-    console.error(`\ntokens: ${dag.tokenUsage.input} in / ${dag.tokenUsage.output} out`);
+  if (
+    dag.tokenUsage &&
+    (dag.tokenUsage.input > 0 || dag.tokenUsage.output > 0)
+  ) {
+    console.error(
+      `\ntokens: ${dag.tokenUsage.input} in / ${dag.tokenUsage.output} out`,
+    );
   }
 
   console.log(dag.id);
@@ -1068,9 +1294,12 @@ async function resolveForgeResumeProject(taskId, projectOption) {
   try {
     const { loadWorkspace } = require("../lib/core/worktree");
     const workspace = await loadWorkspace(taskId);
-    const projects = Array.isArray(workspace?.projects) ? workspace.projects : [];
+    const projects = Array.isArray(workspace?.projects)
+      ? workspace.projects
+      : [];
     if (projects.length > 0) {
-      const primary = projects.find((project) => project?.role === "primary") || projects[0];
+      const primary =
+        projects.find((project) => project?.role === "primary") || projects[0];
       const candidate = primary?.origin || primary?.path;
       if (typeof candidate === "string" && candidate.trim()) {
         return path.resolve(candidate);
@@ -1082,7 +1311,10 @@ async function resolveForgeResumeProject(taskId, projectOption) {
 
 async function cmdAbort(opts) {
   const taskId = opts.positional[0];
-  if (!taskId) { console.error("task-id 필수: ucm abort <id>"); process.exit(1); }
+  if (!taskId) {
+    console.error("task-id 필수: ucm abort <id>");
+    process.exit(1);
+  }
 
   const { TaskDag } = require("../lib/core/task");
   const dag = await TaskDag.load(taskId);
@@ -1133,7 +1365,9 @@ async function cmdAnalyze(opts) {
     console.error(`error: ${result.error}`);
     return;
   }
-  console.log(`${result.proposalCount} proposals created for ${result.project}`);
+  console.log(
+    `${result.proposalCount} proposals created for ${result.project}`,
+  );
   if (result.proposals && result.proposals.length > 0) {
     for (const p of result.proposals) {
       console.log(`  ${p.id}  [${p.category}/${p.risk}]  ${p.title}`);
@@ -1163,16 +1397,28 @@ async function cmdMergeQueue(opts) {
 
   if (subcommand === "retry") {
     const taskId = opts.positional[1];
-    if (!taskId) { console.error("task-id 필수: ucm merge-queue retry <task-id>"); process.exit(1); }
-    const result = await socketRequest({ method: "merge_queue_retry", params: { taskId } });
+    if (!taskId) {
+      console.error("task-id 필수: ucm merge-queue retry <task-id>");
+      process.exit(1);
+    }
+    const result = await socketRequest({
+      method: "merge_queue_retry",
+      params: { taskId },
+    });
     console.log(`merge queue retry: ${result.id} → ${result.status}`);
     return;
   }
 
   if (subcommand === "skip") {
     const taskId = opts.positional[1];
-    if (!taskId) { console.error("task-id 필수: ucm merge-queue skip <task-id>"); process.exit(1); }
-    const result = await socketRequest({ method: "merge_queue_skip", params: { taskId } });
+    if (!taskId) {
+      console.error("task-id 필수: ucm merge-queue skip <task-id>");
+      process.exit(1);
+    }
+    const result = await socketRequest({
+      method: "merge_queue_skip",
+      params: { taskId },
+    });
     console.log(`merge queue skip: ${result.id} → ${result.status}`);
     return;
   }
@@ -1190,24 +1436,40 @@ async function cmdMergeQueue(opts) {
     }
     for (const project of projects) {
       const queue = status[project];
-      console.log(`\n[${path.basename(project)}] (${queue.queueLength} entries${queue.processing ? ", processing" : ""})`);
+      console.log(
+        `\n[${path.basename(project)}] (${queue.queueLength} entries${queue.processing ? ", processing" : ""})`,
+      );
       if (queue.current) {
-        const rebase = queue.current.rebaseCount > 0 ? ` (rebase: ${queue.current.rebaseCount})` : "";
-        console.log(`  ▶ ${queue.current.taskId}  ${queue.current.status}${rebase}`);
+        const rebase =
+          queue.current.rebaseCount > 0
+            ? ` (rebase: ${queue.current.rebaseCount})`
+            : "";
+        console.log(
+          `  ▶ ${queue.current.taskId}  ${queue.current.status}${rebase}`,
+        );
       }
       for (const entry of queue.entries) {
-        const rebase = entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
+        const rebase =
+          entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
         console.log(`    ${entry.taskId}  ${entry.status}${rebase}`);
       }
     }
   } else if (status && (status.entries || status.current)) {
-    console.log(`\n[${path.basename(status.project || "unknown")}] (${status.queueLength} entries${status.processing ? ", processing" : ""})`);
+    console.log(
+      `\n[${path.basename(status.project || "unknown")}] (${status.queueLength} entries${status.processing ? ", processing" : ""})`,
+    );
     if (status.current) {
-      const rebase = status.current.rebaseCount > 0 ? ` (rebase: ${status.current.rebaseCount})` : "";
-      console.log(`  ▶ ${status.current.taskId}  ${status.current.status}${rebase}`);
+      const rebase =
+        status.current.rebaseCount > 0
+          ? ` (rebase: ${status.current.rebaseCount})`
+          : "";
+      console.log(
+        `  ▶ ${status.current.taskId}  ${status.current.status}${rebase}`,
+      );
     }
     for (const entry of status.entries) {
-      const rebase = entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
+      const rebase =
+        entry.rebaseCount > 0 ? ` (rebase: ${entry.rebaseCount})` : "";
       console.log(`    ${entry.taskId}  ${entry.status}${rebase}`);
     }
   } else {
@@ -1234,15 +1496,22 @@ async function cmdDaemon(opts) {
 
 function getNextAction(dag) {
   const state = dag.state || dag.status;
-  if (dag.stageGate) return `ucm gate approve ${dag.id}  또는  ucm gate reject ${dag.id}`;
+  if (dag.stageGate)
+    return `ucm gate approve ${dag.id}  또는  ucm gate reject ${dag.id}`;
   switch (state) {
-    case "pending": return `ucm start ${dag.id}`;
+    case "pending":
+      return `ucm start ${dag.id}`;
     case "running":
-    case "in_progress": return `ucm logs ${dag.id}  (진행 중)`;
-    case "review": return `ucm approve ${dag.id}  또는  ucm reject ${dag.id} --feedback "..."`;
-    case "rejected": return `ucm resume ${dag.id}`;
-    case "failed": return `ucm retry ${dag.id}  또는  ucm resume ${dag.id} --from ${dag.currentStage || "implement"}`;
-    default: return null;
+    case "in_progress":
+      return `ucm logs ${dag.id}  (진행 중)`;
+    case "review":
+      return `ucm approve ${dag.id}  또는  ucm reject ${dag.id} --feedback "..."`;
+    case "rejected":
+      return `ucm resume ${dag.id}`;
+    case "failed":
+      return `ucm retry ${dag.id}  또는  ucm resume ${dag.id} --from ${dag.currentStage || "implement"}`;
+    default:
+      return null;
   }
 }
 
@@ -1260,10 +1529,14 @@ async function cmdInit() {
     execFileSync("which", ["claude"], { stdio: "pipe" });
     claudeOk = true;
   } catch {}
-  console.log(`  ${claudeOk ? "\u2713" : "\u2717"} claude CLI ${claudeOk ? "found" : "not found — install from https://docs.anthropic.com/en/docs/claude-code"}`);
+  console.log(
+    `  ${claudeOk ? "\u2713" : "\u2717"} claude CLI ${claudeOk ? "found" : "not found — install from https://docs.anthropic.com/en/docs/claude-code"}`,
+  );
 
   const apiKeyOk = !!process.env.ANTHROPIC_API_KEY;
-  console.log(`  ${apiKeyOk ? "\u2713" : "\u2717"} ANTHROPIC_API_KEY ${apiKeyOk ? "set" : "not set — export ANTHROPIC_API_KEY=sk-..."}`);
+  console.log(
+    `  ${apiKeyOk ? "\u2713" : "\u2717"} ANTHROPIC_API_KEY ${apiKeyOk ? "set" : "not set — export ANTHROPIC_API_KEY=sk-..."}`,
+  );
 
   console.log("");
 
@@ -1311,7 +1584,9 @@ async function cmdInit() {
   console.log("");
 
   if (!claudeOk || !apiKeyOk) {
-    console.log("\u26A0 Please resolve the prerequisite issues above before using UCM.");
+    console.log(
+      "\u26A0 Please resolve the prerequisite issues above before using UCM.",
+    );
   } else {
     console.log("Ready to go! Run `ucm daemon start` to begin.");
   }
@@ -1329,45 +1604,102 @@ async function main() {
 
   switch (opts.command) {
     // Forge commands
-    case "forge": await cmdForge(opts); break;
-    case "abort": await cmdAbort(opts); break;
-    case "gc": await cmdGc(opts); break;
-    case "analyze": await cmdAnalyze(opts); break;
-    case "research": await cmdResearch(opts); break;
+    case "forge":
+      await cmdForge(opts);
+      break;
+    case "abort":
+      await cmdAbort(opts);
+      break;
+    case "gc":
+      await cmdGc(opts);
+      break;
+    case "analyze":
+      await cmdAnalyze(opts);
+      break;
+    case "research":
+      await cmdResearch(opts);
+      break;
     // Task management (daemon)
-    case "submit": await cmdSubmit(opts); break;
-    case "start": await cmdStart(opts); break;
-    case "list": await cmdList(opts); break;
-    case "status": await cmdStatus(opts); break;
-    case "approve": await cmdApprove(opts); break;
-    case "reject": await cmdReject(opts); break;
-    case "cancel": await cmdCancel(opts); break;
-    case "retry": await cmdRetry(opts); break;
-    case "delete": await cmdDelete(opts); break;
+    case "submit":
+      await cmdSubmit(opts);
+      break;
+    case "start":
+      await cmdStart(opts);
+      break;
+    case "list":
+      await cmdList(opts);
+      break;
+    case "status":
+      await cmdStatus(opts);
+      break;
+    case "approve":
+      await cmdApprove(opts);
+      break;
+    case "reject":
+      await cmdReject(opts);
+      break;
+    case "cancel":
+      await cmdCancel(opts);
+      break;
+    case "retry":
+      await cmdRetry(opts);
+      break;
+    case "delete":
+      await cmdDelete(opts);
+      break;
     case "gate": {
       const sub = opts.positional.shift();
       if (sub === "approve") await cmdGateApprove(opts);
       else if (sub === "reject") await cmdGateReject(opts);
-      else { console.error("사용법: ucm gate <approve|reject> <task-id>"); process.exit(1); }
+      else {
+        console.error("사용법: ucm gate <approve|reject> <task-id>");
+        process.exit(1);
+      }
       break;
     }
-    case "priority": await cmdPriority(opts); break;
-    case "diff": await cmdDiff(opts); break;
-    case "logs": await cmdLogs(opts); break;
+    case "priority":
+      await cmdPriority(opts);
+      break;
+    case "diff":
+      await cmdDiff(opts);
+      break;
+    case "logs":
+      await cmdLogs(opts);
+      break;
     // Merge queue
-    case "merge-queue": await cmdMergeQueue(opts); break;
+    case "merge-queue":
+      await cmdMergeQueue(opts);
+      break;
     // Daemon control
-    case "daemon": await cmdDaemon(opts); break;
-    case "pause": await cmdPause(); break;
-    case "resume": await cmdResume(opts); break;
-    case "stats": await cmdStats(); break;
+    case "daemon":
+      await cmdDaemon(opts);
+      break;
+    case "pause":
+      await cmdPause();
+      break;
+    case "resume":
+      await cmdResume(opts);
+      break;
+    case "stats":
+      await cmdStats();
+      break;
     // Proposals & observe
-    case "observe": await cmdObserve(opts); break;
-    case "proposals": await cmdProposals(opts); break;
-    case "proposal": await cmdProposal(opts); break;
+    case "observe":
+      await cmdObserve(opts);
+      break;
+    case "proposals":
+      await cmdProposals(opts);
+      break;
+    case "proposal":
+      await cmdProposal(opts);
+      break;
     // Other
-    case "init": await cmdInit(); break;
-    case "chat": await cmdChat(); break;
+    case "init":
+      await cmdInit();
+      break;
+    case "chat":
+      await cmdChat();
+      break;
     case "ui": {
       const { startUiServer } = require("../lib/ucm-ui-server.js");
       await startUiServer(opts);
@@ -1382,12 +1714,15 @@ async function main() {
         process.exit(1);
       }
       const { startUiServer } = require("../lib/ucm-ui-server.js");
-      const port = opts.port || Number(process.env.UCM_UI_PORT) || 17172;
+      const port =
+        opts.port || Number(process.env.UCM_UI_PORT) || DEFAULT_CONFIG.uiPort;
       await startUiServer({ port, dev: opts.dev });
       tryOpenDashboard(`http://localhost:${port}`);
       break;
     }
-    case "release": await cmdRelease(opts); break;
+    case "release":
+      await cmdRelease(opts);
+      break;
     default:
       console.error(`알 수 없는 커맨드: ${opts.command}`);
       console.log(USAGE);
@@ -1396,20 +1731,31 @@ async function main() {
 }
 
 const ERROR_HINTS = {
-  "ECONNREFUSED": "데몬이 실행 중이지 않습니다. `ucm daemon start`로 시작하세요.",
-  "ENOENT": "파일 또는 경로를 찾을 수 없습니다. 프로젝트 경로를 확인하세요.",
-  "RATE_LIMITED": "API 요청 제한에 도달했습니다. 잠시 후 자동 재시도됩니다.",
-  "task not found": "태스크를 찾을 수 없습니다. `ucm list`로 태스크 목록을 확인하세요.",
-  "token budget exceeded": "토큰 예산을 초과했습니다. `ucm resume <id> --budget <더큰값>`으로 재시도하세요.",
-  "worktree locked": "다른 작업이 진행 중입니다. `ucm list --status in_progress`로 확인하세요.",
-  "daemon failed to start": "데몬 시작에 실패했습니다. 로그를 확인하세요: ~/.ucm/daemon/ucmd.log",
-  "missing required artifacts": "이전 stage의 산출물이 없습니다. `ucm resume <id> --from <이전stage>`로 재시도하세요.",
-  "merge conflict": "머지 충돌이 발생했습니다. worktree에서 수동 해결 후 `ucm resume <id> --from integrate`하세요.",
-  "merge failed": "머지에 실패했습니다. `ucm diff <id>`로 변경사항을 확인하세요.",
-  "spawn error": "LLM CLI를 실행할 수 없습니다. claude 또는 codex가 설치되어 있는지 확인하세요.",
-  "unknown pipeline": "파이프라인 이름이 올바르지 않습니다. trivial|small|medium|large 또는 커스텀(stage1,stage2,...)을 사용하세요.",
-  "unknown provider": "지원하지 않는 provider입니다. claude 또는 codex를 사용하세요.",
-  "concurrent task limit": "동시 실행 가능한 태스크 수를 초과했습니다. UCM_MAX_CONCURRENT 환경변수로 조정할 수 있습니다.",
+  ECONNREFUSED: "데몬이 실행 중이지 않습니다. `ucm daemon start`로 시작하세요.",
+  ENOENT: "파일 또는 경로를 찾을 수 없습니다. 프로젝트 경로를 확인하세요.",
+  RATE_LIMITED: "API 요청 제한에 도달했습니다. 잠시 후 자동 재시도됩니다.",
+  "task not found":
+    "태스크를 찾을 수 없습니다. `ucm list`로 태스크 목록을 확인하세요.",
+  "token budget exceeded":
+    "토큰 예산을 초과했습니다. `ucm resume <id> --budget <더큰값>`으로 재시도하세요.",
+  "worktree locked":
+    "다른 작업이 진행 중입니다. `ucm list --status in_progress`로 확인하세요.",
+  "daemon failed to start":
+    "데몬 시작에 실패했습니다. 로그를 확인하세요: ~/.ucm/daemon/ucmd.log",
+  "missing required artifacts":
+    "이전 stage의 산출물이 없습니다. `ucm resume <id> --from <이전stage>`로 재시도하세요.",
+  "merge conflict":
+    "머지 충돌이 발생했습니다. worktree에서 수동 해결 후 `ucm resume <id> --from integrate`하세요.",
+  "merge failed":
+    "머지에 실패했습니다. `ucm diff <id>`로 변경사항을 확인하세요.",
+  "spawn error":
+    "LLM CLI를 실행할 수 없습니다. claude 또는 codex가 설치되어 있는지 확인하세요.",
+  "unknown pipeline":
+    "파이프라인 이름이 올바르지 않습니다. trivial|small|medium|large 또는 커스텀(stage1,stage2,...)을 사용하세요.",
+  "unknown provider":
+    "지원하지 않는 provider입니다. claude 또는 codex를 사용하세요.",
+  "concurrent task limit":
+    "동시 실행 가능한 태스크 수를 초과했습니다. UCM_MAX_CONCURRENT 환경변수로 조정할 수 있습니다.",
 };
 
 main().catch(async (e) => {

@@ -1,29 +1,44 @@
+import {
+  FilterX,
+  FolderTree,
+  Lightbulb,
+  ListTodo,
+  MoreVertical,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { FolderTree, ListTodo, Lightbulb, FilterX, Plus, Search, Trash2, MoreVertical } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { ProjectAddDialog } from "@/components/projects/project-add-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
+  encodeProjectKeyForRoute,
+  getProjectKey,
+  getProjectLabel,
+  getProposalProjectPath,
+  getTaskProjectPath,
+  UNKNOWN_PROJECT_KEY,
+} from "@/lib/project";
 import {
   useProjectCatalogQuery,
   useRemoveProjectCatalogItem,
 } from "@/queries/projects";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
-import {
-  getProjectKey,
-  getProjectLabel,
-  getTaskProjectPath,
-  getProposalProjectPath,
-  encodeProjectKeyForRoute,
-  UNKNOWN_PROJECT_KEY,
-} from "@/lib/project";
-import { ProjectAddDialog } from "@/components/projects/project-add-dialog";
 
 type ProjectSummary = {
   key: string;
@@ -48,7 +63,9 @@ export default function ProjectsPage() {
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
-  const setProposalProjectFilter = useUiStore((s) => s.setProposalProjectFilter);
+  const setProposalProjectFilter = useUiStore(
+    (s) => s.setProposalProjectFilter,
+  );
 
   const projectSummaries = useMemo(() => {
     const map = new Map<string, ProjectSummary>();
@@ -73,7 +90,7 @@ export default function ProjectsPage() {
     for (const entry of catalog || []) {
       const summary = ensure(entry.path);
       summary.registered = true;
-      if (entry.name && entry.name.trim()) {
+      if (entry.name?.trim()) {
         summary.label = entry.name.trim();
       }
       summary.path = entry.path;
@@ -95,12 +112,16 @@ export default function ProjectsPage() {
       .filter((p) => {
         if (!search.trim()) return true;
         const s = search.trim().toLowerCase();
-        return p.label.toLowerCase().includes(s) || p.path.toLowerCase().includes(s);
+        return (
+          p.label.toLowerCase().includes(s) || p.path.toLowerCase().includes(s)
+        );
       })
       .sort((a, b) => {
         if (a.registered !== b.registered) return a.registered ? -1 : 1;
-        if ((b.taskCount + b.proposalCount) !== (a.taskCount + a.proposalCount)) {
-          return (b.taskCount + b.proposalCount) - (a.taskCount + a.proposalCount);
+        if (b.taskCount + b.proposalCount !== a.taskCount + a.proposalCount) {
+          return (
+            b.taskCount + b.proposalCount - (a.taskCount + a.proposalCount)
+          );
         }
         return a.label.localeCompare(b.label);
       });
@@ -139,7 +160,8 @@ export default function ProjectsPage() {
     navigate(`/projects/${encodeProjectKeyForRoute(project.key)}/proposals`);
   };
 
-  if (tasksLoading || proposalsLoading || catalogLoading) return <LoadingSkeleton />;
+  if (tasksLoading || proposalsLoading || catalogLoading)
+    return <LoadingSkeleton />;
 
   return (
     <div className="p-6 space-y-6">
@@ -147,9 +169,12 @@ export default function ProjectsPage() {
         <Card className="border-dashed">
           <CardContent className="p-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Start by registering projects</p>
+              <p className="text-sm font-medium">
+                Start by registering projects
+              </p>
               <p className="text-xs text-muted-foreground">
-                Registered projects become your stable IA root. Tasks and proposals are then grouped under each workspace.
+                Registered projects become your stable IA root. Tasks and
+                proposals are then grouped under each workspace.
               </p>
             </div>
             <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -164,7 +189,8 @@ export default function ProjectsPage() {
         <div>
           <h2 className="text-lg font-semibold">Projects</h2>
           <p className="text-sm text-muted-foreground">
-            Register projects first, then run work inside each project workspace.
+            Register projects first, then run work inside each project
+            workspace.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -206,12 +232,12 @@ export default function ProjectsPage() {
           icon={FolderTree}
           title="No projects registered"
           description="Add your first project to unlock project-scoped task and proposal workflow."
-          action={(
+          action={
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4" />
               Add First Project
             </Button>
-          )}
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -228,25 +254,48 @@ export default function ProjectsPage() {
                     <span className="truncate">{project.label}</span>
                     <div className="flex items-center gap-2 shrink-0">
                       {project.key === activeProjectKey && (
-                        <Badge variant="secondary" className="text-[10px]">Active</Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          Active
+                        </Badge>
                       )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openProjectTasks(project); }}>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openProjectTasks(project);
+                            }}
+                          >
                             <ListTodo className="h-4 w-4 mr-2" /> Tasks
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openProjectProposals(project); }}>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openProjectProposals(project);
+                            }}
+                          >
                             <Lightbulb className="h-4 w-4 mr-2" /> Proposals
                           </DropdownMenuItem>
                           {project.registered && !isUnknown && (
                             <>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); removeCatalogItem.mutate(project.path); }}>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeCatalogItem.mutate(project.path);
+                                }}
+                              >
                                 <Trash2 className="h-4 w-4 mr-2" /> Remove
                               </DropdownMenuItem>
                             </>
@@ -261,11 +310,26 @@ export default function ProjectsPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2">
-                    {project.registered && <span className="text-xs text-emerald-500">Registered</span>}
+                    {project.registered && (
+                      <span className="text-xs text-emerald-500">
+                        Registered
+                      </span>
+                    )}
                     <p className="text-sm text-muted-foreground">
-                      {project.taskCount} tasks · {project.proposalCount} proposals
-                      {project.runningCount > 0 && <span className="text-blue-500"> · {project.runningCount} running</span>}
-                      {project.reviewCount > 0 && <span className="text-purple-500"> · {project.reviewCount} review</span>}
+                      {project.taskCount} tasks · {project.proposalCount}{" "}
+                      proposals
+                      {project.runningCount > 0 && (
+                        <span className="text-blue-500">
+                          {" "}
+                          · {project.runningCount} running
+                        </span>
+                      )}
+                      {project.reviewCount > 0 && (
+                        <span className="text-purple-500">
+                          {" "}
+                          · {project.reviewCount} review
+                        </span>
+                      )}
                     </p>
                   </div>
                 </CardContent>

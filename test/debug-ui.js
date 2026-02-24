@@ -6,7 +6,7 @@
 // External:  node test/debug-ui.js --url http://localhost:3000 "check layout"
 // Provider:  node test/debug-ui.js --provider codex "check layout"
 
-const readline = require("readline");
+const readline = require("node:readline");
 const { TestEnvironment } = require("./helpers/test-infra.js");
 const { browserAgent } = require("../lib/core/browser-agent");
 
@@ -59,7 +59,7 @@ async function main() {
       console.log(`> ${prompt}\n`);
       const result = await browserAgent(url, prompt, {
         provider,
-        onLog: (msg) => process.stderr.write(msg + "\n"),
+        onLog: (msg) => process.stderr.write(`${msg}\n`),
       });
       console.log(result.text);
       console.log(`\n(${(result.durationMs / 1000).toFixed(1)}s)`);
@@ -78,12 +78,15 @@ async function main() {
 
       for await (const line of rl) {
         const input = line.trim();
-        if (!input) { rl.prompt(); continue; }
+        if (!input) {
+          rl.prompt();
+          continue;
+        }
         if (input === "exit" || input === "quit") break;
 
         const result = await browserAgent(url, input, {
           provider,
-          onLog: (msg) => process.stderr.write(msg + "\n"),
+          onLog: (msg) => process.stderr.write(`${msg}\n`),
         });
         console.log(`\n${result.text}`);
         console.log(`\n(${(result.durationMs / 1000).toFixed(1)}s)\n`);

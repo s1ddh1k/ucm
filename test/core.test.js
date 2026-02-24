@@ -1,15 +1,38 @@
 #!/usr/bin/env node
-const { startSuiteTimer, stopSuiteTimer, assert, assertEqual, assertDeepEqual, runGroup, summary } = require("./harness");
+const {
+  startSuiteTimer,
+  stopSuiteTimer,
+  assert,
+  assertEqual,
+  assertDeepEqual,
+  runGroup,
+  summary,
+} = require("./harness");
 
 startSuiteTimer(30_000);
 
 // ── extractJson tests ──
 
-const { extractJson, buildCommand, sanitizeEnv, REASONING_EFFORTS } = require("../lib/core/llm");
+const {
+  extractJson,
+  buildCommand,
+  sanitizeEnv,
+  killPidTree,
+  REASONING_EFFORTS,
+} = require("../lib/core/llm");
 
 // ── quoteUserContent / summarizeDecisions tests ──
 
-const { quoteUserContent, summarizeDecisions, computeCoverage, isFullyCovered, buildQuestionPrompt, parseDecisionsFile, formatDecisions, EXPECTED_GREENFIELD } = require("../lib/core/qna");
+const {
+  quoteUserContent,
+  summarizeDecisions,
+  computeCoverage,
+  isFullyCovered,
+  buildQuestionPrompt,
+  parseDecisionsFile,
+  formatDecisions,
+  EXPECTED_GREENFIELD,
+} = require("../lib/core/qna");
 
 // ── sanitizeContent tests ──
 
@@ -17,7 +40,12 @@ const { sanitizeContent } = require("../lib/core/worktree");
 
 // ── parseTaskFile / serializeTaskFile tests ──
 
-const { parseTaskFile, serializeTaskFile, expandHome, normalizeProjects } = require("../lib/ucmd-task");
+const {
+  parseTaskFile,
+  serializeTaskFile,
+  expandHome,
+  normalizeProjects,
+} = require("../lib/ucmd-task");
 
 // ── TaskDag tests ──
 
@@ -29,14 +57,24 @@ const { mapPipelineToForge, mergeStateStats } = require("../lib/ucmd");
 
 // ── forge pipeline tests ──
 
-const { ForgePipeline, assertResumableDagStatus } = require("../lib/forge/index");
-const { FORGE_PIPELINES, STAGE_TIMEOUTS, STAGE_ARTIFACTS, STAGE_MODELS } = require("../lib/core/constants");
+const {
+  ForgePipeline,
+  assertResumableDagStatus,
+} = require("../lib/forge/index");
+const {
+  FORGE_PIPELINES,
+  STAGE_TIMEOUTS,
+  STAGE_ARTIFACTS,
+  STAGE_MODELS,
+} = require("../lib/core/constants");
 
 async function main() {
   // ── extractJson ──
   await runGroup("extractJson", {
     "parses JSON from code fence": () => {
-      const result = extractJson('Here is the result:\n```json\n{"key": "value"}\n```');
+      const result = extractJson(
+        'Here is the result:\n```json\n{"key": "value"}\n```',
+      );
       assertDeepEqual(result, { key: "value" }, "code fence JSON");
     },
 
@@ -46,12 +84,14 @@ async function main() {
     },
 
     "parses raw JSON array": () => {
-      const result = extractJson('[1, 2, 3]');
+      const result = extractJson("[1, 2, 3]");
       assertDeepEqual(result, [1, 2, 3], "raw JSON array");
     },
 
     "parses JSON embedded in text": () => {
-      const result = extractJson('Some text before\n{"question": "test?"}\nSome text after');
+      const result = extractJson(
+        'Some text before\n{"question": "test?"}\nSome text after',
+      );
       assertDeepEqual(result, { question: "test?" }, "embedded JSON");
     },
 
@@ -66,19 +106,28 @@ async function main() {
         extractJson("This is not JSON at all");
       } catch (e) {
         threw = true;
-        assert(e.message.includes("Failed to extract JSON"), "error message mentions failure");
+        assert(
+          e.message.includes("Failed to extract JSON"),
+          "error message mentions failure",
+        );
       }
       assert(threw, "should throw on non-JSON");
     },
 
     "throws on empty string": () => {
       let threw = false;
-      try { extractJson(""); } catch { threw = true; }
+      try {
+        extractJson("");
+      } catch {
+        threw = true;
+      }
       assert(threw, "should throw on empty string");
     },
 
     "parses nested JSON objects": () => {
-      const result = extractJson('{"options": [{"label": "A", "reason": "B"}], "done": false}');
+      const result = extractJson(
+        '{"options": [{"label": "A", "reason": "B"}], "done": false}',
+      );
       assertEqual(result.options.length, 1, "nested array length");
       assertEqual(result.options[0].label, "A", "nested label");
     },
@@ -92,7 +141,11 @@ async function main() {
   // ── quoteUserContent ──
   await runGroup("quoteUserContent", {
     "passes through normal text": () => {
-      assertEqual(quoteUserContent("hello world"), "hello world", "normal text");
+      assertEqual(
+        quoteUserContent("hello world"),
+        "hello world",
+        "normal text",
+      );
     },
 
     "escapes markdown headings": () => {
@@ -119,7 +172,11 @@ async function main() {
     },
 
     "does not escape hash in middle of line": () => {
-      assertEqual(quoteUserContent("color is #FF0000"), "color is #FF0000", "hash in middle");
+      assertEqual(
+        quoteUserContent("color is #FF0000"),
+        "color is #FF0000",
+        "hash in middle",
+      );
     },
   });
 
@@ -139,7 +196,11 @@ async function main() {
     "summarizes old decisions when count > 7": () => {
       const decisions = [];
       for (let i = 0; i < 10; i++) {
-        decisions.push({ area: i < 5 ? "기술 스택" : "설계 결정", question: `Q${i}`, answer: `A${i}` });
+        decisions.push({
+          area: i < 5 ? "기술 스택" : "설계 결정",
+          question: `Q${i}`,
+          answer: `A${i}`,
+        });
       }
       const result = summarizeDecisions(decisions);
       assert(result.includes("이전 결정 3개 요약"), "has summary header");
@@ -165,19 +226,33 @@ async function main() {
     "caps coverage at 100%": () => {
       const decisions = [];
       for (let i = 0; i < 10; i++) {
-        decisions.push({ area: "제품 정의", question: `Q${i}`, answer: `A${i}` });
+        decisions.push({
+          area: "제품 정의",
+          question: `Q${i}`,
+          answer: `A${i}`,
+        });
       }
       const coverage = computeCoverage(decisions, EXPECTED_GREENFIELD);
       assertEqual(coverage["제품 정의"], 1.0, "capped at 1.0");
     },
 
     "isFullyCovered returns true when all areas complete": () => {
-      const coverage = { "제품 정의": 1.0, "핵심 기능": 1.0, "기술 스택": 1.0, "설계 결정": 1.0 };
+      const coverage = {
+        "제품 정의": 1.0,
+        "핵심 기능": 1.0,
+        "기술 스택": 1.0,
+        "설계 결정": 1.0,
+      };
       assert(isFullyCovered(coverage), "fully covered");
     },
 
     "isFullyCovered returns false with gaps": () => {
-      const coverage = { "제품 정의": 1.0, "핵심 기능": 0.5, "기술 스택": 1.0, "설계 결정": 1.0 };
+      const coverage = {
+        "제품 정의": 1.0,
+        "핵심 기능": 0.5,
+        "기술 스택": 1.0,
+        "설계 결정": 1.0,
+      };
       assert(!isFullyCovered(coverage), "not fully covered");
     },
   });
@@ -227,7 +302,11 @@ tags: [bug, urgent, backend]
 tokenUsage: !!json {"input":100,"output":50}
 ---`;
       const { meta } = parseTaskFile(content);
-      assertDeepEqual(meta.tokenUsage, { input: 100, output: 50 }, "json tagged value");
+      assertDeepEqual(
+        meta.tokenUsage,
+        { input: 100, output: 50 },
+        "json tagged value",
+      );
     },
 
     "handles newline escaping": () => {
@@ -241,7 +320,12 @@ title: line1\\nline2
 
   await runGroup("serializeTaskFile", {
     "round-trips through parse/serialize": () => {
-      const meta = { id: "test-002", title: "Round Trip", state: "running", priority: 5 };
+      const meta = {
+        id: "test-002",
+        title: "Round Trip",
+        state: "running",
+        priority: 5,
+      };
       const body = "Task body content here.";
       const serialized = serializeTaskFile(meta, body);
       const { meta: parsed, body: parsedBody } = parseTaskFile(serialized);
@@ -257,11 +341,20 @@ title: line1\\nline2
       const serialized = serializeTaskFile(meta, "");
       assert(serialized.includes("!!json"), "contains !!json tag");
       const { meta: parsed } = parseTaskFile(serialized);
-      assertDeepEqual(parsed.tokenUsage, { input: 100, output: 50 }, "json round-trip");
+      assertDeepEqual(
+        parsed.tokenUsage,
+        { input: 100, output: 50 },
+        "json round-trip",
+      );
     },
 
     "skips null/undefined values": () => {
-      const meta = { id: "test-004", title: null, state: undefined, tag: "valid" };
+      const meta = {
+        id: "test-004",
+        title: null,
+        state: undefined,
+        tag: "valid",
+      };
       const serialized = serializeTaskFile(meta, "");
       assert(!serialized.includes("title:"), "null skipped");
       assert(!serialized.includes("state:"), "undefined skipped");
@@ -273,7 +366,11 @@ title: line1\\nline2
   await runGroup("sanitizeContent", {
     "returns non-string inputs as-is": () => {
       assertEqual(sanitizeContent(null), null, "null passthrough");
-      assertEqual(sanitizeContent(undefined), undefined, "undefined passthrough");
+      assertEqual(
+        sanitizeContent(undefined),
+        undefined,
+        "undefined passthrough",
+      );
       assertEqual(sanitizeContent(""), "", "empty string passthrough");
     },
 
@@ -283,21 +380,25 @@ title: line1\\nline2
     },
 
     "redacts api_key pattern": () => {
-      const input = 'api_key: sk_live_abcdefghij1234567890';
+      const input = "api_key: sk_live_abcdefghij1234567890";
       const result = sanitizeContent(input);
       assert(result.includes("[REDACTED]"), "contains REDACTED marker");
       assert(!result.includes("abcdefghij1234567890"), "secret value removed");
     },
 
     "redacts apikey (no separator) pattern": () => {
-      const input = 'apikey=my_secret_key_value_12345678';
+      const input = "apikey=my_secret_key_value_12345678";
       const result = sanitizeContent(input);
       assert(result.includes("[REDACTED]"), "contains REDACTED marker");
-      assert(!result.includes("my_secret_key_value_12345678"), "secret value removed");
+      assert(
+        !result.includes("my_secret_key_value_12345678"),
+        "secret value removed",
+      );
     },
 
     "redacts secret/password/token patterns": () => {
-      const input = 'secret: supersecretvalue1234\npassword=mypassword123\ntoken: tok_abc123def456';
+      const input =
+        "secret: supersecretvalue1234\npassword=mypassword123\ntoken: tok_abc123def456";
       const result = sanitizeContent(input);
       assert(!result.includes("supersecretvalue1234"), "secret redacted");
       assert(!result.includes("mypassword123"), "password redacted");
@@ -308,7 +409,8 @@ title: line1\\nline2
     },
 
     "redacts AWS/Anthropic/OpenAI key env vars": () => {
-      const input = 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nANTHROPIC_API_KEY=sk-ant-abc123\nOPENAI_API_KEY=sk-proj-xyz789';
+      const input =
+        "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\nANTHROPIC_API_KEY=sk-ant-abc123\nOPENAI_API_KEY=sk-proj-xyz789";
       const result = sanitizeContent(input);
       assert(!result.includes("wJalrXUtnFEMI"), "AWS key redacted");
       assert(!result.includes("sk-ant-abc123"), "Anthropic key redacted");
@@ -316,28 +418,38 @@ title: line1\\nline2
     },
 
     "redacts Bearer tokens": () => {
-      const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      const input =
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
       const result = sanitizeContent(input);
       assert(result.includes("[REDACTED]"), "Bearer token redacted");
-      assert(!result.includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"), "JWT payload removed");
+      assert(
+        !result.includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
+        "JWT payload removed",
+      );
     },
 
     "redacts GitHub PATs (ghp_ prefix)": () => {
-      const input = 'GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789';
+      const input = "GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
       const result = sanitizeContent(input);
       assert(result.includes("[REDACTED]"), "GitHub PAT redacted");
-      assert(!result.includes("aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"), "PAT value removed");
+      assert(
+        !result.includes("aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"),
+        "PAT value removed",
+      );
     },
 
     "redacts OpenAI sk- keys": () => {
-      const input = 'key: sk-abcdefghijklmnopqrstuvwxyz0123456789';
+      const input = "key: sk-abcdefghijklmnopqrstuvwxyz0123456789";
       const result = sanitizeContent(input);
       assert(result.includes("[REDACTED]"), "sk- key redacted");
-      assert(!result.includes("abcdefghijklmnopqrstuvwxyz0123456789"), "sk- key value removed");
+      assert(
+        !result.includes("abcdefghijklmnopqrstuvwxyz0123456789"),
+        "sk- key value removed",
+      );
     },
 
     "preserves prefix before REDACTED marker": () => {
-      const input = 'ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789';
+      const input = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
       const result = sanitizeContent(input);
       // prefix should be min(10, floor(len/3)) chars of original match
       assert(result.startsWith("ghp_"), "preserves beginning of token");
@@ -345,14 +457,15 @@ title: line1\\nline2
     },
 
     "handles multiple secrets in same line": () => {
-      const input = 'api_key: secret12345678901234 token: mytokenvalue12345678';
+      const input = "api_key: secret12345678901234 token: mytokenvalue12345678";
       const result = sanitizeContent(input);
       const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
       assert(redactedCount >= 2, "multiple redactions in same line");
     },
 
     "is case-insensitive for key names": () => {
-      const input = 'API_KEY: secret12345678901234\nApi_Key: secret12345678901234';
+      const input =
+        "API_KEY: secret12345678901234\nApi_Key: secret12345678901234";
       const result = sanitizeContent(input);
       const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
       assertEqual(redactedCount, 2, "case-insensitive matching");
@@ -362,35 +475,84 @@ title: line1\\nline2
   // ── buildQuestionPrompt structure ──
   await runGroup("buildQuestionPrompt structure", {
     "includes instruction precedence markers": () => {
-      const coverage = { "제품 정의": 0, "핵심 기능": 0, "기술 스택": 0, "설계 결정": 0 };
-      const prompt = buildQuestionPrompt(null, [], null, { isResume: false, isBrownfield: false, coverage });
-      assert(prompt.includes("파싱 실패"), "mentions parse failure consequence");
+      const coverage = {
+        "제품 정의": 0,
+        "핵심 기능": 0,
+        "기술 스택": 0,
+        "설계 결정": 0,
+      };
+      const prompt = buildQuestionPrompt(null, [], null, {
+        isResume: false,
+        isBrownfield: false,
+        coverage,
+      });
+      assert(
+        prompt.includes("파싱 실패"),
+        "mentions parse failure consequence",
+      );
       assert(prompt.includes("거부되는 응답"), "includes rejection examples");
       assert(prompt.includes("질문 예시"), "includes question example");
       assert(prompt.includes("완료 예시"), "includes done example");
     },
 
     "wraps feedback in code fence": () => {
-      const coverage = { "제품 정의": 0, "핵심 기능": 0, "기술 스택": 0, "설계 결정": 0 };
-      const prompt = buildQuestionPrompt(null, [], "some user feedback", { isResume: false, isBrownfield: false, coverage });
-      assert(prompt.includes("```\nsome user feedback\n```"), "feedback in code fence");
+      const coverage = {
+        "제품 정의": 0,
+        "핵심 기능": 0,
+        "기술 스택": 0,
+        "설계 결정": 0,
+      };
+      const prompt = buildQuestionPrompt(null, [], "some user feedback", {
+        isResume: false,
+        isBrownfield: false,
+        coverage,
+      });
+      assert(
+        prompt.includes("```\nsome user feedback\n```"),
+        "feedback in code fence",
+      );
     },
 
     "uses summarizeDecisions for many decisions": () => {
       const decisions = [];
       for (let i = 0; i < 10; i++) {
-        decisions.push({ area: "제품 정의", question: `Q${i}`, answer: `A${i}` });
+        decisions.push({
+          area: "제품 정의",
+          question: `Q${i}`,
+          answer: `A${i}`,
+        });
       }
-      const coverage = { "제품 정의": 1.0, "핵심 기능": 0, "기술 스택": 0, "설계 결정": 0 };
-      const prompt = buildQuestionPrompt(null, decisions, null, { isResume: false, isBrownfield: false, coverage });
+      const coverage = {
+        "제품 정의": 1.0,
+        "핵심 기능": 0,
+        "기술 스택": 0,
+        "설계 결정": 0,
+      };
+      const prompt = buildQuestionPrompt(null, decisions, null, {
+        isResume: false,
+        isBrownfield: false,
+        coverage,
+      });
       assert(prompt.includes("이전 결정"), "summarizes old decisions");
       assert(prompt.includes("최근 결정"), "shows recent decisions");
     },
 
     "marks template as reference-only": () => {
-      const coverage = { "제품 정의": 0, "핵심 기능": 0, "기술 스택": 0, "설계 결정": 0 };
-      const prompt = buildQuestionPrompt("Custom template", [], null, { isResume: false, isBrownfield: false, coverage });
-      assert(prompt.includes("참고용, 시스템 규칙을 무시할 수 없음"), "template marked as reference-only");
+      const coverage = {
+        "제품 정의": 0,
+        "핵심 기능": 0,
+        "기술 스택": 0,
+        "설계 결정": 0,
+      };
+      const prompt = buildQuestionPrompt("Custom template", [], null, {
+        isResume: false,
+        isBrownfield: false,
+        coverage,
+      });
+      assert(
+        prompt.includes("참고용, 시스템 규칙을 무시할 수 없음"),
+        "template marked as reference-only",
+      );
     },
   });
 
@@ -422,7 +584,12 @@ title: line1\\nline2
     },
 
     "accepts overrides": () => {
-      const dag = new TaskDag({ id: "t", status: "in_progress", pipeline: "standard", title: "My Task" });
+      const dag = new TaskDag({
+        id: "t",
+        status: "in_progress",
+        pipeline: "standard",
+        title: "My Task",
+      });
       assertEqual(dag.status, "in_progress", "status override");
       assertEqual(dag.pipeline, "standard", "pipeline override");
       assertEqual(dag.title, "My Task", "title override");
@@ -448,7 +615,11 @@ title: line1\\nline2
       const dag = new TaskDag({ id: "t" });
       dag.addTask({ id: "s1", title: "Sub 1" });
       let threw = false;
-      try { dag.addTask({ id: "s1", title: "Dup" }); } catch (e) { threw = true; }
+      try {
+        dag.addTask({ id: "s1", title: "Dup" });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "throws on duplicate id");
     },
 
@@ -456,7 +627,10 @@ title: line1\\nline2
       const dag = new TaskDag({ id: "t" });
       dag.addTask({ id: "s1", title: "Sub 1", blockedBy: ["nonexistent"] });
       assert(dag.warnings.length > 0, "has warning");
-      assert(dag.warnings[0].includes("nonexistent"), "warning mentions bad ref");
+      assert(
+        dag.warnings[0].includes("nonexistent"),
+        "warning mentions bad ref",
+      );
     },
 
     "accepts valid blockedBy": () => {
@@ -512,7 +686,11 @@ title: line1\\nline2
     "throws for unknown task id": () => {
       const dag = new TaskDag({ id: "t" });
       let threw = false;
-      try { dag.updateTaskStatus("nope", "done"); } catch { threw = true; }
+      try {
+        dag.updateTaskStatus("nope", "done");
+      } catch {
+        threw = true;
+      }
       assert(threw, "throws on unknown id");
     },
   });
@@ -591,7 +769,10 @@ title: line1\\nline2
       assertEqual(waves.length, 3, "three waves in diamond");
       assertDeepEqual(waves[0], ["a"], "root");
       assertEqual(waves[1].length, 2, "parallel middle");
-      assert(waves[1].includes("b") && waves[1].includes("c"), "b and c in wave 2");
+      assert(
+        waves[1].includes("b") && waves[1].includes("c"),
+        "b and c in wave 2",
+      );
       assertDeepEqual(waves[2], ["d"], "join node");
     },
 
@@ -600,7 +781,9 @@ title: line1\\nline2
       dag.addTask({ id: "a", title: "A", blockedBy: ["b"] });
       dag.addTask({ id: "b", title: "B", blockedBy: ["a"] });
       let threw = false;
-      try { dag.getWaves(); } catch (e) {
+      try {
+        dag.getWaves();
+      } catch (e) {
         threw = true;
         assert(e.message.includes("cycle"), "error mentions cycle");
       }
@@ -624,7 +807,9 @@ title: line1\\nline2
       // Manually add a dangling ref to bypass addTask warning
       dag.tasks[0].blockedBy = ["ghost"];
       let threw = false;
-      try { dag.validateDeps(); } catch (e) {
+      try {
+        dag.validateDeps();
+      } catch (e) {
         threw = true;
         assert(e.message.includes("dangling"), "error mentions dangling");
       }
@@ -706,7 +891,11 @@ title: line1\\nline2
       assertEqual(dag.stageHistory[0].stage, "implement", "stage name");
       assertEqual(dag.stageHistory[0].status, "pass", "stage status");
       assertEqual(dag.stageHistory[0].durationMs, 5000, "duration");
-      assertDeepEqual(dag.stageHistory[0].tokenUsage, { input: 100, output: 50 }, "token usage");
+      assertDeepEqual(
+        dag.stageHistory[0].tokenUsage,
+        { input: 100, output: 50 },
+        "token usage",
+      );
     },
 
     "appends multiple stages": () => {
@@ -729,7 +918,12 @@ title: line1\\nline2
   // ── TaskDag toJSON ──
   await runGroup("TaskDag toJSON", {
     "round-trips through JSON": () => {
-      const dag = new TaskDag({ id: "t", status: "in_progress", pipeline: "standard", title: "Test" });
+      const dag = new TaskDag({
+        id: "t",
+        status: "in_progress",
+        pipeline: "standard",
+        title: "Test",
+      });
       dag.addTask({ id: "s1", title: "Sub 1" });
       dag.addTokenUsage(500, 250);
       dag.recordStage("implement", "pass", 3000, { input: 500, output: 250 });
@@ -744,13 +938,29 @@ title: line1\\nline2
       assertEqual(restored.title, "Test", "title preserved");
       assertEqual(restored.tasks.length, 1, "tasks preserved");
       assertEqual(restored.tasks[0].id, "s1", "task id preserved");
-      assertDeepEqual(restored.tokenUsage, { input: 500, output: 250 }, "tokenUsage preserved");
+      assertDeepEqual(
+        restored.tokenUsage,
+        { input: 500, output: 250 },
+        "tokenUsage preserved",
+      );
       assertEqual(restored.currentStage, "verify", "currentStage preserved");
       assertEqual(restored.stageHistory.length, 1, "stageHistory preserved");
-      assertEqual(restored.stageHistory[0].stage, "implement", "stageHistory entry stage");
-      assertEqual(restored.stageHistory[0].status, "pass", "stageHistory entry status");
+      assertEqual(
+        restored.stageHistory[0].stage,
+        "implement",
+        "stageHistory entry stage",
+      );
+      assertEqual(
+        restored.stageHistory[0].status,
+        "pass",
+        "stageHistory entry status",
+      );
       assertEqual(restored.warnings.length, 1, "warnings preserved");
-      assertEqual(restored.warnings[0], "test warning", "warning content preserved");
+      assertEqual(
+        restored.warnings[0],
+        "test warning",
+        "warning content preserved",
+      );
     },
   });
 
@@ -760,13 +970,22 @@ title: line1\\nline2
       const result = buildCommand({ provider: "claude" });
       assertEqual(result.cmd, "claude", "cmd is claude");
       assert(result.args.includes("-p"), "has -p flag");
-      assert(!result.args.includes("--dangerously-skip-permissions"), "no skip permissions by default");
+      assert(
+        !result.args.includes("--dangerously-skip-permissions"),
+        "no skip permissions by default",
+      );
       assert(result.args.includes("--output-format"), "has output format");
     },
 
     "claude: skipPermissions adds flag": () => {
-      const result = buildCommand({ provider: "claude", skipPermissions: true });
-      assert(result.args.includes("--dangerously-skip-permissions"), "has skip permissions");
+      const result = buildCommand({
+        provider: "claude",
+        skipPermissions: true,
+      });
+      assert(
+        result.args.includes("--dangerously-skip-permissions"),
+        "has skip permissions",
+      );
     },
 
     "claude: includes model when specified": () => {
@@ -777,22 +996,41 @@ title: line1\\nline2
     },
 
     "claude: stream-json adds --verbose": () => {
-      const result = buildCommand({ provider: "claude", outputFormat: "stream-json" });
-      assert(result.args.includes("--verbose"), "has --verbose for stream-json");
+      const result = buildCommand({
+        provider: "claude",
+        outputFormat: "stream-json",
+      });
+      assert(
+        result.args.includes("--verbose"),
+        "has --verbose for stream-json",
+      );
       const fmtIdx = result.args.indexOf("--output-format");
-      assertEqual(result.args[fmtIdx + 1], "stream-json", "format is stream-json");
+      assertEqual(
+        result.args[fmtIdx + 1],
+        "stream-json",
+        "format is stream-json",
+      );
     },
 
     "claude: allowTools passed through": () => {
-      const result = buildCommand({ provider: "claude", allowTools: "Read,Write" });
+      const result = buildCommand({
+        provider: "claude",
+        allowTools: "Read,Write",
+      });
       const idx = result.args.indexOf("--allowedTools");
       assert(idx !== -1, "has --allowedTools");
       assertEqual(result.args[idx + 1], "Read,Write", "tools value");
     },
 
     "claude: sessionPersistence=true omits --no-session-persistence": () => {
-      const result = buildCommand({ provider: "claude", sessionPersistence: true });
-      assert(!result.args.includes("--no-session-persistence"), "no session persistence flag omitted");
+      const result = buildCommand({
+        provider: "claude",
+        sessionPersistence: true,
+      });
+      assert(
+        !result.args.includes("--no-session-persistence"),
+        "no session persistence flag omitted",
+      );
     },
 
     "codex: basic args": () => {
@@ -807,25 +1045,44 @@ title: line1\\nline2
       const result = buildCommand({ provider: "codex", model: "haiku" });
       const idx = result.args.indexOf("-c");
       assert(idx !== -1, "has -c flag");
-      assertEqual(result.args[idx + 1], "model_reasoning_effort=low", "haiku maps to low");
+      assertEqual(
+        result.args[idx + 1],
+        "model_reasoning_effort=low",
+        "haiku maps to low",
+      );
     },
 
     "codex: maps sonnet to medium reasoning effort": () => {
       const result = buildCommand({ provider: "codex", model: "sonnet" });
-      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
-      assert(configArgs.some((a) => a === "model_reasoning_effort=medium"), "sonnet maps to medium");
+      const configArgs = result.args.filter(
+        (_a, i) => i > 0 && result.args[i - 1] === "-c",
+      );
+      assert(
+        configArgs.some((a) => a === "model_reasoning_effort=medium"),
+        "sonnet maps to medium",
+      );
     },
 
     "codex: maps opus to high reasoning effort": () => {
       const result = buildCommand({ provider: "codex", model: "opus" });
-      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
-      assert(configArgs.some((a) => a === "model_reasoning_effort=high"), "opus maps to high");
+      const configArgs = result.args.filter(
+        (_a, i) => i > 0 && result.args[i - 1] === "-c",
+      );
+      assert(
+        configArgs.some((a) => a === "model_reasoning_effort=high"),
+        "opus maps to high",
+      );
     },
 
     "codex: passes through reasoning effort directly": () => {
       const result = buildCommand({ provider: "codex", model: "xhigh" });
-      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
-      assert(configArgs.some((a) => a === "model_reasoning_effort=xhigh"), "xhigh passed through");
+      const configArgs = result.args.filter(
+        (_a, i) => i > 0 && result.args[i - 1] === "-c",
+      );
+      assert(
+        configArgs.some((a) => a === "model_reasoning_effort=xhigh"),
+        "xhigh passed through",
+      );
     },
 
     "codex: non-reasoning model uses --model": () => {
@@ -836,8 +1093,13 @@ title: line1\\nline2
     },
 
     "codex: configOverrides added as -c flags": () => {
-      const result = buildCommand({ provider: "codex", configOverrides: ["key=val1", "key2=val2"] });
-      const configArgs = result.args.filter((a, i) => i > 0 && result.args[i - 1] === "-c");
+      const result = buildCommand({
+        provider: "codex",
+        configOverrides: ["key=val1", "key2=val2"],
+      });
+      const configArgs = result.args.filter(
+        (_a, i) => i > 0 && result.args[i - 1] === "-c",
+      );
       assert(configArgs.includes("key=val1"), "first override");
       assert(configArgs.includes("key2=val2"), "second override");
     },
@@ -873,21 +1135,36 @@ title: line1\\nline2
     },
 
     "gemini: native model names pass through": () => {
-      const result = buildCommand({ provider: "gemini", model: "gemini-2.5-pro" });
+      const result = buildCommand({
+        provider: "gemini",
+        model: "gemini-2.5-pro",
+      });
       const modelIdx = result.args.indexOf("--model");
-      assertEqual(result.args[modelIdx + 1], "gemini-2.5-pro", "native model preserved");
+      assertEqual(
+        result.args[modelIdx + 1],
+        "gemini-2.5-pro",
+        "native model preserved",
+      );
     },
 
     "gemini: skipPermissions adds -y": () => {
-      const result = buildCommand({ provider: "gemini", skipPermissions: true });
+      const result = buildCommand({
+        provider: "gemini",
+        skipPermissions: true,
+      });
       assert(result.args.includes("-y"), "has -y flag");
     },
 
     "unknown provider throws": () => {
       let threw = false;
-      try { buildCommand({ provider: "unknown" }); } catch (e) {
+      try {
+        buildCommand({ provider: "unknown" });
+      } catch (e) {
         threw = true;
-        assert(e.message.includes("unknown provider"), "error mentions unknown provider");
+        assert(
+          e.message.includes("unknown provider"),
+          "error mentions unknown provider",
+        );
       }
       assert(threw, "throws on unknown provider");
     },
@@ -928,10 +1205,17 @@ title: line1\\nline2
       process.env.ANTHROPIC_API_KEY = "test-key";
       process.env.OPENAI_API_KEY = "test-key";
       const env = sanitizeEnv();
-      assertEqual(env.ANTHROPIC_API_KEY, "test-key", "ANTHROPIC_API_KEY included");
+      assertEqual(
+        env.ANTHROPIC_API_KEY,
+        "test-key",
+        "ANTHROPIC_API_KEY included",
+      );
       assertEqual(env.OPENAI_API_KEY, "test-key", "OPENAI_API_KEY included");
-      if (origAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = origAnthropic; else delete process.env.ANTHROPIC_API_KEY;
-      if (origOpenai !== undefined) process.env.OPENAI_API_KEY = origOpenai; else delete process.env.OPENAI_API_KEY;
+      if (origAnthropic !== undefined)
+        process.env.ANTHROPIC_API_KEY = origAnthropic;
+      else delete process.env.ANTHROPIC_API_KEY;
+      if (origOpenai !== undefined) process.env.OPENAI_API_KEY = origOpenai;
+      else delete process.env.OPENAI_API_KEY;
     },
 
     "passes through GIT_ prefix keys": () => {
@@ -939,6 +1223,160 @@ title: line1\\nline2
       const env = sanitizeEnv();
       assertEqual(env.GIT_AUTHOR_NAME, "test", "GIT_ prefix included");
       delete process.env.GIT_AUTHOR_NAME;
+    },
+  });
+
+  // ── killPidTree ──
+  await runGroup("killPidTree", {
+    "returns early for invalid pid values without signaling": () => {
+      const originalKill = process.kill;
+      const calls = [];
+      process.kill = (...args) => {
+        calls.push(args);
+      };
+
+      try {
+        killPidTree(null);
+        killPidTree(0);
+        killPidTree(-1);
+        assertEqual(calls.length, 0, "no kill calls for invalid pids");
+      } finally {
+        process.kill = originalKill;
+      }
+    },
+
+    "sends SIGTERM to pgid and pid, and schedules fallback timer": () => {
+      const originalKill = process.kill;
+      const originalSetTimeout = global.setTimeout;
+      const calls = [];
+      let delayMs = null;
+      let unrefCalled = false;
+
+      process.kill = (...args) => {
+        calls.push(args);
+      };
+      global.setTimeout = (_fn, delay) => {
+        delayMs = delay;
+        return {
+          unref: () => {
+            unrefCalled = true;
+          },
+        };
+      };
+
+      try {
+        killPidTree(1234);
+        assertDeepEqual(
+          calls,
+          [
+            [-1234, "SIGTERM"],
+            [1234, "SIGTERM"],
+          ],
+          "SIGTERM issued to process group and process",
+        );
+        assertEqual(delayMs, 1200, "fallback delay is 1200ms");
+        assert(unrefCalled, "fallback timer is unref-ed");
+      } finally {
+        process.kill = originalKill;
+        global.setTimeout = originalSetTimeout;
+      }
+    },
+
+    "ignores ESRCH during SIGTERM without noisy logs": () => {
+      const originalKill = process.kill;
+      const originalSetTimeout = global.setTimeout;
+      const originalConsoleError = console.error;
+      const logs = [];
+      let scheduled = false;
+
+      process.kill = () => {
+        const err = new Error("no such process");
+        err.code = "ESRCH";
+        throw err;
+      };
+      global.setTimeout = () => {
+        scheduled = true;
+        return { unref: () => {} };
+      };
+      console.error = (...args) => {
+        logs.push(args.join(" "));
+      };
+
+      try {
+        killPidTree(4321);
+        assertEqual(logs.length, 0, "ESRCH errors are suppressed");
+        assert(scheduled, "fallback timer still scheduled");
+      } finally {
+        process.kill = originalKill;
+        global.setTimeout = originalSetTimeout;
+        console.error = originalConsoleError;
+      }
+    },
+
+    "logs non-ESRCH errors and suppresses ESRCH on fallback SIGKILL": () => {
+      const originalKill = process.kill;
+      const originalSetTimeout = global.setTimeout;
+      const originalConsoleError = console.error;
+      const logs = [];
+      let fallbackFn = null;
+
+      process.kill = (pid, signal) => {
+        if (signal === "SIGTERM") {
+          const err = new Error("operation not permitted");
+          err.code = "EPERM";
+          throw err;
+        }
+        if (signal === 0) return;
+        if (signal === "SIGKILL" && pid < 0) {
+          const err = new Error("operation not permitted");
+          err.code = "EPERM";
+          throw err;
+        }
+        if (signal === "SIGKILL" && pid > 0) {
+          const err = new Error("no such process");
+          err.code = "ESRCH";
+          throw err;
+        }
+      };
+      global.setTimeout = (fn) => {
+        fallbackFn = fn;
+        return { unref: () => {} };
+      };
+      console.error = (...args) => {
+        logs.push(args.join(" "));
+      };
+
+      try {
+        killPidTree(777);
+        assert(
+          logs.some((line) => line.includes("SIGTERM pgid 777: EPERM")),
+          "logs SIGTERM pgid non-ESRCH error",
+        );
+        assert(
+          logs.some((line) => line.includes("SIGTERM pid 777: EPERM")),
+          "logs SIGTERM pid non-ESRCH error",
+        );
+
+        assertEqual(
+          typeof fallbackFn,
+          "function",
+          "captures fallback callback",
+        );
+        fallbackFn();
+
+        assert(
+          logs.some((line) => line.includes("SIGKILL pgid 777: EPERM")),
+          "logs SIGKILL pgid non-ESRCH error",
+        );
+        assert(
+          !logs.some((line) => line.includes("SIGKILL pid 777")),
+          "suppresses SIGKILL pid ESRCH log",
+        );
+      } finally {
+        process.kill = originalKill;
+        global.setTimeout = originalSetTimeout;
+        console.error = originalConsoleError;
+      }
     },
   });
 
@@ -953,7 +1391,11 @@ title: line1\\nline2
     },
 
     "maps research to medium": () => {
-      assertEqual(mapPipelineToForge("research"), "medium", "research → medium");
+      assertEqual(
+        mapPipelineToForge("research"),
+        "medium",
+        "research → medium",
+      );
     },
 
     "identity mappings for forge names": () => {
@@ -981,20 +1423,28 @@ title: line1\\nline2
   await runGroup("mergeStateStats", {
     "fills missing stats with defaults": () => {
       const result = mergeStateStats({});
-      assertEqual(typeof result.tasksCompleted, "number", "tasksCompleted is number");
+      assertEqual(
+        typeof result.tasksCompleted,
+        "number",
+        "tasksCompleted is number",
+      );
       assertEqual(typeof result.tasksFailed, "number", "tasksFailed is number");
       assertEqual(result.tasksCompleted, 0, "default tasksCompleted is 0");
       assertEqual(result.tasksFailed, 0, "default tasksFailed is 0");
     },
 
     "preserves existing valid stats": () => {
-      const result = mergeStateStats({ stats: { tasksCompleted: 5, tasksFailed: 2 } });
+      const result = mergeStateStats({
+        stats: { tasksCompleted: 5, tasksFailed: 2 },
+      });
       assertEqual(result.tasksCompleted, 5, "preserves tasksCompleted");
       assertEqual(result.tasksFailed, 2, "preserves tasksFailed");
     },
 
     "fixes NaN values with defaults": () => {
-      const result = mergeStateStats({ stats: { tasksCompleted: NaN, tasksFailed: 3 } });
+      const result = mergeStateStats({
+        stats: { tasksCompleted: NaN, tasksFailed: 3 },
+      });
       assertEqual(result.tasksCompleted, 0, "NaN replaced with default");
       assertEqual(result.tasksFailed, 3, "valid value preserved");
     },
@@ -1014,22 +1464,35 @@ title: line1\\nline2
   await runGroup("ForgePipeline constructor", {
     "throws on empty input (no input, no resumeFrom, no taskId)": () => {
       let threw = false;
-      try { new ForgePipeline({}); } catch (e) {
+      try {
+        new ForgePipeline({});
+      } catch (e) {
         threw = true;
-        assert(e.message.includes("input required"), "error mentions input required");
+        assert(
+          e.message.includes("input required"),
+          "error mentions input required",
+        );
       }
       assert(threw, "should throw on empty options");
     },
 
     "throws on whitespace-only input": () => {
       let threw = false;
-      try { new ForgePipeline({ input: "   " }); } catch (e) { threw = true; }
+      try {
+        new ForgePipeline({ input: "   " });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "should throw on whitespace input");
     },
 
     "throws on empty string input": () => {
       let threw = false;
-      try { new ForgePipeline({ input: "" }); } catch (e) { threw = true; }
+      try {
+        new ForgePipeline({ input: "" });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "should throw on empty string");
     },
 
@@ -1104,43 +1567,69 @@ title: line1\\nline2
 
     "throws on done status": () => {
       let threw = false;
-      try { assertResumableDagStatus({ status: "done" }); } catch (e) {
+      try {
+        assertResumableDagStatus({ status: "done" });
+      } catch (e) {
         threw = true;
-        assert(e.message.includes("cannot resume"), "error mentions cannot resume");
+        assert(
+          e.message.includes("cannot resume"),
+          "error mentions cannot resume",
+        );
       }
       assert(threw, "done is not resumable");
     },
 
     "throws on pending status": () => {
       let threw = false;
-      try { assertResumableDagStatus({ status: "pending" }); } catch (e) { threw = true; }
+      try {
+        assertResumableDagStatus({ status: "pending" });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "pending is not resumable");
     },
 
     "throws on review status": () => {
       let threw = false;
-      try { assertResumableDagStatus({ status: "review" }); } catch (e) { threw = true; }
+      try {
+        assertResumableDagStatus({ status: "review" });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "review is not resumable");
     },
 
     "throws on null dag": () => {
       let threw = false;
-      try { assertResumableDagStatus(null); } catch (e) {
+      try {
+        assertResumableDagStatus(null);
+      } catch (e) {
         threw = true;
-        assert(e.message.includes("invalid task state"), "error mentions invalid state");
+        assert(
+          e.message.includes("invalid task state"),
+          "error mentions invalid state",
+        );
       }
       assert(threw, "null dag throws");
     },
 
     "throws on dag without status": () => {
       let threw = false;
-      try { assertResumableDagStatus({}); } catch (e) { threw = true; }
+      try {
+        assertResumableDagStatus({});
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "missing status throws");
     },
 
     "throws on dag with numeric status": () => {
       let threw = false;
-      try { assertResumableDagStatus({ status: 42 }); } catch (e) { threw = true; }
+      try {
+        assertResumableDagStatus({ status: 42 });
+      } catch (_e) {
+        threw = true;
+      }
       assert(threw, "numeric status throws");
     },
   });
@@ -1150,7 +1639,14 @@ title: line1\\nline2
     "returns default string models": () => {
       // Save and clear any overrides
       const saved = {};
-      for (const stage of ["intake", "clarify", "design", "implement", "verify", "deliver"]) {
+      for (const stage of [
+        "intake",
+        "clarify",
+        "design",
+        "implement",
+        "verify",
+        "deliver",
+      ]) {
         const key = `UCM_MODEL_${stage.toUpperCase()}`;
         saved[key] = process.env[key];
         delete process.env[key];
@@ -1168,7 +1664,8 @@ title: line1\\nline2
 
       // Restore
       for (const [k, v] of Object.entries(saved)) {
-        if (v !== undefined) process.env[k] = v; else delete process.env[k];
+        if (v !== undefined) process.env[k] = v;
+        else delete process.env[k];
       }
     },
 
@@ -1176,7 +1673,8 @@ title: line1\\nline2
       const orig = process.env.UCM_MODEL_IMPLEMENT;
       process.env.UCM_MODEL_IMPLEMENT = "haiku";
       assertEqual(STAGE_MODELS.implement, "haiku", "env override works");
-      if (orig !== undefined) process.env.UCM_MODEL_IMPLEMENT = orig; else delete process.env.UCM_MODEL_IMPLEMENT;
+      if (orig !== undefined) process.env.UCM_MODEL_IMPLEMENT = orig;
+      else delete process.env.UCM_MODEL_IMPLEMENT;
     },
 
     "returns object models for specify": () => {
@@ -1192,8 +1690,10 @@ title: line1\\nline2
       assertEqual(specifyModels.worker, "sonnet", "specify.worker default");
       assertEqual(specifyModels.converge, "opus", "specify.converge default");
 
-      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW; else delete process.env.UCM_MODEL_SPECIFY_WORKER;
-      if (origC !== undefined) process.env.UCM_MODEL_SPECIFY_CONVERGE = origC; else delete process.env.UCM_MODEL_SPECIFY_CONVERGE;
+      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW;
+      else delete process.env.UCM_MODEL_SPECIFY_WORKER;
+      if (origC !== undefined) process.env.UCM_MODEL_SPECIFY_CONVERGE = origC;
+      else delete process.env.UCM_MODEL_SPECIFY_CONVERGE;
     },
 
     "overrides object sub-keys via env var": () => {
@@ -1204,14 +1704,23 @@ title: line1\\nline2
 
       const specifyModels = STAGE_MODELS.specify;
       assertEqual(specifyModels.worker, "haiku", "sub-key override works");
-      assertEqual(specifyModels.converge, "opus", "non-overridden sub-key preserved");
+      assertEqual(
+        specifyModels.converge,
+        "opus",
+        "non-overridden sub-key preserved",
+      );
 
-      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW; else delete process.env.UCM_MODEL_SPECIFY_WORKER;
+      if (origW !== undefined) process.env.UCM_MODEL_SPECIFY_WORKER = origW;
+      else delete process.env.UCM_MODEL_SPECIFY_WORKER;
       if (_modelCache) _modelCache.clear();
     },
 
     "returns undefined for unknown stages": () => {
-      assertEqual(STAGE_MODELS.nonexistent, undefined, "unknown stage returns undefined");
+      assertEqual(
+        STAGE_MODELS.nonexistent,
+        undefined,
+        "unknown stage returns undefined",
+      );
     },
   });
 
@@ -1220,10 +1729,22 @@ title: line1\\nline2
     "every pipeline stage has a timeout defined": () => {
       for (const [pipeline, stages] of Object.entries(FORGE_PIPELINES)) {
         for (const stage of stages) {
-          assert(STAGE_TIMEOUTS[stage] !== undefined, `${pipeline}/${stage} has timeout`);
-          assert(typeof STAGE_TIMEOUTS[stage].idle === "number", `${pipeline}/${stage} timeout.idle is number`);
-          assert(typeof STAGE_TIMEOUTS[stage].hard === "number", `${pipeline}/${stage} timeout.hard is number`);
-          assert(STAGE_TIMEOUTS[stage].hard > STAGE_TIMEOUTS[stage].idle, `${pipeline}/${stage} hard > idle`);
+          assert(
+            STAGE_TIMEOUTS[stage] !== undefined,
+            `${pipeline}/${stage} has timeout`,
+          );
+          assert(
+            typeof STAGE_TIMEOUTS[stage].idle === "number",
+            `${pipeline}/${stage} timeout.idle is number`,
+          );
+          assert(
+            typeof STAGE_TIMEOUTS[stage].hard === "number",
+            `${pipeline}/${stage} timeout.hard is number`,
+          );
+          assert(
+            STAGE_TIMEOUTS[stage].hard > STAGE_TIMEOUTS[stage].idle,
+            `${pipeline}/${stage} hard > idle`,
+          );
         }
       }
     },
@@ -1231,16 +1752,29 @@ title: line1\\nline2
     "every pipeline stage has artifacts defined": () => {
       for (const [pipeline, stages] of Object.entries(FORGE_PIPELINES)) {
         for (const stage of stages) {
-          assert(STAGE_ARTIFACTS[stage] !== undefined, `${pipeline}/${stage} has artifacts`);
-          assert(Array.isArray(STAGE_ARTIFACTS[stage].requires), `${pipeline}/${stage} artifacts.requires is array`);
-          assert(Array.isArray(STAGE_ARTIFACTS[stage].produces), `${pipeline}/${stage} artifacts.produces is array`);
+          assert(
+            STAGE_ARTIFACTS[stage] !== undefined,
+            `${pipeline}/${stage} has artifacts`,
+          );
+          assert(
+            Array.isArray(STAGE_ARTIFACTS[stage].requires),
+            `${pipeline}/${stage} artifacts.requires is array`,
+          );
+          assert(
+            Array.isArray(STAGE_ARTIFACTS[stage].produces),
+            `${pipeline}/${stage} artifacts.produces is array`,
+          );
         }
       }
     },
 
     "all pipelines end with deliver": () => {
       for (const [name, stages] of Object.entries(FORGE_PIPELINES)) {
-        assertEqual(stages[stages.length - 1], "deliver", `${name} ends with deliver`);
+        assertEqual(
+          stages[stages.length - 1],
+          "deliver",
+          `${name} ends with deliver`,
+        );
       }
     },
 
@@ -1259,11 +1793,17 @@ title: line1\\nline2
     },
 
     "trivial is subset of small": () => {
-      const trivialSet = new Set(FORGE_PIPELINES.trivial);
+      const _trivialSet = new Set(FORGE_PIPELINES.trivial);
       for (const stage of FORGE_PIPELINES.trivial) {
-        assert(new Set(FORGE_PIPELINES.small).has(stage), `trivial stage ${stage} in small`);
+        assert(
+          new Set(FORGE_PIPELINES.small).has(stage),
+          `trivial stage ${stage} in small`,
+        );
       }
-      assert(FORGE_PIPELINES.small.length >= FORGE_PIPELINES.trivial.length, "small >= trivial length");
+      assert(
+        FORGE_PIPELINES.small.length >= FORGE_PIPELINES.trivial.length,
+        "small >= trivial length",
+      );
     },
 
     "idle timeout is at least 2 minutes for all stages": () => {
@@ -1276,15 +1816,28 @@ title: line1\\nline2
   // ── isFullyCovered ──
   await runGroup("isFullyCovered", {
     "returns true when all areas >= 1.0": () => {
-      assert(isFullyCovered({ "제품 정의": 1.0, "핵심 기능": 1.0, "기술 스택": 1.0 }), "all 1.0");
+      assert(
+        isFullyCovered({
+          "제품 정의": 1.0,
+          "핵심 기능": 1.0,
+          "기술 스택": 1.0,
+        }),
+        "all 1.0",
+      );
     },
 
     "returns true when areas exceed 1.0": () => {
-      assert(isFullyCovered({ "제품 정의": 1.5, "핵심 기능": 1.0 }), "above 1.0");
+      assert(
+        isFullyCovered({ "제품 정의": 1.5, "핵심 기능": 1.0 }),
+        "above 1.0",
+      );
     },
 
     "returns false when any area < 1.0": () => {
-      assert(!isFullyCovered({ "제품 정의": 1.0, "핵심 기능": 0.5 }), "one below");
+      assert(
+        !isFullyCovered({ "제품 정의": 1.0, "핵심 기능": 0.5 }),
+        "one below",
+      );
     },
 
     "returns false when area is 0": () => {
@@ -1333,7 +1886,9 @@ title: line1\\nline2
     },
 
     "returns empty array for non-decision content": () => {
-      const decisions = parseDecisionsFile("Just some text\nNo decisions here\n");
+      const decisions = parseDecisionsFile(
+        "Just some text\nNo decisions here\n",
+      );
       assertEqual(decisions.length, 0, "no decisions");
     },
 
@@ -1360,7 +1915,9 @@ title: line1\\nline2
   // ── formatDecisions ──
   await runGroup("formatDecisions", {
     "formats decisions with coverage": () => {
-      const decisions = [{ area: "작업 목표", question: "Q?", answer: "A", reason: "R" }];
+      const decisions = [
+        { area: "작업 목표", question: "Q?", answer: "A", reason: "R" },
+      ];
       const coverage = { "작업 목표": 0.5 };
       const md = formatDecisions(decisions, coverage);
       assert(md.includes("# 설계 결정"), "has title");
@@ -1404,14 +1961,20 @@ title: line1\\nline2
     },
 
     "passes through relative path": () => {
-      assertEqual(expandHome("relative/path"), "relative/path", "relative unchanged");
+      assertEqual(
+        expandHome("relative/path"),
+        "relative/path",
+        "relative unchanged",
+      );
     },
   });
 
   // ── normalizeProjects ──
   await runGroup("normalizeProjects", {
     "normalizes string project array": () => {
-      const result = normalizeProjects({ projects: ["/tmp/proj1", "/tmp/proj2"] });
+      const result = normalizeProjects({
+        projects: ["/tmp/proj1", "/tmp/proj2"],
+      });
       assertEqual(result.length, 2, "two projects");
       assertEqual(result[0].path, "/tmp/proj1", "first path");
       assertEqual(result[0].role, "primary", "first is primary");
@@ -1428,12 +1991,17 @@ title: line1\\nline2
     },
 
     "deduplicates projects by resolved path": () => {
-      const result = normalizeProjects({ projects: ["/tmp/proj", "/tmp/proj"] });
+      const result = normalizeProjects({
+        projects: ["/tmp/proj", "/tmp/proj"],
+      });
       assertEqual(result.length, 1, "deduplicated");
     },
 
     "falls back to meta.project when projects array empty": () => {
-      const result = normalizeProjects({ projects: [], project: "/tmp/fallback" });
+      const result = normalizeProjects({
+        projects: [],
+        project: "/tmp/fallback",
+      });
       assertEqual(result.length, 1, "one project from fallback");
       assertEqual(result[0].path, "/tmp/fallback", "fallback path");
       assertEqual(result[0].role, "primary", "fallback is primary");
@@ -1451,7 +2019,9 @@ title: line1\\nline2
     },
 
     "filters null and invalid entries": () => {
-      const result = normalizeProjects({ projects: [null, "", "undefined", "/tmp/valid"] });
+      const result = normalizeProjects({
+        projects: [null, "", "undefined", "/tmp/valid"],
+      });
       assertEqual(result.length, 1, "only valid entry");
       assertEqual(result[0].path, "/tmp/valid", "valid path");
     },
@@ -1468,7 +2038,9 @@ title: line1\\nline2
 
     "preserves origin and baseCommit": () => {
       const result = normalizeProjects({
-        projects: [{ path: "/tmp/a", origin: "/tmp/origin", baseCommit: "abc123" }],
+        projects: [
+          { path: "/tmp/a", origin: "/tmp/origin", baseCommit: "abc123" },
+        ],
       });
       assertEqual(result[0].origin, "/tmp/origin", "origin resolved");
       assertEqual(result[0].baseCommit, "abc123", "baseCommit preserved");
@@ -1486,4 +2058,7 @@ title: line1\\nline2
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

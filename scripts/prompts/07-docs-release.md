@@ -13,20 +13,10 @@
 
 # 작업
 
-문서화, 패키징, 빌드, 릴리즈 준비 중 개선 1건을 수행한다.
+문서화, 패키징, 빌드, 릴리즈 준비 중 개선을 수행한다.
 
-- git log --oneline -20 으로 이전 수정 내역을 확인하고 새로운 항목을 선택한다
 - 코드 변경 없이 문서/설정만 수정하거나, 문서와 코드의 불일치를 코드 쪽에서 수정한다
 - 수정 후 관련 빌드/테스트를 통과시킨다:
   - `node test/core.test.js` (코어)
   - `cd web && npm run build` (프론트엔드)
   - `cd ucm-desktop && bun run build` (데스크톱)
-
-# 보고
-
-```
-[type] docs | package | build | changelog | cli-help
-[file] 변경 파일
-[what] 한 줄 요약
-[verify] 검증 결과
-```

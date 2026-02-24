@@ -1,13 +1,26 @@
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  Bot,
+  CheckCircle,
+  Lightbulb,
+  Pause,
+} from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
-import { Bell, CheckCircle, AlertTriangle, Pause, Lightbulb, Bot, ArrowRight } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useAutopilotStatusQuery } from "@/queries/autopilot";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 import { TimeAgo } from "./time-ago";
 
@@ -24,16 +37,36 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
   const { data: proposals } = useProposalsQuery();
   const { data: sessions } = useAutopilotStatusQuery();
 
-  const reviewTasks = useMemo(() => (tasks || []).filter(t => t.state === "review"), [tasks]);
-  const failedTasks = useMemo(() => (tasks || []).filter(t => t.state === "failed"), [tasks]);
-  const gateTasks = useMemo(() => (tasks || []).filter(t => t.state === "running" && t.stageGate), [tasks]);
-  const pendingProposals = useMemo(() => (proposals || []).filter(p => p.status === "proposed"), [proposals]);
+  const reviewTasks = useMemo(
+    () => (tasks || []).filter((t) => t.state === "review"),
+    [tasks],
+  );
+  const failedTasks = useMemo(
+    () => (tasks || []).filter((t) => t.state === "failed"),
+    [tasks],
+  );
+  const gateTasks = useMemo(
+    () => (tasks || []).filter((t) => t.state === "running" && t.stageGate),
+    [tasks],
+  );
+  const pendingProposals = useMemo(
+    () => (proposals || []).filter((p) => p.status === "proposed"),
+    [proposals],
+  );
   const awaitingReviewSessions = useMemo(
-    () => (Array.isArray(sessions) ? sessions : []).filter(s => s.status === "awaiting_review"),
-    [sessions]
+    () =>
+      (Array.isArray(sessions) ? sessions : []).filter(
+        (s) => s.status === "awaiting_review",
+      ),
+    [sessions],
   );
 
-  const totalCount = reviewTasks.length + failedTasks.length + gateTasks.length + pendingProposals.length + awaitingReviewSessions.length;
+  const totalCount =
+    reviewTasks.length +
+    failedTasks.length +
+    gateTasks.length +
+    pendingProposals.length +
+    awaitingReviewSessions.length;
 
   function goToTask(taskId: string) {
     setSelectedTaskId(taskId);
@@ -50,13 +83,19 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="p-0 flex flex-col" aria-describedby={undefined}>
+      <SheetContent
+        side="right"
+        className="p-0 flex flex-col"
+        aria-describedby={undefined}
+      >
         <SheetHeader className="px-4 pt-4 pb-3 border-b">
           <SheetTitle className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
             Inbox
             {totalCount > 0 && (
-              <Badge variant="secondary" className="text-xs">{totalCount}</Badge>
+              <Badge variant="secondary" className="text-xs">
+                {totalCount}
+              </Badge>
             )}
           </SheetTitle>
         </SheetHeader>
@@ -66,7 +105,9 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <CheckCircle className="h-8 w-8 text-emerald-400 mb-3" />
               <p className="text-sm font-medium">All clear</p>
-              <p className="text-xs text-muted-foreground mt-1">Nothing needs your attention</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Nothing needs your attention
+              </p>
             </div>
           ) : (
             <div className="divide-y">
@@ -78,7 +119,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   icon={<CheckCircle className="h-3.5 w-3.5 text-purple-400" />}
                   onViewAll={() => goToTasks("review")}
                 >
-                  {reviewTasks.map(task => (
+                  {reviewTasks.map((task) => (
                     <InboxItem
                       key={task.id}
                       title={task.title}
@@ -96,11 +137,15 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   count={gateTasks.length}
                   icon={<Pause className="h-3.5 w-3.5 text-amber-400" />}
                 >
-                  {gateTasks.map(task => (
+                  {gateTasks.map((task) => (
                     <InboxItem
                       key={task.id}
                       title={task.title}
-                      subtitle={<span className="text-amber-400">{task.stageGate} stage</span>}
+                      subtitle={
+                        <span className="text-amber-400">
+                          {task.stageGate} stage
+                        </span>
+                      }
                       onClick={() => goToTask(task.id)}
                     />
                   ))}
@@ -115,11 +160,13 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   icon={<AlertTriangle className="h-3.5 w-3.5 text-red-400" />}
                   onViewAll={() => goToTasks("failed")}
                 >
-                  {failedTasks.map(task => (
+                  {failedTasks.map((task) => (
                     <InboxItem
                       key={task.id}
                       title={task.title}
-                      subtitle={<TimeAgo date={task.completedAt || task.created} />}
+                      subtitle={
+                        <TimeAgo date={task.completedAt || task.created} />
+                      }
                       onClick={() => goToTask(task.id)}
                     />
                   ))}
@@ -132,14 +179,24 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   title="Pending Proposals"
                   count={pendingProposals.length}
                   icon={<Lightbulb className="h-3.5 w-3.5 text-amber-400" />}
-                  onViewAll={() => { navigate("/proposals"); onOpenChange(false); }}
+                  onViewAll={() => {
+                    navigate("/proposals");
+                    onOpenChange(false);
+                  }}
                 >
-                  {pendingProposals.slice(0, 5).map(p => (
+                  {pendingProposals.slice(0, 5).map((p) => (
                     <InboxItem
                       key={p.id}
                       title={p.title}
-                      subtitle={<span>{p.category} · {p.risk} risk</span>}
-                      onClick={() => { navigate("/proposals"); onOpenChange(false); }}
+                      subtitle={
+                        <span>
+                          {p.category} · {p.risk} risk
+                        </span>
+                      }
+                      onClick={() => {
+                        navigate("/proposals");
+                        onOpenChange(false);
+                      }}
                     />
                   ))}
                   {pendingProposals.length > 5 && (
@@ -156,14 +213,20 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
                   title="Autopilot Awaiting Review"
                   count={awaitingReviewSessions.length}
                   icon={<Bot className="h-3.5 w-3.5 text-purple-400" />}
-                  onViewAll={() => { navigate("/autopilot"); onOpenChange(false); }}
+                  onViewAll={() => {
+                    navigate("/autopilot");
+                    onOpenChange(false);
+                  }}
                 >
-                  {awaitingReviewSessions.map(s => (
+                  {awaitingReviewSessions.map((s) => (
                     <InboxItem
                       key={s.id}
                       title={`Session ${s.id.slice(0, 8)}`}
                       subtitle={<span>{s.project}</span>}
-                      onClick={() => { navigate("/autopilot"); onOpenChange(false); }}
+                      onClick={() => {
+                        navigate("/autopilot");
+                        onOpenChange(false);
+                      }}
                     />
                   ))}
                 </InboxSection>
@@ -177,7 +240,11 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
 }
 
 function InboxSection({
-  title, count, icon, onViewAll, children,
+  title,
+  count,
+  icon,
+  onViewAll,
+  children,
 }: {
   title: string;
   count: number;
@@ -191,10 +258,17 @@ function InboxSection({
         <div className="flex items-center gap-2">
           {icon}
           <span className="text-xs font-medium">{title}</span>
-          <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{count}</Badge>
+          <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+            {count}
+          </Badge>
         </div>
         {onViewAll && (
-          <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={onViewAll}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs px-2"
+            onClick={onViewAll}
+          >
             View all <ArrowRight className="h-3 w-3 ml-1" />
           </Button>
         )}
@@ -205,7 +279,9 @@ function InboxSection({
 }
 
 function InboxItem({
-  title, subtitle, onClick,
+  title,
+  subtitle,
+  onClick,
 }: {
   title: string;
   subtitle: React.ReactNode;
@@ -229,11 +305,27 @@ export function useInboxCount() {
   const { data: sessions } = useAutopilotStatusQuery();
 
   return useMemo(() => {
-    const reviewTasks = (tasks || []).filter(t => t.state === "review").length;
-    const failedTasks = (tasks || []).filter(t => t.state === "failed").length;
-    const gateTasks = (tasks || []).filter(t => t.state === "running" && t.stageGate).length;
-    const pendingProposals = (proposals || []).filter(p => p.status === "proposed").length;
-    const awaitingSessions = (Array.isArray(sessions) ? sessions : []).filter(s => s.status === "awaiting_review").length;
-    return reviewTasks + failedTasks + gateTasks + pendingProposals + awaitingSessions;
+    const reviewTasks = (tasks || []).filter(
+      (t) => t.state === "review",
+    ).length;
+    const failedTasks = (tasks || []).filter(
+      (t) => t.state === "failed",
+    ).length;
+    const gateTasks = (tasks || []).filter(
+      (t) => t.state === "running" && t.stageGate,
+    ).length;
+    const pendingProposals = (proposals || []).filter(
+      (p) => p.status === "proposed",
+    ).length;
+    const awaitingSessions = (Array.isArray(sessions) ? sessions : []).filter(
+      (s) => s.status === "awaiting_review",
+    ).length;
+    return (
+      reviewTasks +
+      failedTasks +
+      gateTasks +
+      pendingProposals +
+      awaitingSessions
+    );
   }, [tasks, proposals, sessions]);
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-const { copyFileSync, mkdirSync, existsSync } = require("fs");
-const path = require("path");
-const os = require("os");
+const { copyFileSync, mkdirSync, existsSync } = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
 
 const source = path.join(__dirname, "..", "skill", "recall.md");
 const targetDir = path.join(os.homedir(), ".claude", "commands");

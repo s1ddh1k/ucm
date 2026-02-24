@@ -1,10 +1,20 @@
 import { useState } from "react";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useStartAutopilot } from "@/queries/autopilot";
 import { useUiStore } from "@/stores/ui";
 
@@ -13,7 +23,10 @@ interface SessionStartDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogProps) {
+export function SessionStartDialog({
+  open,
+  onOpenChange,
+}: SessionStartDialogProps) {
   const [project, setProject] = useState("");
   const [pipeline, setPipeline] = useState("small");
   const [maxItems, setMaxItems] = useState("50");
@@ -27,7 +40,7 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
       {
         project: project.trim(),
         pipeline,
-        maxItems: parseInt(maxItems) || 50,
+        maxItems: parseInt(maxItems, 10) || 50,
       },
       {
         onSuccess: (data) => {
@@ -37,7 +50,7 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
           }
           onOpenChange(false);
         },
-      }
+      },
     );
   };
 
@@ -46,12 +59,16 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Start Autopilot Session</DialogTitle>
-          <DialogDescription>Start an automated development session for a project.</DialogDescription>
+          <DialogDescription>
+            Start an automated development session for a project.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Project Path</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Project Path
+            </label>
             <Input
               placeholder="~/my-project"
               value={project}
@@ -62,7 +79,9 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
 
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="text-sm font-medium mb-1.5 block">Pipeline</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                Pipeline
+              </label>
               <Select value={pipeline} onValueChange={setPipeline}>
                 <SelectTrigger>
                   <SelectValue />
@@ -77,7 +96,9 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
             </div>
 
             <div className="w-28">
-              <label className="text-sm font-medium mb-1.5 block">Max Items</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                Max Items
+              </label>
               <Input
                 type="number"
                 value={maxItems}
@@ -87,8 +108,13 @@ export function SessionStartDialog({ open, onOpenChange }: SessionStartDialogPro
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={handleStart} disabled={!project.trim() || startAutopilot.isPending}>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleStart}
+              disabled={!project.trim() || startAutopilot.isPending}
+            >
               {startAutopilot.isPending ? "Starting..." : "Start Session"}
             </Button>
           </div>

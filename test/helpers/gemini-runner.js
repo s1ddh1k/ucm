@@ -6,13 +6,18 @@ const { browserAgentBatch } = require("../../lib/core/browser-agent");
 class GeminiRunner {
   constructor(opts = {}) {
     this.systemPrompt = null;
-    this.provider = opts.provider || process.env.UCM_BROWSER_AGENT_PROVIDER || "codex";
-    this.model = opts.model || process.env.UCM_BROWSER_AGENT_MODEL
-      || (this.provider === "codex" ? "low" : undefined);
-    this.perTaskTimeoutMs = Number(process.env.UCM_BROWSER_AGENT_PER_TASK_TIMEOUT_MS)
-      || (this.provider === "codex" ? 20_000 : 30_000);
-    this.batchSize = Number(process.env.UCM_BROWSER_AGENT_BATCH_SIZE)
-      || (this.provider === "codex" ? 1 : 0);
+    this.provider =
+      opts.provider || process.env.UCM_BROWSER_AGENT_PROVIDER || "codex";
+    this.model =
+      opts.model ||
+      process.env.UCM_BROWSER_AGENT_MODEL ||
+      (this.provider === "codex" ? "low" : undefined);
+    this.perTaskTimeoutMs =
+      Number(process.env.UCM_BROWSER_AGENT_PER_TASK_TIMEOUT_MS) ||
+      (this.provider === "codex" ? 20_000 : 30_000);
+    this.batchSize =
+      Number(process.env.UCM_BROWSER_AGENT_BATCH_SIZE) ||
+      (this.provider === "codex" ? 1 : 0);
   }
 
   async start() {
@@ -24,7 +29,8 @@ class GeminiRunner {
    * 모든 테스트를 단일 브라우저 에이전트 spawn으로 배치 실행
    */
   async runBatch(testCases, systemPrompt) {
-    const url = testCases[0]?.instruction?.match(/https?:\/\/[^\s]+/)?.[0] || "";
+    const url =
+      testCases[0]?.instruction?.match(/https?:\/\/[^\s]+/)?.[0] || "";
 
     const tasks = testCases.map((tc) => ({
       id: tc.id,
@@ -46,7 +52,9 @@ class GeminiRunner {
     for (let i = 0; i < tasks.length; i += chunkSize) {
       const chunk = tasks.slice(i, i + chunkSize);
       const chunkIndex = Math.floor(i / chunkSize) + 1;
-      console.log(`[browser-runner] chunk ${chunkIndex}/${totalChunks} (${chunk.length} tasks)`);
+      console.log(
+        `[browser-runner] chunk ${chunkIndex}/${totalChunks} (${chunk.length} tasks)`,
+      );
 
       let chunkResult = await browserAgentBatch(url, chunk, {
         provider: this.provider,
@@ -56,10 +64,14 @@ class GeminiRunner {
       });
 
       if (this.provider === "codex") {
-        const failedIds = new Set(chunkResult.filter((r) => !r.pass).map((r) => r.id));
+        const failedIds = new Set(
+          chunkResult.filter((r) => !r.pass).map((r) => r.id),
+        );
         if (failedIds.size > 0) {
           const retryTasks = chunk.filter((t) => failedIds.has(t.id));
-          console.log(`[browser-runner] retry failed tasks once (${retryTasks.length})`);
+          console.log(
+            `[browser-runner] retry failed tasks once (${retryTasks.length})`,
+          );
           const retryById = new Map();
           for (const task of retryTasks) {
             console.log(`[browser-runner] retry task ${task.id}`);
@@ -75,8 +87,14 @@ class GeminiRunner {
               pass: false,
               evidence: "retry returned no result",
             };
-            if (!retryResult.pass && typeof retryResult.evidence === "string" && retryResult.evidence.startsWith("codex timeout:")) {
-              console.log(`[browser-runner] retry task ${task.id} second attempt (timeout)`);
+            if (
+              !retryResult.pass &&
+              typeof retryResult.evidence === "string" &&
+              retryResult.evidence.startsWith("codex timeout:")
+            ) {
+              console.log(
+                `[browser-runner] retry task ${task.id} second attempt (timeout)`,
+              );
               const retriedAgain = await browserAgentBatch(url, [task], {
                 provider: this.provider,
                 model: this.model,

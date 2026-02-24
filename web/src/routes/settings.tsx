@@ -1,21 +1,48 @@
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useStatsQuery, useStartDaemon, useStopDaemon } from "@/queries/stats";
-import { useDaemonStore } from "@/stores/daemon";
-import { StatusDot } from "@/components/shared/status-dot";
-import { api } from "@/api/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatDuration } from "@/lib/format";
-import { Play, Square, Pause, RotateCw, Trash2, Bot, Loader2 } from "lucide-react";
+import {
+  Bot,
+  Loader2,
+  Pause,
+  Play,
+  RotateCw,
+  Square,
+  Trash2,
+} from "lucide-react";
+import { useEffect } from "react";
 import { toast } from "sonner";
+import { api } from "@/api/client";
 import type { StageApprovalConfig } from "@/api/types";
+import { StatusDot } from "@/components/shared/status-dot";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { formatDuration } from "@/lib/format";
+import { useStartDaemon, useStatsQuery, useStopDaemon } from "@/queries/stats";
+import { useDaemonStore } from "@/stores/daemon";
 
 const GATE_STAGES = [
-  "clarify", "specify", "decompose", "design",
-  "implement", "verify", "ux-review", "polish", "integrate",
+  "clarify",
+  "specify",
+  "decompose",
+  "design",
+  "implement",
+  "verify",
+  "ux-review",
+  "polish",
+  "integrate",
 ] as const;
 
 export default function SettingsPage() {
@@ -34,12 +61,14 @@ export default function SettingsPage() {
   }, [stats?.daemonStatus, setStatus]);
 
   const pauseDaemon = useMutation({
-    mutationFn: () => fetch("/api/pause", { method: "POST" }).then((r) => r.json()),
+    mutationFn: () =>
+      fetch("/api/pause", { method: "POST" }).then((r) => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["stats"] }),
   });
 
   const resumeDaemon = useMutation({
-    mutationFn: () => fetch("/api/resume", { method: "POST" }).then((r) => r.json()),
+    mutationFn: () =>
+      fetch("/api/resume", { method: "POST" }).then((r) => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["stats"] }),
   });
 
@@ -58,7 +87,9 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
             <StatusDot status={daemonStatus} />
-            <span className="text-sm font-medium capitalize">{daemonStatus}</span>
+            <span className="text-sm font-medium capitalize">
+              {daemonStatus}
+            </span>
             {stats && (
               <span className="text-sm text-muted-foreground">
                 (PID: {stats.pid}, Uptime: {formatDuration(stats.uptime)})
@@ -68,22 +99,41 @@ export default function SettingsPage() {
 
           <div className="flex gap-2">
             {daemonStatus === "offline" || daemonStatus === "unknown" ? (
-              <Button size="sm" onClick={() => startDaemon.mutate()} disabled={startDaemon.isPending}>
+              <Button
+                size="sm"
+                onClick={() => startDaemon.mutate()}
+                disabled={startDaemon.isPending}
+              >
                 <Play className="h-4 w-4" /> Start Daemon
               </Button>
             ) : (
               <>
                 {daemonStatus === "running" && (
-                  <Button size="sm" variant="outline" onClick={() => pauseDaemon.mutate()} disabled={pauseDaemon.isPending}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => pauseDaemon.mutate()}
+                    disabled={pauseDaemon.isPending}
+                  >
                     <Pause className="h-4 w-4" /> Pause
                   </Button>
                 )}
                 {daemonStatus === "paused" && (
-                  <Button size="sm" variant="outline" onClick={() => resumeDaemon.mutate()} disabled={resumeDaemon.isPending}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => resumeDaemon.mutate()}
+                    disabled={resumeDaemon.isPending}
+                  >
                     <RotateCw className="h-4 w-4" /> Resume
                   </Button>
                 )}
-                <Button size="sm" variant="destructive" onClick={() => stopDaemon.mutate()} disabled={stopDaemon.isPending}>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => stopDaemon.mutate()}
+                  disabled={stopDaemon.isPending}
+                >
                   <Square className="h-4 w-4" /> Stop Daemon
                 </Button>
               </>
@@ -102,7 +152,12 @@ export default function SettingsPage() {
           <CardDescription>Cleanup completed and failed tasks</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button size="sm" variant="outline" onClick={() => runCleanup.mutate()} disabled={runCleanup.isPending}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => runCleanup.mutate()}
+            disabled={runCleanup.isPending}
+          >
             <Trash2 className="h-4 w-4" /> Run Cleanup
           </Button>
         </CardContent>
@@ -117,14 +172,42 @@ export default function SettingsPage() {
             <div className="space-y-2 text-sm">
               <InfoRow label="PID" value={String(stats.pid)} />
               <InfoRow label="Uptime" value={formatDuration(stats.uptime)} />
-              <InfoRow label="Available Pipelines" value={stats.pipelines?.join(", ") || "-"} />
-              <InfoRow label="Resource Pressure" value={stats.resourcePressure || "normal"} />
-              <InfoRow label="CPU Load" value={`${Math.round(stats.resources.cpuLoad * 100)}%`} />
-              <InfoRow label="Memory Free" value={`${Math.round(stats.resources.memoryFreeMb).toLocaleString()} MB`} />
-              <InfoRow label="Disk Free" value={stats.resources.diskFreeGb != null ? `${stats.resources.diskFreeGb.toFixed(0)} GB` : "N/A"} />
-              <InfoRow label="Active Tasks" value={stats.activeTasks?.join(", ") || "none"} />
-              <InfoRow label="Suspended Tasks" value={stats.suspendedTasks?.join(", ") || "none"} />
-              <InfoRow label="Tasks Completed" value={String(stats.tasksCompleted)} />
+              <InfoRow
+                label="Available Pipelines"
+                value={stats.pipelines?.join(", ") || "-"}
+              />
+              <InfoRow
+                label="Resource Pressure"
+                value={stats.resourcePressure || "normal"}
+              />
+              <InfoRow
+                label="CPU Load"
+                value={`${Math.round(stats.resources.cpuLoad * 100)}%`}
+              />
+              <InfoRow
+                label="Memory Free"
+                value={`${Math.round(stats.resources.memoryFreeMb).toLocaleString()} MB`}
+              />
+              <InfoRow
+                label="Disk Free"
+                value={
+                  stats.resources.diskFreeGb != null
+                    ? `${stats.resources.diskFreeGb.toFixed(0)} GB`
+                    : "N/A"
+                }
+              />
+              <InfoRow
+                label="Active Tasks"
+                value={stats.activeTasks?.join(", ") || "none"}
+              />
+              <InfoRow
+                label="Suspended Tasks"
+                value={stats.suspendedTasks?.join(", ") || "none"}
+              />
+              <InfoRow
+                label="Tasks Completed"
+                value={String(stats.tasksCompleted)}
+              />
               <InfoRow label="Tasks Failed" value={String(stats.tasksFailed)} />
               <InfoRow label="Total Spawns" value={String(stats.totalSpawns)} />
             </div>
@@ -155,10 +238,14 @@ function ProviderCard() {
     queryFn: () => api.config.get(),
   });
 
-  const activeProvider = stats?.llm?.provider || ucmConfig?.provider || "claude";
+  const activeProvider =
+    stats?.llm?.provider || ucmConfig?.provider || "claude";
   const activeModel = stats?.llm?.model || ucmConfig?.model || "opus";
-  const availableModels = MODELS_BY_PROVIDER[activeProvider] || MODELS_BY_PROVIDER.claude;
-  const displayedModel = availableModels.includes(activeModel) ? activeModel : availableModels[0];
+  const availableModels =
+    MODELS_BY_PROVIDER[activeProvider] || MODELS_BY_PROVIDER.claude;
+  const displayedModel = availableModels.includes(activeModel)
+    ? activeModel
+    : availableModels[0];
 
   const updateConfig = useMutation({
     mutationFn: (params: { provider: string; model: string }) =>
@@ -179,11 +266,22 @@ function ProviderCard() {
   // made the old model invalid). The changeProvider function already handles this for its own
   // calls, but this catches cases where the config was changed externally.
   useEffect(() => {
-    if (!isLoading && activeModel !== displayedModel && !updateConfig.isPending) {
+    if (
+      !isLoading &&
+      activeModel !== displayedModel &&
+      !updateConfig.isPending
+    ) {
       updateConfig.mutate({ provider: activeProvider, model: displayedModel });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeModel, displayedModel, activeProvider, isLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeModel,
+    displayedModel,
+    activeProvider,
+    isLoading,
+    updateConfig.isPending,
+    updateConfig.mutate,
+  ]);
 
   function changeProvider(newProvider: string) {
     const models = MODELS_BY_PROVIDER[newProvider] || MODELS_BY_PROVIDER.claude;
@@ -203,7 +301,8 @@ function ProviderCard() {
           AI Provider
         </CardTitle>
         <CardDescription>
-          Switch the AI provider and model at runtime. Changes apply to new tasks and terminal sessions. Running tasks are not affected.
+          Switch the AI provider and model at runtime. Changes apply to new
+          tasks and terminal sessions. Running tasks are not affected.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -213,7 +312,9 @@ function ProviderCard() {
           <>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium" id="provider-label">Provider</label>
+                <label className="text-sm font-medium" id="provider-label">
+                  Provider
+                </label>
                 <Select
                   value={activeProvider}
                   onValueChange={changeProvider}
@@ -224,13 +325,17 @@ function ProviderCard() {
                   </SelectTrigger>
                   <SelectContent>
                     {PROVIDERS.map((p) => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium" id="model-label">Model</label>
+                <label className="text-sm font-medium" id="model-label">
+                  Model
+                </label>
                 <Select
                   value={displayedModel}
                   onValueChange={changeModel}
@@ -241,7 +346,9 @@ function ProviderCard() {
                   </SelectTrigger>
                   <SelectContent>
                     {availableModels.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -253,7 +360,9 @@ function ProviderCard() {
               ) : (
                 <span>Active:</span>
               )}
-              <span className="font-mono font-medium text-foreground">{activeProvider}/{activeModel}</span>
+              <span className="font-mono font-medium text-foreground">
+                {activeProvider}/{activeModel}
+              </span>
             </div>
           </>
         )}
@@ -296,7 +405,8 @@ function StageApprovalCard() {
       <CardHeader>
         <CardTitle>Stage Approval</CardTitle>
         <CardDescription>
-          Control per-stage approval gates. When auto-approve is off, the pipeline pauses after each stage for manual approval.
+          Control per-stage approval gates. When auto-approve is off, the
+          pipeline pauses after each stage for manual approval.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -322,10 +432,20 @@ function StageApprovalCard() {
               ))}
             </div>
             <div className="flex gap-2 pt-2 border-t">
-              <Button size="sm" variant="outline" onClick={() => setAll(true)} disabled={updateConfig.isPending}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAll(true)}
+                disabled={updateConfig.isPending}
+              >
                 All Auto
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setAll(false)} disabled={updateConfig.isPending}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAll(false)}
+                disabled={updateConfig.isPending}
+              >
                 All Manual
               </Button>
             </div>
@@ -334,7 +454,9 @@ function StageApprovalCard() {
             </p>
           </>
         ) : (
-          <div className="text-sm text-muted-foreground">Config not available (daemon offline?)</div>
+          <div className="text-sm text-muted-foreground">
+            Config not available (daemon offline?)
+          </div>
         )}
       </CardContent>
     </Card>

@@ -1,5 +1,5 @@
-import { resolve, join } from "path";
-import { homedir } from "os";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 const DESKTOP_UCM_DIR = join(homedir(), ".ucm-desktop");
 const DESKTOP_UI_PORT = 17173;
@@ -65,7 +65,9 @@ export class DaemonManager {
           if (message.type === "error" && settle()) {
             this.child = null;
             this.status = "stopped";
-            promiseReject(new Error(message.message || "daemon startup failed"));
+            promiseReject(
+              new Error(message.message || "daemon startup failed"),
+            );
           }
         },
       });
@@ -77,7 +79,9 @@ export class DaemonManager {
         this.status = "stopped";
 
         if (settle()) {
-          promiseReject(new Error(`daemon exited during startup with code ${code}`));
+          promiseReject(
+            new Error(`daemon exited during startup with code ${code}`),
+          );
         } else if (wasRunning && this.onCrash) {
           this.onCrash(code);
         }

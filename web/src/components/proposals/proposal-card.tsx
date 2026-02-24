@@ -1,11 +1,11 @@
+import { ArrowDown, ArrowUp, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
 import type { Proposal } from "@/api/types";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThumbsUp, ThumbsDown, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { RISK_COLORS, type RiskLevel } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 import { getProposalProjectLabel, getProposalProjectPath } from "@/lib/project";
+import { cn } from "@/lib/utils";
 
 interface ProposalCardProps {
   proposal: Proposal;
@@ -18,13 +18,23 @@ interface ProposalCardProps {
 }
 
 export function ProposalCard({
-  proposal, onApprove, onReject, onDelete, onPriorityUp, onPriorityDown, onClick,
+  proposal,
+  onApprove,
+  onReject,
+  onDelete,
+  onPriorityUp,
+  onPriorityDown,
+  onClick,
 }: ProposalCardProps) {
-  const riskColor = RISK_COLORS[proposal.risk as RiskLevel] || "text-muted-foreground";
+  const riskColor =
+    RISK_COLORS[proposal.risk as RiskLevel] || "text-muted-foreground";
   const isActionable = proposal.status === "proposed";
   const projectLabel = getProposalProjectLabel(proposal);
   const projectPath = getProposalProjectPath(proposal);
-  const stop = (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+  const stop = (event: {
+    preventDefault: () => void;
+    stopPropagation: () => void;
+  }) => {
     event.preventDefault();
     event.stopPropagation();
   };
@@ -36,7 +46,9 @@ export function ProposalCard({
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <Badge variant="outline" className="text-xs shrink-0">{proposal.category}</Badge>
+          <Badge variant="outline" className="text-xs shrink-0">
+            {proposal.category}
+          </Badge>
           <span className={cn("text-xs font-medium", riskColor)}>
             {proposal.risk} risk
           </span>
@@ -44,17 +56,25 @@ export function ProposalCard({
 
         <h3 className="text-sm font-medium line-clamp-2">{proposal.title}</h3>
         <div>
-          <Badge variant="outline" className="text-[10px] font-normal" title={projectPath || projectLabel}>
+          <Badge
+            variant="outline"
+            className="text-[10px] font-normal"
+            title={projectPath || projectLabel}
+          >
             {projectLabel}
           </Badge>
         </div>
 
         {proposal.change && (
-          <p className="text-xs text-muted-foreground line-clamp-2">{proposal.change}</p>
+          <p className="text-xs text-muted-foreground line-clamp-2">
+            {proposal.change}
+          </p>
         )}
 
         <div className="flex items-center justify-between pt-1">
-          <span className="text-xs text-muted-foreground">Pri: {proposal.priority}</span>
+          <span className="text-xs text-muted-foreground">
+            Pri: {proposal.priority}
+          </span>
           <div
             className="flex items-center gap-1"
             onClick={(e) => stop(e)}

@@ -1,8 +1,14 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useUiStore } from "@/stores/ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { UNKNOWN_PROJECT_KEY } from "@/lib/project";
+import { useUiStore } from "@/stores/ui";
 
 interface TaskProjectOption {
   key: string;
@@ -15,7 +21,11 @@ interface TaskFiltersProps {
   projectScopeLocked?: boolean;
 }
 
-export function TaskFilters({ projectOptions, projectValue, projectScopeLocked = false }: TaskFiltersProps) {
+export function TaskFilters({
+  projectOptions,
+  projectValue,
+  projectScopeLocked = false,
+}: TaskFiltersProps) {
   const taskFilter = useUiStore((s) => s.taskFilter);
   const taskSort = useUiStore((s) => s.taskSort);
   const taskSearch = useUiStore((s) => s.taskSearch);
@@ -26,7 +36,10 @@ export function TaskFilters({ projectOptions, projectValue, projectScopeLocked =
 
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 border-b">
-      <Select value={taskFilter || "all"} onValueChange={(v) => setTaskFilter(v === "all" ? "" : v)}>
+      <Select
+        value={taskFilter || "all"}
+        onValueChange={(v) => setTaskFilter(v === "all" ? "" : v)}
+      >
         <SelectTrigger className="w-24 h-8">
           <SelectValue />
         </SelectTrigger>
@@ -41,7 +54,10 @@ export function TaskFilters({ projectOptions, projectValue, projectScopeLocked =
       </Select>
 
       {!projectScopeLocked && (
-        <Select value={projectValue || "all"} onValueChange={(v) => setTaskProjectFilter(v === "all" ? "" : v)}>
+        <Select
+          value={projectValue || "all"}
+          onValueChange={(v) => setTaskProjectFilter(v === "all" ? "" : v)}
+        >
           <SelectTrigger className="w-44 h-8">
             <SelectValue placeholder="Project" />
           </SelectTrigger>
@@ -49,14 +65,21 @@ export function TaskFilters({ projectOptions, projectValue, projectScopeLocked =
             <SelectItem value="all">All Projects</SelectItem>
             {projectOptions.map((project) => (
               <SelectItem key={project.key} value={project.key}>
-                {project.key === UNKNOWN_PROJECT_KEY ? "Unknown Project" : project.label}
+                {project.key === UNKNOWN_PROJECT_KEY
+                  ? "Unknown Project"
+                  : project.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       )}
 
-      <Select value={taskSort} onValueChange={(v) => setTaskSort(v as "created" | "priority" | "title")}>
+      <Select
+        value={taskSort}
+        onValueChange={(v) =>
+          setTaskSort(v as "created" | "priority" | "title")
+        }
+      >
         <SelectTrigger className="w-24 h-8">
           <SelectValue />
         </SelectTrigger>

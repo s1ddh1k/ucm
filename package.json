@@ -28,6 +28,9 @@
   ],
   "scripts": {
     "test": "node test/ucm.test.js && node test/hivemind.test.js && node test/integration.js && node test/browser.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
+    "format": "biome format --write .",
     "postinstall": "node scripts/postinstall.js",
     "install-skill": "node scripts/install-skill.js"
   },
@@ -53,5 +56,8 @@
     "better-sqlite3": "^12.6.2",
     "node-pty": "^1.2.0-beta.11",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4"
   }
 }

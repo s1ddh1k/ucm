@@ -1,14 +1,22 @@
 #!/usr/bin/env node
 // test/integration.js — daemon + HTTP integration tests
 
-const { spawn } = require("child_process");
-const path = require("path");
-const os = require("os");
-const fs = require("fs");
-const net = require("net");
-const http = require("http");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+const os = require("node:os");
+const fs = require("node:fs");
+const net = require("node:net");
+const http = require("node:http");
 
-const { state, assert, assertEqual, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
+const {
+  state,
+  assert,
+  assertEqual,
+  runGroup,
+  startSuiteTimer,
+  stopSuiteTimer,
+  summary,
+} = require("./harness.js");
 const { trackPid, cleanupAll } = require("./helpers/cleanup.js");
 const { ensureWebDistBuilt } = require("./helpers/web-build.js");
 
@@ -53,7 +61,10 @@ suspendedReason: reject_feedback
 
 seeded body
 `;
-  fs.writeFileSync(path.join(TASKS_DIR, "running", `${SEEDED_SUSPENDED_TASK_ID}.md`), seededSuspendedTask);
+  fs.writeFileSync(
+    path.join(TASKS_DIR, "running", `${SEEDED_SUSPENDED_TASK_ID}.md`),
+    seededSuspendedTask,
+  );
 
   // Seed daemon state with one valid + one stale suspended task id.
   // Stale entries must not block daemon resume.
@@ -66,7 +77,10 @@ seeded body
     suspendedTasks: [SEEDED_SUSPENDED_TASK_ID, STALE_SUSPENDED_TASK_ID],
     stats: { tasksCompleted: 0, tasksFailed: 0, totalSpawns: 0 },
   };
-  fs.writeFileSync(path.join(DAEMON_DIR, "state.json"), JSON.stringify(seededState, null, 2));
+  fs.writeFileSync(
+    path.join(DAEMON_DIR, "state.json"),
+    JSON.stringify(seededState, null, 2),
+  );
 
   // write minimal config
   const config = {
@@ -79,16 +93,57 @@ seeded body
     stageTimeoutMs: 30000,
     httpPort: 0,
     uiPort: 0,
-    resources: { cpuThreshold: 0.8, memoryMinFreeMb: 512, diskMinFreeGb: 1, checkIntervalMs: 60000 },
+    resources: {
+      cpuThreshold: 0.8,
+      memoryMinFreeMb: 512,
+      diskMinFreeGb: 1,
+      checkIntervalMs: 60000,
+    },
     cleanup: { retentionDays: 7, autoCleanOnDiskPressure: true },
-    quota: { source: "ccusage", mode: "work", modes: { work: { windowBudgetPercent: 50 }, off: { windowBudgetPercent: 90 } }, softLimitPercent: 80, hardLimitPercent: 95 },
-    infra: { slots: 1, composeFile: "docker-compose.test.yml", upTimeoutMs: 60000, downAfterTest: true, browserSlots: 1 },
-    observer: { enabled: false, intervalMs: 14400000, taskCountTrigger: 10, maxProposalsPerCycle: 5, dataWindowDays: 7, proposalRetentionDays: 30 },
-    selfImprove: { enabled: false, maxRisk: "low", requirePassingTests: true, backupBranch: true },
+    quota: {
+      source: "ccusage",
+      mode: "work",
+      modes: {
+        work: { windowBudgetPercent: 50 },
+        off: { windowBudgetPercent: 90 },
+      },
+      softLimitPercent: 80,
+      hardLimitPercent: 95,
+    },
+    infra: {
+      slots: 1,
+      composeFile: "docker-compose.test.yml",
+      upTimeoutMs: 60000,
+      downAfterTest: true,
+      browserSlots: 1,
+    },
+    observer: {
+      enabled: false,
+      intervalMs: 14400000,
+      taskCountTrigger: 10,
+      maxProposalsPerCycle: 5,
+      dataWindowDays: 7,
+      proposalRetentionDays: 30,
+    },
+    selfImprove: {
+      enabled: false,
+      maxRisk: "low",
+      requirePassingTests: true,
+      backupBranch: true,
+    },
     regulator: { enabled: false },
-    autopilot: { releaseEvery: 4, maxConsecutiveFailures: 3, maxItemsPerSession: 50, reviewRetries: 2, itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 } },
+    autopilot: {
+      releaseEvery: 4,
+      maxConsecutiveFailures: 3,
+      maxItemsPerSession: 50,
+      reviewRetries: 2,
+      itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
+    },
   };
-  fs.writeFileSync(path.join(UCM_DIR, "config.json"), JSON.stringify(config, null, 2));
+  fs.writeFileSync(
+    path.join(UCM_DIR, "config.json"),
+    JSON.stringify(config, null, 2),
+  );
 }
 
 function socketRequest(method, params = {}) {
@@ -101,7 +156,7 @@ function socketRequest(method, params = {}) {
     }, 10000);
 
     conn.on("connect", () => {
-      conn.write(JSON.stringify({ id: "test", method, params }) + "\n");
+      conn.write(`${JSON.stringify({ id: "test", method, params })}\n`);
     });
 
     conn.on("data", (chunk) => {
@@ -153,7 +208,10 @@ function httpRequest(method, urlPath, body = null) {
     });
 
     req.on("error", reject);
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error("http timeout")); });
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error("http timeout"));
+    });
 
     if (body) req.write(JSON.stringify(body));
     req.end();
@@ -177,7 +235,8 @@ function waitForUiServer(timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     function attempt() {
-      if (Date.now() > deadline) return reject(new Error("UI server not ready"));
+      if (Date.now() > deadline)
+        return reject(new Error("UI server not ready"));
       httpRequest("GET", "/api/daemon/status")
         .then((res) => resolve(res))
         .catch(() => setTimeout(attempt, 200));
@@ -225,7 +284,11 @@ async function startUiServer() {
   const uiPath = path.join(__dirname, "..", "lib", "ucm-ui-server.js");
 
   // Start UI server as a child process
-  uiProcess = spawn(process.execPath, ["-e", `
+  uiProcess = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     process.env.UCM_DIR = ${JSON.stringify(UCM_DIR)};
     process.env.UCM_UI_PORT = ${JSON.stringify(String(uiPort))};
     const { startUiServer } = require(${JSON.stringify(uiPath)});
@@ -233,10 +296,13 @@ async function startUiServer() {
       console.error(e.message);
       process.exit(1);
     });
-  `], {
-    env: { ...process.env, UCM_DIR, UCM_UI_PORT: String(uiPort) },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  `,
+    ],
+    {
+      env: { ...process.env, UCM_DIR, UCM_UI_PORT: String(uiPort) },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   trackPid(uiProcess.pid);
 
   await waitForUiServer();
@@ -244,7 +310,9 @@ async function startUiServer() {
 
 async function cleanup() {
   await cleanupAll();
-  try { fs.rmSync(UCM_DIR, { recursive: true, force: true }); } catch {}
+  try {
+    fs.rmSync(UCM_DIR, { recursive: true, force: true });
+  } catch {}
 }
 
 // ── Tests ──
@@ -268,136 +336,170 @@ async function main() {
     process.exit(1);
   }
 
-  await runGroup("Socket Tests", {
-    "socket stats returns data": async () => {
-      const data = await socketRequest("stats");
-      assert(data !== null && data !== undefined, "stats returned null");
-      assert(typeof data === "object", "stats is not an object");
+  await runGroup(
+    "Socket Tests",
+    {
+      "socket stats returns data": async () => {
+        const data = await socketRequest("stats");
+        assert(data !== null && data !== undefined, "stats returned null");
+        assert(typeof data === "object", "stats is not an object");
+      },
+
+      "socket list returns array": async () => {
+        const data = await socketRequest("list");
+        assert(Array.isArray(data), "list is not an array");
+      },
+
+      "socket proposals returns array": async () => {
+        const data = await socketRequest("proposals");
+        assert(Array.isArray(data), "proposals is not an array");
+      },
     },
+    { timeout: 15000 },
+  );
 
-    "socket list returns array": async () => {
-      const data = await socketRequest("list");
-      assert(Array.isArray(data), "list is not an array");
-    },
+  await runGroup(
+    "HTTP API Tests",
+    {
+      "GET /api/stats returns 200": async () => {
+        const res = await httpRequest("GET", "/api/stats");
+        assertEqual(res.status, 200, "stats status code");
+        assert(typeof res.body === "object", "stats body is not object");
+      },
 
-    "socket proposals returns array": async () => {
-      const data = await socketRequest("proposals");
-      assert(Array.isArray(data), "proposals is not an array");
-    },
-  }, { timeout: 15000 });
+      "POST /api/submit creates task": async () => {
+        const res = await httpRequest("POST", "/api/submit", {
+          title: "integration test task",
+          body: "this is a test task",
+        });
+        assertEqual(res.status, 200, "submit status code");
+        assert(res.body?.id, "submit returned no id");
+      },
 
-  await runGroup("HTTP API Tests", {
-    "GET /api/stats returns 200": async () => {
-      const res = await httpRequest("GET", "/api/stats");
-      assertEqual(res.status, 200, "stats status code");
-      assert(typeof res.body === "object", "stats body is not object");
-    },
+      "GET /api/list shows submitted task": async () => {
+        const res = await httpRequest("GET", "/api/list");
+        assertEqual(res.status, 200, "list status code");
+        assert(Array.isArray(res.body), "list body is not array");
+        assert(res.body.length >= 1, "list should have at least 1 task");
+      },
 
-    "POST /api/submit creates task": async () => {
-      const res = await httpRequest("POST", "/api/submit", {
-        title: "integration test task",
-        body: "this is a test task",
-      });
-      assertEqual(res.status, 200, "submit status code");
-      assert(res.body && res.body.id, "submit returned no id");
-    },
+      "POST /api/pause pauses daemon": async () => {
+        const res = await httpRequest("POST", "/api/pause");
+        assertEqual(res.status, 200, "pause status code");
+      },
 
-    "GET /api/list shows submitted task": async () => {
-      const res = await httpRequest("GET", "/api/list");
-      assertEqual(res.status, 200, "list status code");
-      assert(Array.isArray(res.body), "list body is not array");
-      assert(res.body.length >= 1, "list should have at least 1 task");
-    },
+      "POST /api/resume requeues suspended tasks, clears suspension markers, and restarts processing":
+        async () => {
+          const res = await httpRequest("POST", "/api/resume");
+          assertEqual(res.status, 200, "resume status code");
 
-    "POST /api/pause pauses daemon": async () => {
-      const res = await httpRequest("POST", "/api/pause");
-      assertEqual(res.status, 200, "pause status code");
-    },
+          const statsRes = await httpRequest("GET", "/api/stats");
+          assertEqual(statsRes.status, 200, "stats status code after resume");
+          const suspendedAfterResume = Array.isArray(
+            statsRes.body?.suspendedTasks,
+          )
+            ? statsRes.body.suspendedTasks
+            : [];
+          assert(
+            !suspendedAfterResume.includes(STALE_SUSPENDED_TASK_ID),
+            "resume should prune stale suspended task ids instead of failing",
+          );
 
-    "POST /api/resume requeues suspended tasks, clears suspension markers, and restarts processing": async () => {
-      const res = await httpRequest("POST", "/api/resume");
-      assertEqual(res.status, 200, "resume status code");
+          const listRes = await httpRequest("GET", "/api/list");
+          assertEqual(listRes.status, 200, "list status code after resume");
+          const resumedTask = Array.isArray(listRes.body)
+            ? listRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
+            : null;
+          assert(!!resumedTask, "resume should requeue seeded suspended task");
+          assert(
+            !Object.hasOwn(resumedTask, "suspended"),
+            "resume should clear suspended flag",
+          );
+          assert(
+            !Object.hasOwn(resumedTask, "suspendedStage"),
+            "resume should clear suspendedStage",
+          );
+          assert(
+            !Object.hasOwn(resumedTask, "suspendedReason"),
+            "resume should clear suspendedReason",
+          );
 
-      const statsRes = await httpRequest("GET", "/api/stats");
-      assertEqual(statsRes.status, 200, "stats status code after resume");
-      const suspendedAfterResume = Array.isArray(statsRes.body?.suspendedTasks) ? statsRes.body.suspendedTasks : [];
-      assert(
-        !suspendedAfterResume.includes(STALE_SUSPENDED_TASK_ID),
-        "resume should prune stale suspended task ids instead of failing"
-      );
-
-      const listRes = await httpRequest("GET", "/api/list");
-      assertEqual(listRes.status, 200, "list status code after resume");
-      const resumedTask = Array.isArray(listRes.body)
-        ? listRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
-        : null;
-      assert(!!resumedTask, "resume should requeue seeded suspended task");
-      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspended"), "resume should clear suspended flag");
-      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedStage"), "resume should clear suspendedStage");
-      assert(!Object.prototype.hasOwnProperty.call(resumedTask, "suspendedReason"), "resume should clear suspendedReason");
-
-      // Resume must not leave task permanently pending; it should re-enter processing.
-      const deadline = Date.now() + 8_000;
-      let transitioned = resumedTask.state !== "pending";
-      while (!transitioned && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        const pollRes = await httpRequest("GET", "/api/list");
-        assertEqual(pollRes.status, 200, "poll list status code after resume");
-        const polled = Array.isArray(pollRes.body)
-          ? pollRes.body.find((task) => task.id === SEEDED_SUSPENDED_TASK_ID)
-          : null;
-        transitioned = !!polled && polled.state !== "pending";
-      }
-      assert(transitioned, "resume should restart seeded suspended task processing (state must leave pending)");
-    },
-
-    "GET /api/proposals returns array": async () => {
-      const res = await httpRequest("GET", "/api/proposals");
-      assertEqual(res.status, 200, "proposals status code");
-      assert(Array.isArray(res.body), "proposals body is not array");
-    },
-
-    "GET /api/autopilot/status returns array": async () => {
-      const res = await httpRequest("GET", "/api/autopilot/status");
-      assertEqual(res.status, 200, "autopilot status code");
-      assert(Array.isArray(res.body), "autopilot body is not array");
-    },
-
-  }, { timeout: 15000 });
-
-  await runGroup("Daemon Shutdown", {
-    "shutdown via socket": async () => {
-      try {
-        await socketRequest("shutdown");
-      } catch {
-        // connection may close before response
-      }
-
-      // wait for daemon to exit
-      await new Promise((resolve) => {
-        const deadline = Date.now() + 5000;
-        function check() {
-          try {
-            process.kill(daemonProcess.pid, 0);
-            if (Date.now() < deadline) setTimeout(check, 200);
-            else resolve();
-          } catch {
-            resolve();
+          // Resume must not leave task permanently pending; it should re-enter processing.
+          const deadline = Date.now() + 8_000;
+          let transitioned = resumedTask.state !== "pending";
+          while (!transitioned && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            const pollRes = await httpRequest("GET", "/api/list");
+            assertEqual(
+              pollRes.status,
+              200,
+              "poll list status code after resume",
+            );
+            const polled = Array.isArray(pollRes.body)
+              ? pollRes.body.find(
+                  (task) => task.id === SEEDED_SUSPENDED_TASK_ID,
+                )
+              : null;
+            transitioned = !!polled && polled.state !== "pending";
           }
-        }
-        check();
-      });
+          assert(
+            transitioned,
+            "resume should restart seeded suspended task processing (state must leave pending)",
+          );
+        },
 
-      // verify socket is gone
-      let socketGone = false;
-      try {
-        await socketRequest("stats");
-      } catch {
-        socketGone = true;
-      }
-      assert(socketGone, "socket should be gone after shutdown");
+      "GET /api/proposals returns array": async () => {
+        const res = await httpRequest("GET", "/api/proposals");
+        assertEqual(res.status, 200, "proposals status code");
+        assert(Array.isArray(res.body), "proposals body is not array");
+      },
+
+      "GET /api/autopilot/status returns array": async () => {
+        const res = await httpRequest("GET", "/api/autopilot/status");
+        assertEqual(res.status, 200, "autopilot status code");
+        assert(Array.isArray(res.body), "autopilot body is not array");
+      },
     },
-  }, { timeout: 15000 });
+    { timeout: 15000 },
+  );
+
+  await runGroup(
+    "Daemon Shutdown",
+    {
+      "shutdown via socket": async () => {
+        try {
+          await socketRequest("shutdown");
+        } catch {
+          // connection may close before response
+        }
+
+        // wait for daemon to exit
+        await new Promise((resolve) => {
+          const deadline = Date.now() + 5000;
+          function check() {
+            try {
+              process.kill(daemonProcess.pid, 0);
+              if (Date.now() < deadline) setTimeout(check, 200);
+              else resolve();
+            } catch {
+              resolve();
+            }
+          }
+          check();
+        });
+
+        // verify socket is gone
+        let socketGone = false;
+        try {
+          await socketRequest("stats");
+        } catch {
+          socketGone = true;
+        }
+        assert(socketGone, "socket should be gone after shutdown");
+      },
+    },
+    { timeout: 15000 },
+  );
 
   await cleanup();
 

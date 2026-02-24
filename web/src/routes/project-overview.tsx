@@ -1,24 +1,24 @@
+import { FileText, Lightbulb } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { TimeAgo } from "@/components/shared/time-ago";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
-import { useUiStore } from "@/stores/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  UNKNOWN_PROJECT_KEY,
   decodeProjectKeyFromRoute,
-  getProjectLabel,
   getProjectKey,
-  getTaskProjectPath,
+  getProjectLabel,
   getProposalProjectPath,
+  getTaskProjectPath,
+  UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
-import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
-import { FileText, Lightbulb } from "lucide-react";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 export default function ProjectOverviewPage() {
   const params = useParams();
@@ -27,14 +27,19 @@ export default function ProjectOverviewPage() {
   const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery();
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
-  const setProposalProjectFilter = useUiStore((s) => s.setProposalProjectFilter);
+  const setProposalProjectFilter = useUiStore(
+    (s) => s.setProposalProjectFilter,
+  );
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
 
   const projectKey = useMemo(
     () => decodeProjectKeyFromRoute(params.projectKey),
-    [params.projectKey]
+    [params.projectKey],
   );
-  const projectLabel = projectKey === UNKNOWN_PROJECT_KEY ? "Unknown Project" : getProjectLabel(projectKey);
+  const projectLabel =
+    projectKey === UNKNOWN_PROJECT_KEY
+      ? "Unknown Project"
+      : getProjectLabel(projectKey);
 
   useEffect(() => {
     setActiveProject({
@@ -44,27 +49,45 @@ export default function ProjectOverviewPage() {
     });
     setTaskProjectFilter(projectKey);
     setProposalProjectFilter(projectKey);
-  }, [projectKey, projectLabel, setActiveProject, setProposalProjectFilter, setTaskProjectFilter]);
+  }, [
+    projectKey,
+    projectLabel,
+    setActiveProject,
+    setProposalProjectFilter,
+    setTaskProjectFilter,
+  ]);
 
   const projectTasks = useMemo(
-    () => (tasks || []).filter((t) => getProjectKey(getTaskProjectPath(t)) === projectKey),
-    [tasks, projectKey]
+    () =>
+      (tasks || []).filter(
+        (t) => getProjectKey(getTaskProjectPath(t)) === projectKey,
+      ),
+    [tasks, projectKey],
   );
   const projectProposals = useMemo(
-    () => (proposals || []).filter((p) => getProjectKey(getProposalProjectPath(p)) === projectKey),
-    [proposals, projectKey]
+    () =>
+      (proposals || []).filter(
+        (p) => getProjectKey(getProposalProjectPath(p)) === projectKey,
+      ),
+    [proposals, projectKey],
   );
 
   const runningCount = projectTasks.filter((t) => t.state === "running").length;
   const reviewCount = projectTasks.filter((t) => t.state === "review").length;
   const pendingCount = projectTasks.filter((t) => t.state === "pending").length;
-  const proposedCount = projectProposals.filter((p) => p.status === "proposed").length;
+  const proposedCount = projectProposals.filter(
+    (p) => p.status === "proposed",
+  ).length;
 
   const recentTasks = [...projectTasks]
-    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+    .sort(
+      (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
+    )
     .slice(0, 6);
   const recentProposals = [...projectProposals]
-    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+    .sort(
+      (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime(),
+    )
     .slice(0, 6);
 
   if (tasksLoading || proposalsLoading) return <LoadingSkeleton />;
@@ -83,7 +106,11 @@ export default function ProjectOverviewPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryCard label="Pending Tasks" value={pendingCount} />
         <SummaryCard label="Running Tasks" value={runningCount} />
-        <SummaryCard label="Review Tasks" value={reviewCount} highlight={reviewCount > 0} />
+        <SummaryCard
+          label="Review Tasks"
+          value={reviewCount}
+          highlight={reviewCount > 0}
+        />
         <SummaryCard label="Open Proposals" value={proposedCount} />
       </div>
 
@@ -100,7 +127,13 @@ export default function ProjectOverviewPage() {
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm">Recent Tasks</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => navigate("tasks")}>Open Tasks</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate("tasks")}
+            >
+              Open Tasks
+            </Button>
           </CardHeader>
           <CardContent className="space-y-2">
             {recentTasks.length === 0 ? (
@@ -135,7 +168,13 @@ export default function ProjectOverviewPage() {
         <Card>
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm">Recent Proposals</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => navigate("proposals")}>Open Proposals</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate("proposals")}
+            >
+              Open Proposals
+            </Button>
           </CardHeader>
           <CardContent className="space-y-2">
             {recentProposals.length === 0 ? (
@@ -148,7 +187,9 @@ export default function ProjectOverviewPage() {
               recentProposals.map((proposal) => (
                 <div key={proposal.id} className="rounded border px-3 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium truncate">{proposal.title}</p>
+                    <p className="text-sm font-medium truncate">
+                      {proposal.title}
+                    </p>
                     <Badge variant="outline">{proposal.status}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -164,12 +205,25 @@ export default function ProjectOverviewPage() {
   );
 }
 
-function SummaryCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+function SummaryCard({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}) {
   return (
     <Card className={highlight ? "ring-1 ring-amber-400/50" : ""}>
       <CardContent className="p-4">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={["text-2xl font-semibold", highlight ? "text-amber-400" : ""].join(" ")}>
+        <p
+          className={[
+            "text-2xl font-semibold",
+            highlight ? "text-amber-400" : "",
+          ].join(" ")}
+        >
           {value}
         </p>
       </CardContent>
@@ -177,28 +231,37 @@ function SummaryCard({ label, value, highlight }: { label: string; value: number
   );
 }
 
-function getRecommendation(reviewCount: number, pendingCount: number, runningCount: number, taskCount: number, proposalCount: number) {
+function getRecommendation(
+  reviewCount: number,
+  pendingCount: number,
+  runningCount: number,
+  taskCount: number,
+  proposalCount: number,
+) {
   if (reviewCount > 0) {
     return {
-      message: `${reviewCount} task${reviewCount > 1 ? 's' : ''} ready for review`,
+      message: `${reviewCount} task${reviewCount > 1 ? "s" : ""} ready for review`,
       primary: { label: "Review Now", action: "tasks" },
     };
   }
   if (taskCount === 0 && proposalCount === 0) {
     return {
       message: "Start by analyzing this project for improvement ideas",
-      primary: { label: "Analyze Project", action: "proposals?kickoff=analyze" },
+      primary: {
+        label: "Analyze Project",
+        action: "proposals?kickoff=analyze",
+      },
     };
   }
   if (pendingCount > 0) {
     return {
-      message: `${pendingCount} task${pendingCount > 1 ? 's' : ''} queued and ready to start`,
+      message: `${pendingCount} task${pendingCount > 1 ? "s" : ""} queued and ready to start`,
       primary: { label: "View Queue", action: "tasks" },
     };
   }
   if (runningCount > 0) {
     return {
-      message: `${runningCount} task${runningCount > 1 ? 's' : ''} in progress`,
+      message: `${runningCount} task${runningCount > 1 ? "s" : ""} in progress`,
       primary: { label: "View Progress", action: "tasks" },
     };
   }
@@ -223,7 +286,13 @@ function RecommendationCard({
   proposalCount: number;
   onNavigate: (path: string) => void;
 }) {
-  const rec = getRecommendation(reviewCount, pendingCount, runningCount, taskCount, proposalCount);
+  const rec = getRecommendation(
+    reviewCount,
+    pendingCount,
+    runningCount,
+    taskCount,
+    proposalCount,
+  );
   return (
     <Card className="border-dashed">
       <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">

@@ -1,19 +1,44 @@
-import { useMemo, useState, useCallback } from "react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useUiStore } from "@/stores/ui";
-import { useUpdatePriority } from "@/queries/tasks";
-import { TimeAgo } from "@/components/shared/time-ago";
-import { getTaskProjectLabel } from "@/lib/project";
+import { useCallback, useMemo, useState } from "react";
 import type { Task } from "@/api/types";
+import { TimeAgo } from "@/components/shared/time-ago";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { getTaskProjectLabel } from "@/lib/project";
+import { useUpdatePriority } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 const COLUMNS = [
-  { state: "pending", label: "Pending", color: "border-yellow-400/30", headerColor: "text-yellow-400" },
-  { state: "running", label: "Running", color: "border-blue-400/30", headerColor: "text-blue-400" },
-  { state: "review", label: "Review", color: "border-purple-400/30", headerColor: "text-purple-400" },
-  { state: "done", label: "Done", color: "border-emerald-400/30", headerColor: "text-emerald-400" },
-  { state: "failed", label: "Failed", color: "border-red-400/30", headerColor: "text-red-400" },
+  {
+    state: "pending",
+    label: "Pending",
+    color: "border-yellow-400/30",
+    headerColor: "text-yellow-400",
+  },
+  {
+    state: "running",
+    label: "Running",
+    color: "border-blue-400/30",
+    headerColor: "text-blue-400",
+  },
+  {
+    state: "review",
+    label: "Review",
+    color: "border-purple-400/30",
+    headerColor: "text-purple-400",
+  },
+  {
+    state: "done",
+    label: "Done",
+    color: "border-emerald-400/30",
+    headerColor: "text-emerald-400",
+  },
+  {
+    state: "failed",
+    label: "Failed",
+    color: "border-red-400/30",
+    headerColor: "text-red-400",
+  },
 ] as const;
 
 interface TaskKanbanProps {
@@ -40,31 +65,25 @@ export function TaskKanban({ tasks }: TaskKanbanProps) {
       map[state].sort(
         (a, b) =>
           new Date(b.startedAt || b.created).getTime() -
-          new Date(a.startedAt || a.created).getTime()
+          new Date(a.startedAt || a.created).getTime(),
       );
     }
     return map;
   }, [tasks]);
 
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, taskId: string) => {
-      e.dataTransfer.setData("text/plain", taskId);
-      e.dataTransfer.effectAllowed = "move";
-      setDragTaskId(taskId);
-    },
-    []
-  );
+  const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.setData("text/plain", taskId);
+    e.dataTransfer.effectAllowed = "move";
+    setDragTaskId(taskId);
+  }, []);
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, state: string) => {
-      // Only allow drop in pending column
-      if (state !== "pending") return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      setDragOverColumn(state);
-    },
-    []
-  );
+  const handleDragOver = useCallback((e: React.DragEvent, state: string) => {
+    // Only allow drop in pending column
+    if (state !== "pending") return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverColumn(state);
+  }, []);
 
   const handleDragLeave = useCallback(() => {
     setDragOverColumn(null);
@@ -87,7 +106,8 @@ export function TaskKanban({ tasks }: TaskKanbanProps) {
       if (targetIndex === 0) {
         newPriority = (pendingTasks[0]?.priority || 0) + 1;
       } else if (targetIndex >= pendingTasks.length) {
-        newPriority = (pendingTasks[pendingTasks.length - 1]?.priority || 0) - 1;
+        newPriority =
+          (pendingTasks[pendingTasks.length - 1]?.priority || 0) - 1;
       } else {
         const above = pendingTasks[targetIndex - 1]?.priority || 0;
         const below = pendingTasks[targetIndex]?.priority || 0;
@@ -96,7 +116,7 @@ export function TaskKanban({ tasks }: TaskKanbanProps) {
 
       updatePriority.mutate({ taskId, priority: newPriority });
     },
-    [tasks, columns.pending, updatePriority]
+    [tasks, columns.pending, updatePriority],
   );
 
   return (

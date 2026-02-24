@@ -3,14 +3,31 @@
 // Layer 1: API tests (via Vite proxy)
 // Layer 2: Browser Agent E2E tests targeting the React SPA
 
-const { state, assert, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
+const {
+  state,
+  assert,
+  runGroup,
+  startSuiteTimer,
+  stopSuiteTimer,
+  summary,
+} = require("./harness.js");
 const { WebTestEnvironment } = require("./helpers/web-test-infra.js");
 const { apiTestGroups, browserTestCases } = require("./web-dashboard-cases.js");
-const { execSync } = require("child_process");
+const { execSync } = require("node:child_process");
 
 const VALID_LAYERS = new Set(["all", "api", "browser"]);
 const VALID_PROFILES = new Set(["full", "release", "smoke", "changed"]);
-const SMOKE_BROWSER_IDS = ["WB-001", "WB-010", "WB-020", "WB-030", "WB-050", "WB-060", "WB-070", "WB-080", "WB-090"];
+const SMOKE_BROWSER_IDS = [
+  "WB-001",
+  "WB-010",
+  "WB-020",
+  "WB-030",
+  "WB-050",
+  "WB-060",
+  "WB-070",
+  "WB-080",
+  "WB-090",
+];
 
 const SYSTEM_PROMPT = `You are a QA test agent for the UCM Web Dashboard (React SPA).
 You have Chrome DevTools MCP tools to interact with the browser.
@@ -58,7 +75,10 @@ After ALL tests, respond with a JSON array (no markdown fences):
 
 function parseCsv(value) {
   if (!value) return [];
-  return value.split(",").map((x) => x.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 function parseArgs(argv) {
@@ -88,27 +108,100 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--help" || arg === "-h") { opts.help = true; continue; }
-    if (arg === "--list-groups") { opts.listGroups = true; continue; }
-    if (arg === "--watch") { opts.watch = true; continue; }
-    if (arg === "--watch-on-change") { opts.watch = true; opts.watchOnChange = true; continue; }
-    if (arg.startsWith("--watch-interval-ms=")) { opts.watch = true; opts.watchIntervalMs = Number(arg.slice("--watch-interval-ms=".length)); continue; }
-    if (arg === "--watch-interval-ms") { const r = readValue(arg, i); i = r.next; if (r.value) { opts.watch = true; opts.watchIntervalMs = Number(r.value); } continue; }
-    if (arg.startsWith("--max-cycles=")) { opts.maxCycles = Number(arg.slice("--max-cycles=".length)); continue; }
-    if (arg === "--max-cycles") { const r = readValue(arg, i); i = r.next; if (r.value) opts.maxCycles = Number(r.value); continue; }
-    if (arg.startsWith("--profile=")) { opts.profile = arg.slice("--profile=".length); continue; }
-    if (arg === "--profile") { const r = readValue(arg, i); i = r.next; if (r.value) opts.profile = r.value; continue; }
-    if (arg.startsWith("--layer=")) { opts.layer = arg.slice("--layer=".length); continue; }
-    if (arg === "--layer") { const r = readValue(arg, i); i = r.next; if (r.value) opts.layer = r.value; continue; }
-    if (arg.startsWith("--api-groups=")) { opts.apiGroups.push(...parseCsv(arg.slice("--api-groups=".length))); continue; }
-    if (arg === "--api-groups") { const r = readValue(arg, i); i = r.next; if (r.value) opts.apiGroups.push(...parseCsv(r.value)); continue; }
-    if (arg.startsWith("--groups=") || arg.startsWith("--browser-groups=")) {
-      const value = arg.startsWith("--groups=") ? arg.slice("--groups=".length) : arg.slice("--browser-groups=".length);
-      opts.browserGroups.push(...parseCsv(value)); continue;
+    if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+      continue;
     }
-    if (arg === "--groups" || arg === "--browser-groups") { const r = readValue(arg, i); i = r.next; if (r.value) opts.browserGroups.push(...parseCsv(r.value)); continue; }
-    if (arg.startsWith("--ids=")) { opts.ids.push(...parseCsv(arg.slice("--ids=".length))); continue; }
-    if (arg === "--ids") { const r = readValue(arg, i); i = r.next; if (r.value) opts.ids.push(...parseCsv(r.value)); continue; }
+    if (arg === "--list-groups") {
+      opts.listGroups = true;
+      continue;
+    }
+    if (arg === "--watch") {
+      opts.watch = true;
+      continue;
+    }
+    if (arg === "--watch-on-change") {
+      opts.watch = true;
+      opts.watchOnChange = true;
+      continue;
+    }
+    if (arg.startsWith("--watch-interval-ms=")) {
+      opts.watch = true;
+      opts.watchIntervalMs = Number(arg.slice("--watch-interval-ms=".length));
+      continue;
+    }
+    if (arg === "--watch-interval-ms") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) {
+        opts.watch = true;
+        opts.watchIntervalMs = Number(r.value);
+      }
+      continue;
+    }
+    if (arg.startsWith("--max-cycles=")) {
+      opts.maxCycles = Number(arg.slice("--max-cycles=".length));
+      continue;
+    }
+    if (arg === "--max-cycles") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.maxCycles = Number(r.value);
+      continue;
+    }
+    if (arg.startsWith("--profile=")) {
+      opts.profile = arg.slice("--profile=".length);
+      continue;
+    }
+    if (arg === "--profile") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.profile = r.value;
+      continue;
+    }
+    if (arg.startsWith("--layer=")) {
+      opts.layer = arg.slice("--layer=".length);
+      continue;
+    }
+    if (arg === "--layer") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.layer = r.value;
+      continue;
+    }
+    if (arg.startsWith("--api-groups=")) {
+      opts.apiGroups.push(...parseCsv(arg.slice("--api-groups=".length)));
+      continue;
+    }
+    if (arg === "--api-groups") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.apiGroups.push(...parseCsv(r.value));
+      continue;
+    }
+    if (arg.startsWith("--groups=") || arg.startsWith("--browser-groups=")) {
+      const value = arg.startsWith("--groups=")
+        ? arg.slice("--groups=".length)
+        : arg.slice("--browser-groups=".length);
+      opts.browserGroups.push(...parseCsv(value));
+      continue;
+    }
+    if (arg === "--groups" || arg === "--browser-groups") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.browserGroups.push(...parseCsv(r.value));
+      continue;
+    }
+    if (arg.startsWith("--ids=")) {
+      opts.ids.push(...parseCsv(arg.slice("--ids=".length)));
+      continue;
+    }
+    if (arg === "--ids") {
+      const r = readValue(arg, i);
+      i = r.next;
+      if (r.value) opts.ids.push(...parseCsv(r.value));
+      continue;
+    }
     opts.unknown.push(`unknown option: ${arg}`);
   }
   return opts;
@@ -116,9 +209,18 @@ function parseArgs(argv) {
 
 function readChangedFiles() {
   try {
-    const out = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    return out.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => l.slice(3).split(" -> ").pop().trim());
-  } catch { return []; }
+    const out = execSync("git status --porcelain", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => l.slice(3).split(" -> ").pop().trim());
+  } catch {
+    return [];
+  }
 }
 
 function inferChangedSelection(files) {
@@ -148,7 +250,9 @@ function inferChangedSelection(files) {
   return { apiGroups: [...api], browserGroups: [...browser] };
 }
 
-function uniq(values) { return [...new Set(values)]; }
+function uniq(values) {
+  return [...new Set(values)];
+}
 
 function resolvePlan(raw, apiGroupNames, browserGroupNames) {
   const errors = [...raw.unknown];
@@ -161,18 +265,27 @@ function resolvePlan(raw, apiGroupNames, browserGroupNames) {
     inferredFromChanged: false,
   };
 
-  if (!VALID_LAYERS.has(plan.layer)) errors.push(`invalid --layer: ${plan.layer}`);
-  if (!VALID_PROFILES.has(plan.profile)) errors.push(`invalid --profile: ${plan.profile}`);
+  if (!VALID_LAYERS.has(plan.layer))
+    errors.push(`invalid --layer: ${plan.layer}`);
+  if (!VALID_PROFILES.has(plan.profile))
+    errors.push(`invalid --profile: ${plan.profile}`);
   if (plan.profile === "release") plan.profile = "full";
 
-  if (plan.profile === "smoke" && plan.ids.length === 0) plan.ids = SMOKE_BROWSER_IDS.slice();
+  if (plan.profile === "smoke" && plan.ids.length === 0)
+    plan.ids = SMOKE_BROWSER_IDS.slice();
 
-  if (plan.profile === "changed" && plan.apiGroups.length === 0 && plan.browserGroups.length === 0 && plan.ids.length === 0) {
+  if (
+    plan.profile === "changed" &&
+    plan.apiGroups.length === 0 &&
+    plan.browserGroups.length === 0 &&
+    plan.ids.length === 0
+  ) {
     const inferred = inferChangedSelection(readChangedFiles());
     plan.apiGroups = inferred.apiGroups;
     plan.browserGroups = inferred.browserGroups;
     plan.inferredFromChanged = true;
-    if (plan.apiGroups.length === 0 && plan.browserGroups.length === 0) plan.ids = SMOKE_BROWSER_IDS.slice();
+    if (plan.apiGroups.length === 0 && plan.browserGroups.length === 0)
+      plan.ids = SMOKE_BROWSER_IDS.slice();
   }
 
   const apiNameSet = new Set(apiGroupNames);
@@ -180,14 +293,23 @@ function resolvePlan(raw, apiGroupNames, browserGroupNames) {
   const idSet = new Set(browserTestCases.map((x) => x.id));
 
   const invalidApi = plan.apiGroups.filter((x) => !apiNameSet.has(x));
-  const invalidBrowser = plan.browserGroups.filter((x) => !browserNameSet.has(x));
+  const invalidBrowser = plan.browserGroups.filter(
+    (x) => !browserNameSet.has(x),
+  );
   const invalidIds = plan.ids.filter((x) => !idSet.has(x));
-  if (invalidApi.length > 0) errors.push(`unknown api groups: ${invalidApi.join(", ")}`);
-  if (invalidBrowser.length > 0) errors.push(`unknown browser groups: ${invalidBrowser.join(", ")}`);
-  if (invalidIds.length > 0) errors.push(`unknown ids: ${invalidIds.join(", ")}`);
+  if (invalidApi.length > 0)
+    errors.push(`unknown api groups: ${invalidApi.join(", ")}`);
+  if (invalidBrowser.length > 0)
+    errors.push(`unknown browser groups: ${invalidBrowser.join(", ")}`);
+  if (invalidIds.length > 0)
+    errors.push(`unknown ids: ${invalidIds.join(", ")}`);
 
-  if (plan.layer === "api") { plan.browserGroups = []; plan.ids = []; }
-  else if (plan.layer === "browser") { plan.apiGroups = []; }
+  if (plan.layer === "api") {
+    plan.browserGroups = [];
+    plan.ids = [];
+  } else if (plan.layer === "browser") {
+    plan.apiGroups = [];
+  }
 
   return { plan, errors };
 }
@@ -218,14 +340,28 @@ Env:
   console.log(`Browser groups: ${browserGroupNames.join(", ")}`);
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function resetState() { state.passed = 0; state.failed = 0; state.failures.length = 0; }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+function resetState() {
+  state.passed = 0;
+  state.failed = 0;
+  state.failures.length = 0;
+}
 
 function gitStatusSignature() {
   try {
-    return execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-      .split("\n").filter(Boolean).sort().join("\n");
-  } catch { return ""; }
+    return execSync("git status --porcelain", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split("\n")
+      .filter(Boolean)
+      .sort()
+      .join("\n");
+  } catch {
+    return "";
+  }
 }
 
 async function main() {
@@ -233,7 +369,10 @@ async function main() {
   const browserGroupNames = uniq(browserTestCases.map((x) => x.group));
   const raw = parseArgs(process.argv.slice(2));
 
-  if (raw.help) { printUsage(apiGroupNames, browserGroupNames); return; }
+  if (raw.help) {
+    printUsage(apiGroupNames, browserGroupNames);
+    return;
+  }
   if (raw.listGroups) {
     console.log("API groups:");
     apiGroupNames.forEach((x) => console.log(`  - ${x}`));
@@ -249,11 +388,17 @@ async function main() {
     process.exit(1);
   }
 
-  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "codex").toLowerCase();
+  const provider = (
+    process.env.UCM_BROWSER_AGENT_PROVIDER || "codex"
+  ).toLowerCase();
   const basePlan = initial.plan;
   const suiteTimeoutMs = raw.watch
     ? null
-    : (basePlan.layer === "api" ? 300_000 : (provider === "codex" ? 1_800_000 : 600_000));
+    : basePlan.layer === "api"
+      ? 300_000
+      : provider === "codex"
+        ? 1_800_000
+        : 600_000;
   if (suiteTimeoutMs) startSuiteTimer(suiteTimeoutMs);
 
   const env = new WebTestEnvironment("ucm-web-test");
@@ -264,9 +409,13 @@ async function main() {
   });
 
   console.log("Web Dashboard Test Suite (React)\n");
-  console.log(`Suite timeout: ${suiteTimeoutMs ? `${suiteTimeoutMs}ms` : "disabled (watch)"}`);
+  console.log(
+    `Suite timeout: ${suiteTimeoutMs ? `${suiteTimeoutMs}ms` : "disabled (watch)"}`,
+  );
   if (raw.watch) {
-    console.log(`Watch mode: interval=${raw.watchIntervalMs}ms${raw.watchOnChange ? ", trigger=git-change" : ""}${raw.maxCycles > 0 ? `, maxCycles=${raw.maxCycles}` : ""}`);
+    console.log(
+      `Watch mode: interval=${raw.watchIntervalMs}ms${raw.watchOnChange ? ", trigger=git-change" : ""}${raw.maxCycles > 0 ? `, maxCycles=${raw.maxCycles}` : ""}`,
+    );
   }
   console.log("\nStarting daemon + UI server + Vite dev server...");
 
@@ -298,10 +447,18 @@ async function main() {
       lastGitSig = currentGitSig;
       resetState();
       console.log(`\n=== Cycle ${cycle} ===`);
-      console.log(`Execution plan: profile=${plan.profile}, layer=${plan.layer}`);
-      console.log(`API groups: ${plan.apiGroups.length > 0 ? plan.apiGroups.join(", ") : (plan.layer === "browser" ? "(skipped)" : "all")}`);
-      console.log(`Browser groups: ${plan.browserGroups.length > 0 ? plan.browserGroups.join(", ") : (plan.layer === "api" ? "(skipped)" : "all")}`);
-      console.log(`Browser ids: ${plan.ids.length > 0 ? plan.ids.join(", ") : (plan.layer === "api" ? "(skipped)" : "all")}`);
+      console.log(
+        `Execution plan: profile=${plan.profile}, layer=${plan.layer}`,
+      );
+      console.log(
+        `API groups: ${plan.apiGroups.length > 0 ? plan.apiGroups.join(", ") : plan.layer === "browser" ? "(skipped)" : "all"}`,
+      );
+      console.log(
+        `Browser groups: ${plan.browserGroups.length > 0 ? plan.browserGroups.join(", ") : plan.layer === "api" ? "(skipped)" : "all"}`,
+      );
+      console.log(
+        `Browser ids: ${plan.ids.length > 0 ? plan.ids.join(", ") : plan.layer === "api" ? "(skipped)" : "all"}`,
+      );
 
       // ── Layer 1: API Tests ──
       if (plan.layer !== "browser") {
@@ -311,9 +468,10 @@ async function main() {
         const originalPort = env.uiPort;
         env.uiPort = env.vitePort;
 
-        const selectedApiGroups = plan.apiGroups.length > 0
-          ? apiTestGroups.filter((x) => plan.apiGroups.includes(x.name))
-          : apiTestGroups;
+        const selectedApiGroups =
+          plan.apiGroups.length > 0
+            ? apiTestGroups.filter((x) => plan.apiGroups.includes(x.name))
+            : apiTestGroups;
         const ctx = {};
         for (const group of selectedApiGroups) {
           const tests = {};
@@ -341,12 +499,16 @@ async function main() {
         const { GeminiRunner } = require("./helpers/gemini-runner.js");
         const runner = new GeminiRunner();
         try {
-          console.log(`Starting browser runner (provider: ${runner.provider})...`);
+          console.log(
+            `Starting browser runner (provider: ${runner.provider})...`,
+          );
           await runner.start();
           console.log("Browser runner ready\n");
 
           const selectedCases = browserTestCases.filter((tc) => {
-            const groupOk = plan.browserGroups.length === 0 || plan.browserGroups.includes(tc.group);
+            const groupOk =
+              plan.browserGroups.length === 0 ||
+              plan.browserGroups.includes(tc.group);
             const idOk = plan.ids.length === 0 || plan.ids.includes(tc.id);
             return groupOk && idOk;
           });
@@ -376,12 +538,14 @@ async function main() {
               process.stdout.write(`${groupName}:\n`);
               for (const tc of groupCases) {
                 const r = results.find((x) => x.id === tc.id);
-                if (r && r.pass) {
+                if (r?.pass) {
                   state.passed++;
                   process.stdout.write(".");
                 } else {
                   state.failed++;
-                  state.failures.push(`${tc.id} ${tc.name}: ${r?.evidence?.slice(0, 200) || "no result"}`);
+                  state.failures.push(
+                    `${tc.id} ${tc.name}: ${r?.evidence?.slice(0, 200) || "no result"}`,
+                  );
                   process.stdout.write("F");
                 }
               }

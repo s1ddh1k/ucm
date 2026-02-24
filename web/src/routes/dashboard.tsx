@@ -1,23 +1,36 @@
-import { useMemo, useState } from "react";
-import { Activity, CheckCircle, Clock, AlertTriangle, Zap, Plus, FolderPlus, Route, Bot, ArrowUpDown, Settings, ArrowRight } from "lucide-react";
-import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpDown,
+  Bot,
+  CheckCircle,
+  Clock,
+  FolderPlus,
+  Plus,
+  Route,
+  Settings,
+  Zap,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import { api } from "@/api/client";
-import { useStatsQuery } from "@/queries/stats";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
-import { useProjectCatalogQuery } from "@/queries/projects";
-import { useEventsStore } from "@/stores/events";
-import { useUiStore } from "@/stores/ui";
-import { formatDuration } from "@/lib/format";
+import type { Task } from "@/api/types";
+import { ProjectAddDialog } from "@/components/projects/project-add-dialog";
+import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { StatusDot } from "@/components/shared/status-dot";
 import { TimeAgo } from "@/components/shared/time-ago";
-import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
-import { ProjectAddDialog } from "@/components/projects/project-add-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDuration } from "@/lib/format";
 import { encodeProjectKeyForRoute, getProjectKey } from "@/lib/project";
-import type { Task } from "@/api/types";
+import { useProjectCatalogQuery } from "@/queries/projects";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useStatsQuery } from "@/queries/stats";
+import { useTasksQuery } from "@/queries/tasks";
+import { useEventsStore } from "@/stores/events";
+import { useUiStore } from "@/stores/ui";
 
 export default function DashboardPage() {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
@@ -42,12 +55,17 @@ export default function DashboardPage() {
   const reviewCount = tasks?.filter((t) => t.state === "review").length ?? 0;
   const failedCount = stats?.tasksFailed ?? 0;
   const needsAttention = reviewCount > 0 || failedCount > 0;
-  const taskLlmProvider = stats?.llm?.provider || (typeof cfg?.provider === "string" ? cfg.provider : "unknown");
-  const taskLlmModel = stats?.llm?.model || (typeof cfg?.model === "string" ? cfg.model : "default");
+  const taskLlmProvider =
+    stats?.llm?.provider ||
+    (typeof cfg?.provider === "string" ? cfg.provider : "unknown");
+  const taskLlmModel =
+    stats?.llm?.model ||
+    (typeof cfg?.model === "string" ? cfg.model : "default");
   const hasNoRegisteredProject = (projectCatalog?.length || 0) === 0;
-  const isFirstRun = hasNoRegisteredProject
-    && (tasks?.length || 0) === 0
-    && (proposals?.length || 0) === 0;
+  const isFirstRun =
+    hasNoRegisteredProject &&
+    (tasks?.length || 0) === 0 &&
+    (proposals?.length || 0) === 0;
 
   function goToTasks(filter: string) {
     setTaskFilter(filter === "all" ? "" : filter);
@@ -63,8 +81,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              First-run setup is missing one key step: register at least one project path.
-              Without a project, tasks and proposals cannot be organized cleanly.
+              First-run setup is missing one key step: register at least one
+              project path. Without a project, tasks and proposals cannot be
+              organized cleanly.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <OnboardingStep
@@ -115,7 +134,8 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm font-medium">Project setup required</p>
               <p className="text-xs text-muted-foreground">
-                Tasks can run, but UX and IA will remain unclear until at least one project is registered.
+                Tasks can run, but UX and IA will remain unclear until at least
+                one project is registered.
               </p>
             </div>
             <div className="flex gap-2">
@@ -123,7 +143,11 @@ export default function DashboardPage() {
                 <FolderPlus className="h-4 w-4" />
                 Add Project
               </Button>
-              <Button size="sm" variant="outline" onClick={() => navigate("/projects")}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate("/projects")}
+              >
                 Open Projects
               </Button>
             </div>
@@ -140,7 +164,8 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 {reviewCount > 0 && (
                   <span className="text-foreground font-medium">
-                    {reviewCount} task{reviewCount !== 1 ? "s" : ""} awaiting review
+                    {reviewCount} task{reviewCount !== 1 ? "s" : ""} awaiting
+                    review
                   </span>
                 )}
                 {reviewCount > 0 && failedCount > 0 && (
@@ -155,12 +180,21 @@ export default function DashboardPage() {
             </div>
             <div className="flex gap-2">
               {reviewCount > 0 && (
-                <Button size="sm" variant="outline" onClick={() => goToTasks("review")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => goToTasks("review")}
+                >
                   Review Now <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               )}
               {failedCount > 0 && (
-                <Button size="sm" variant="outline" className="text-red-400 border-red-400/30 hover:bg-red-400/10" onClick={() => goToTasks("failed")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-400 border-red-400/30 hover:bg-red-400/10"
+                  onClick={() => goToTasks("failed")}
+                >
                   View Failed <ArrowRight className="h-3.5 w-3.5" />
                 </Button>
               )}
@@ -212,20 +246,23 @@ export default function DashboardPage() {
         {stats?.resources && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">System Resources</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                System Resources
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <ResourceBar
-                label="CPU"
-                value={stats.resources.cpuLoad}
-              />
+              <ResourceBar label="CPU" value={stats.resources.cpuLoad} />
               <ResourceStat
                 label="Memory"
                 value={`${Math.round(stats.resources.memoryFreeMb).toLocaleString()} MB free`}
               />
               <ResourceStat
                 label="Disk"
-                value={stats.resources.diskFreeGb != null ? `${stats.resources.diskFreeGb.toFixed(0)} GB free` : "N/A"}
+                value={
+                  stats.resources.diskFreeGb != null
+                    ? `${stats.resources.diskFreeGb.toFixed(0)} GB free`
+                    : "N/A"
+                }
               />
               <ResourceStat
                 label="Uptime"
@@ -233,12 +270,18 @@ export default function DashboardPage() {
               />
               {stats.resourcePressure && (
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-muted-foreground">Pressure:</span>
-                  <span className={`text-xs font-medium ${
-                    stats.resourcePressure === "normal" ? "text-emerald-400" :
-                    stats.resourcePressure === "pressure" ? "text-yellow-400" :
-                    "text-red-400"
-                  }`}>
+                  <span className="text-xs text-muted-foreground">
+                    Pressure:
+                  </span>
+                  <span
+                    className={`text-xs font-medium ${
+                      stats.resourcePressure === "normal"
+                        ? "text-emerald-400"
+                        : stats.resourcePressure === "pressure"
+                          ? "text-yellow-400"
+                          : "text-red-400"
+                    }`}
+                  >
                     {stats.resourcePressure}
                   </span>
                 </div>
@@ -250,12 +293,16 @@ export default function DashboardPage() {
         {/* Activity Feed */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Activity Feed</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Activity Feed
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1 max-h-64 overflow-auto">
               {activities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No recent activity</p>
+                <p className="text-sm text-muted-foreground">
+                  No recent activity
+                </p>
               ) : (
                 activities.slice(0, 20).map((activity) => {
                   const taskId = activity.data.taskId as string | undefined;
@@ -269,15 +316,27 @@ export default function DashboardPage() {
                           ? "cursor-pointer hover:bg-accent/50 rounded px-2 -mx-2 py-1"
                           : "py-1"
                       }`}
-                      onClick={isClickable ? () => {
-                        setSelectedTaskId(taskId);
-                        navigate("/tasks");
-                      } : undefined}
+                      onClick={
+                        isClickable
+                          ? () => {
+                              setSelectedTaskId(taskId);
+                              navigate("/tasks");
+                            }
+                          : undefined
+                      }
                     >
-                      <StatusDot status={eventToStatus(activity.event)} className="mt-1.5" />
+                      <StatusDot
+                        status={eventToStatus(activity.event)}
+                        className="mt-1.5"
+                      />
                       <div className="flex-1 min-w-0">
-                        <p className="text-foreground truncate">{formatEventMessage(activity)}</p>
-                        <TimeAgo date={activity.timestamp} className="text-xs text-muted-foreground" />
+                        <p className="text-foreground truncate">
+                          {formatEventMessage(activity)}
+                        </p>
+                        <TimeAgo
+                          date={activity.timestamp}
+                          className="text-xs text-muted-foreground"
+                        />
                       </div>
                     </div>
                   );
@@ -321,10 +380,19 @@ function OnboardingStep({
 }
 
 function StatCard({
-  label, value, icon: Icon, color, onClick, highlight,
+  label,
+  value,
+  icon: Icon,
+  color,
+  onClick,
+  highlight,
 }: {
-  label: string; value: string | number; icon: typeof Activity; color: string;
-  onClick?: () => void; highlight?: boolean;
+  label: string;
+  value: string | number;
+  icon: typeof Activity;
+  color: string;
+  onClick?: () => void;
+  highlight?: boolean;
 }) {
   return (
     <Card
@@ -336,7 +404,11 @@ function StatCard({
           <Icon className={`h-4 w-4 ${color}`} />
           <span className="text-xs text-muted-foreground">{label}</span>
         </div>
-        <div className={`text-2xl font-bold ${highlight ? "text-purple-400" : ""}`}>{value}</div>
+        <div
+          className={`text-2xl font-bold ${highlight ? "text-purple-400" : ""}`}
+        >
+          {value}
+        </div>
       </CardContent>
     </Card>
   );
@@ -387,7 +459,13 @@ function LlmRuntimeCard({
             <Bot className="h-4 w-4" />
             LLM Runtime
           </CardTitle>
-          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onNavigateSettings} aria-label="Switch AI provider">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2"
+            onClick={onNavigateSettings}
+            aria-label="Switch AI provider"
+          >
             <Settings className="h-3.5 w-3.5" />
             <ArrowUpDown className="h-3.5 w-3.5" />
           </Button>
@@ -396,7 +474,9 @@ function LlmRuntimeCard({
       <CardContent className="space-y-3 text-sm">
         <div className="flex items-center justify-between gap-3">
           <span className="text-muted-foreground">Task Engine</span>
-          <span className="font-mono text-xs font-medium">{provider}/{model}</span>
+          <span className="font-mono text-xs font-medium">
+            {provider}/{model}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-muted-foreground">Terminal Chat</span>
@@ -408,28 +488,39 @@ function LlmRuntimeCard({
               <div className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">Tokens</span>
                 <span className="font-mono text-xs">
-                  Input: {formatTokenCount(usage.input)} &middot; Output: {formatTokenCount(usage.output)} &middot; Total: {formatTokenCount(usage.total)}
-                  <span className="text-muted-foreground ml-2">({usage.taskCount} task{usage.taskCount !== 1 ? "s" : ""})</span>
+                  Input: {formatTokenCount(usage.input)} &middot; Output:{" "}
+                  {formatTokenCount(usage.output)} &middot; Total:{" "}
+                  {formatTokenCount(usage.total)}
+                  <span className="text-muted-foreground ml-2">
+                    ({usage.taskCount} task{usage.taskCount !== 1 ? "s" : ""})
+                  </span>
                 </span>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Total Tokens</span>
-                  <span className="font-mono text-xs font-medium">{formatTokenCount(usage.total)}</span>
+                  <span className="font-mono text-xs font-medium">
+                    {formatTokenCount(usage.total)}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-md bg-muted/50 p-2 text-center">
                     <div className="text-xs text-muted-foreground">Input</div>
-                    <div className="font-mono text-sm font-medium">{formatTokenCount(usage.input)}</div>
+                    <div className="font-mono text-sm font-medium">
+                      {formatTokenCount(usage.input)}
+                    </div>
                   </div>
                   <div className="rounded-md bg-muted/50 p-2 text-center">
                     <div className="text-xs text-muted-foreground">Output</div>
-                    <div className="font-mono text-sm font-medium">{formatTokenCount(usage.output)}</div>
+                    <div className="font-mono text-sm font-medium">
+                      {formatTokenCount(usage.output)}
+                    </div>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground text-right">
-                  across {usage.taskCount} task{usage.taskCount !== 1 ? "s" : ""}
+                  across {usage.taskCount} task
+                  {usage.taskCount !== 1 ? "s" : ""}
                 </div>
               </>
             )
@@ -444,7 +535,12 @@ function LlmRuntimeCard({
 
 function ResourceBar({ label, value }: { label: string; value: number }) {
   const percent = Math.round(value * 100);
-  const barColor = percent > 90 ? "bg-red-400" : percent > 70 ? "bg-yellow-400" : "bg-emerald-400";
+  const barColor =
+    percent > 90
+      ? "bg-red-400"
+      : percent > 70
+        ? "bg-yellow-400"
+        : "bg-emerald-400";
 
   return (
     <div className="space-y-1">
@@ -453,7 +549,10 @@ function ResourceBar({ label, value }: { label: string; value: number }) {
         <span>{percent}%</span>
       </div>
       <div className="h-2 rounded-full bg-muted overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${percent}%` }} />
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${percent}%` }}
+        />
       </div>
     </div>
   );
@@ -482,13 +581,26 @@ function isTaskEvent(event: string): boolean {
 
 function eventToStatus(event: string): string {
   if (event.includes("created") || event.includes("started")) return "running";
-  if (event.includes("completed") || event.includes("done") || event.includes("approved")) return "done";
-  if (event.includes("failed") || event.includes("rejected") || event.includes("error")) return "failed";
+  if (
+    event.includes("completed") ||
+    event.includes("done") ||
+    event.includes("approved")
+  )
+    return "done";
+  if (
+    event.includes("failed") ||
+    event.includes("rejected") ||
+    event.includes("error")
+  )
+    return "failed";
   if (event.includes("paused") || event.includes("gate")) return "paused";
   return "pending";
 }
 
-function formatEventMessage(activity: { event: string; data: Record<string, unknown> }): string {
+function formatEventMessage(activity: {
+  event: string;
+  data: Record<string, unknown>;
+}): string {
   const { event, data } = activity;
   const taskId = (data.taskId as string)?.slice(0, 8);
   const title = data.title as string;
@@ -496,20 +608,31 @@ function formatEventMessage(activity: { event: string; data: Record<string, unkn
   const stage = data.stage as string;
 
   switch (event) {
-    case "task:created": return `Task created: ${title || taskId}`;
-    case "task:updated": return `Task ${taskId}: ${state}`;
-    case "task:deleted": return `Task deleted: ${taskId}`;
-    case "proposal:created": return `Proposal: ${title || "new proposal"}`;
-    case "proposal:updated": return `Proposal updated: ${title || ""}`;
-    case "observer:started": return "Observer analysis started";
-    case "observer:completed": return "Observer analysis completed";
+    case "task:created":
+      return `Task created: ${title || taskId}`;
+    case "task:updated":
+      return `Task ${taskId}: ${state}`;
+    case "task:deleted":
+      return `Task deleted: ${taskId}`;
+    case "proposal:created":
+      return `Proposal: ${title || "new proposal"}`;
+    case "proposal:updated":
+      return `Proposal updated: ${title || ""}`;
+    case "observer:started":
+      return "Observer analysis started";
+    case "observer:completed":
+      return "Observer analysis completed";
     case "stage:start":
     case "stage:started":
       return `Stage started: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
-    case "stage:complete": return `Stage completed: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
-    case "stage:gate": return `Approval needed: ${stage || ""} stage${taskId ? ` (${taskId})` : ""}`;
-    case "stage:gate_resolved": return `Stage ${data.action || "resolved"}: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
-    case "config:updated": return "Configuration updated";
+    case "stage:complete":
+      return `Stage completed: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
+    case "stage:gate":
+      return `Approval needed: ${stage || ""} stage${taskId ? ` (${taskId})` : ""}`;
+    case "stage:gate_resolved":
+      return `Stage ${data.action || "resolved"}: ${stage || ""}${taskId ? ` (${taskId})` : ""}`;
+    case "config:updated":
+      return "Configuration updated";
     default:
       if (event.startsWith("autopilot:")) {
         const action = event.replace("autopilot:", "");

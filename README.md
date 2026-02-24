@@ -63,8 +63,10 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm resume <id>` | 중단된 작업 재개 |
 | `ucm ui` | 웹 대시보드 |
 | `ucm chat` | Claude 채팅 |
+| `ucm analyze` | 프로젝트 분석 및 제안 생성 |
+| `ucm research` | 프로젝트 리서치 및 전략 제안 |
 | `ucm daemon start/stop` | 데몬 관리 |
-| `ucm observe` | 프로젝트 분석 → 개선안 생성 |
+| `ucm observe [--status]` | 수동 관찰 트리거/상태 확인 |
 
 ## 독립 도구
 

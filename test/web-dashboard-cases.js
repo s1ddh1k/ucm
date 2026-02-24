@@ -13,8 +13,10 @@ const apiTestGroups = [
         name: "GET /api/stats via Vite proxy → 200, has pid",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/stats");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (typeof res.body !== "object") return { pass: false, reason: "body not object" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (typeof res.body !== "object")
+            return { pass: false, reason: "body not object" };
           if (!res.body.pid) return { pass: false, reason: "no pid" };
           return { pass: true };
         },
@@ -23,8 +25,10 @@ const apiTestGroups = [
         name: "GET /api/list via Vite proxy → 200, array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/list");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           return { pass: true };
         },
       },
@@ -32,8 +36,10 @@ const apiTestGroups = [
         name: "GET /api/proposals via Vite proxy → 200, array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/proposals");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           return { pass: true };
         },
       },
@@ -41,8 +47,10 @@ const apiTestGroups = [
         name: "GET /api/autopilot/status via Vite proxy → 200, array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/autopilot/status");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           return { pass: true };
         },
       },
@@ -50,8 +58,10 @@ const apiTestGroups = [
         name: "GET /api/daemon/status via Vite proxy → 200, has online",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/daemon/status");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!("online" in res.body)) return { pass: false, reason: "no online field" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!("online" in res.body))
+            return { pass: false, reason: "no online field" };
           return { pass: true };
         },
       },
@@ -70,7 +80,8 @@ const apiTestGroups = [
             body: "created by web dashboard test",
             pipeline: "small",
           });
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           if (!res.body?.id) return { pass: false, reason: "no id" };
           ctx.taskId = res.body.id;
           return { pass: true };
@@ -81,9 +92,13 @@ const apiTestGroups = [
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
           const res = await env.httpRequest("GET", "/api/list");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           const found = res.body.some((t) => t.id === ctx.taskId);
-          return { pass: found, reason: found ? undefined : "task not in list" };
+          return {
+            pass: found,
+            reason: found ? undefined : "task not in list",
+          };
         },
       },
       {
@@ -91,8 +106,10 @@ const apiTestGroups = [
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
           const res = await env.httpRequest("GET", `/api/status/${ctx.taskId}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (res.body?.title !== "web test task") return { pass: false, reason: `title: ${res.body?.title}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (res.body?.title !== "web test task")
+            return { pass: false, reason: `title: ${res.body?.title}` };
           return { pass: true };
         },
       },
@@ -100,7 +117,10 @@ const apiTestGroups = [
         name: "POST /api/cancel/:taskId → 200",
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
-          const res = await env.httpRequest("POST", `/api/cancel/${ctx.taskId}`);
+          const res = await env.httpRequest(
+            "POST",
+            `/api/cancel/${ctx.taskId}`,
+          );
           return { pass: res.status === 200 };
         },
       },
@@ -108,7 +128,10 @@ const apiTestGroups = [
         name: "POST /api/delete/:taskId → 200",
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
-          const res = await env.httpRequest("POST", `/api/delete/${ctx.taskId}`);
+          const res = await env.httpRequest(
+            "POST",
+            `/api/delete/${ctx.taskId}`,
+          );
           return { pass: res.status === 200 };
         },
       },
@@ -126,7 +149,10 @@ const apiTestGroups = [
           // Connect via Vite's /ws proxy path (root WS is Vite HMR)
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}/ws`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 5000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 5000);
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -137,7 +163,10 @@ const apiTestGroups = [
                 }
               } catch {}
             });
-            ws.on("error", () => { clearTimeout(timer); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -147,9 +176,14 @@ const apiTestGroups = [
           const WebSocket = require("ws");
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}/ws`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 5000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 5000);
             let ready = false;
-            ws.on("open", () => { ready = true; });
+            ws.on("open", () => {
+              ready = true;
+            });
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -163,10 +197,17 @@ const apiTestGroups = [
             const waitReady = setInterval(() => {
               if (ready) {
                 clearInterval(waitReady);
-                env.httpRequest("POST", "/api/submit", { title: "ws-web-test", body: "ws test" });
+                env.httpRequest("POST", "/api/submit", {
+                  title: "ws-web-test",
+                  body: "ws test",
+                });
               }
             }, 100);
-            ws.on("error", () => { clearTimeout(timer); clearInterval(waitReady); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              clearInterval(waitReady);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -180,7 +221,8 @@ const apiTestGroups = [
 const browserTestCases = [
   // ── WB-01: Page Load & Structure (3) ──
   {
-    id: "WB-001", group: "Page Load",
+    id: "WB-001",
+    group: "Page Load",
     name: "React app loads and renders",
     instruction: `
       Navigate to {URL}.
@@ -192,7 +234,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-002", group: "Page Load",
+    id: "WB-002",
+    group: "Page Load",
     name: "sidebar navigation items",
     instruction: `
       Navigate to {URL}.
@@ -208,7 +251,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-003", group: "Page Load",
+    id: "WB-003",
+    group: "Page Load",
     name: "daemon connection indicator",
     instruction: `
       Navigate to {URL}.
@@ -220,7 +264,8 @@ const browserTestCases = [
 
   // ── WB-02: Navigation (3) ──
   {
-    id: "WB-010", group: "Navigation",
+    id: "WB-010",
+    group: "Navigation",
     name: "sidebar link navigation",
     instruction: `
       Navigate to {URL}.
@@ -235,7 +280,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-011", group: "Navigation",
+    id: "WB-011",
+    group: "Navigation",
     name: "active sidebar highlight",
     instruction: `
       Navigate to {URL}.
@@ -247,7 +293,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-012", group: "Navigation",
+    id: "WB-012",
+    group: "Navigation",
     name: "sidebar collapse toggle",
     instruction: `
       Navigate to {URL}.
@@ -261,7 +308,8 @@ const browserTestCases = [
 
   // ── WB-03: Dashboard Page (3) ──
   {
-    id: "WB-020", group: "Dashboard",
+    id: "WB-020",
+    group: "Dashboard",
     name: "stats grid display",
     instruction: `
       Navigate to {URL}.
@@ -277,7 +325,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-021", group: "Dashboard",
+    id: "WB-021",
+    group: "Dashboard",
     name: "system resources display",
     instruction: `
       Navigate to {URL}.
@@ -288,7 +337,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-022", group: "Dashboard",
+    id: "WB-022",
+    group: "Dashboard",
     name: "activity feed",
     instruction: `
       Navigate to {URL}.
@@ -300,7 +350,8 @@ const browserTestCases = [
 
   // ── WB-04: Tasks Page (5) ──
   {
-    id: "WB-030", group: "Tasks",
+    id: "WB-030",
+    group: "Tasks",
     name: "task list layout",
     instruction: `
       Navigate to {URL}/tasks.
@@ -312,7 +363,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-031", group: "Tasks",
+    id: "WB-031",
+    group: "Tasks",
     name: "task creation dialog",
     instruction: `
       Navigate to {URL}/tasks.
@@ -329,7 +381,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-032", group: "Tasks",
+    id: "WB-032",
+    group: "Tasks",
     name: "create and select task",
     instruction: `
       Navigate to {URL}/tasks.
@@ -348,7 +401,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-033", group: "Tasks",
+    id: "WB-033",
+    group: "Tasks",
     name: "task detail tabs",
     instruction: `
       Navigate to {URL}/tasks.
@@ -366,7 +420,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-034", group: "Tasks",
+    id: "WB-034",
+    group: "Tasks",
     name: "task action buttons",
     instruction: `
       Navigate to {URL}/tasks.
@@ -381,7 +436,8 @@ const browserTestCases = [
 
   // ── WB-05: Task Filters (3) ──
   {
-    id: "WB-040", group: "Task Filter",
+    id: "WB-040",
+    group: "Task Filter",
     name: "status filter dropdown",
     instruction: `
       Navigate to {URL}/tasks.
@@ -393,7 +449,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-041", group: "Task Filter",
+    id: "WB-041",
+    group: "Task Filter",
     name: "search input filter",
     instruction: `
       Navigate to {URL}/tasks.
@@ -408,7 +465,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-042", group: "Task Filter",
+    id: "WB-042",
+    group: "Task Filter",
     name: "sort options",
     instruction: `
       Navigate to {URL}/tasks.
@@ -420,7 +478,8 @@ const browserTestCases = [
 
   // ── WB-06: Proposals Page (3) ──
   {
-    id: "WB-050", group: "Proposals",
+    id: "WB-050",
+    group: "Proposals",
     name: "proposals page layout",
     instruction: `
       Navigate to {URL}/proposals.
@@ -433,7 +492,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-051", group: "Proposals",
+    id: "WB-051",
+    group: "Proposals",
     name: "proposals filter controls",
     instruction: `
       Navigate to {URL}/proposals.
@@ -446,7 +506,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-052", group: "Proposals",
+    id: "WB-052",
+    group: "Proposals",
     name: "observer controls clickable",
     instruction: `
       Navigate to {URL}/proposals.
@@ -459,7 +520,8 @@ const browserTestCases = [
 
   // ── WB-07: Autopilot Page (3) ──
   {
-    id: "WB-060", group: "Autopilot",
+    id: "WB-060",
+    group: "Autopilot",
     name: "autopilot page layout",
     instruction: `
       Navigate to {URL}/autopilot.
@@ -471,7 +533,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-061", group: "Autopilot",
+    id: "WB-061",
+    group: "Autopilot",
     name: "new session dialog",
     instruction: `
       Navigate to {URL}/autopilot.
@@ -486,7 +549,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-062", group: "Autopilot",
+    id: "WB-062",
+    group: "Autopilot",
     name: "empty session list",
     instruction: `
       Navigate to {URL}/autopilot.
@@ -497,7 +561,8 @@ const browserTestCases = [
 
   // ── WB-08: Terminal Page (2) ──
   {
-    id: "WB-070", group: "Terminal",
+    id: "WB-070",
+    group: "Terminal",
     name: "terminal page layout",
     instruction: `
       Navigate to {URL}/terminal.
@@ -511,7 +576,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-071", group: "Terminal",
+    id: "WB-071",
+    group: "Terminal",
     name: "terminal status display",
     instruction: `
       Navigate to {URL}/terminal.
@@ -523,7 +589,8 @@ const browserTestCases = [
 
   // ── WB-09: Settings Page (2) ──
   {
-    id: "WB-080", group: "Settings",
+    id: "WB-080",
+    group: "Settings",
     name: "settings page layout",
     instruction: `
       Navigate to {URL}/settings.
@@ -537,7 +604,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-081", group: "Settings",
+    id: "WB-081",
+    group: "Settings",
     name: "daemon control actions",
     instruction: `
       Navigate to {URL}/settings.
@@ -550,7 +618,8 @@ const browserTestCases = [
 
   // ── WB-10: Visual & Layout (3) ──
   {
-    id: "WB-090", group: "Visual",
+    id: "WB-090",
+    group: "Visual",
     name: "full page dark theme",
     instruction: `
       Navigate to {URL}.
@@ -565,7 +634,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-091", group: "Visual",
+    id: "WB-091",
+    group: "Visual",
     name: "tasks page split layout",
     instruction: `
       Navigate to {URL}/tasks.
@@ -579,7 +649,8 @@ const browserTestCases = [
     `,
   },
   {
-    id: "WB-092", group: "Visual",
+    id: "WB-092",
+    group: "Visual",
     name: "responsive sidebar",
     instruction: `
       Navigate to {URL}.

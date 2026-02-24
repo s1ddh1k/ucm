@@ -1,12 +1,12 @@
 // test/helpers/test-infra.js — shared test infrastructure
 // Extracted from test/integration.js and test/browser.js
 
-const { spawn } = require("child_process");
-const path = require("path");
-const os = require("os");
-const fs = require("fs");
-const net = require("net");
-const http = require("http");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+const os = require("node:os");
+const fs = require("node:fs");
+const net = require("node:net");
+const http = require("node:http");
 
 const { trackPid, cleanupAll } = require("./cleanup.js");
 const { ensureWebDistBuilt } = require("./web-build.js");
@@ -52,17 +52,58 @@ class TestEnvironment {
       stageTimeoutMs: 30000,
       httpPort: 0,
       uiPort: 0,
-      resources: { cpuThreshold: 0.8, memoryMinFreeMb: 512, diskMinFreeGb: 1, checkIntervalMs: 60000 },
+      resources: {
+        cpuThreshold: 0.8,
+        memoryMinFreeMb: 512,
+        diskMinFreeGb: 1,
+        checkIntervalMs: 60000,
+      },
       cleanup: { retentionDays: 7, autoCleanOnDiskPressure: true },
-      quota: { source: "ccusage", mode: "work", modes: { work: { windowBudgetPercent: 50 }, off: { windowBudgetPercent: 90 } }, softLimitPercent: 80, hardLimitPercent: 95 },
-      infra: { slots: 1, composeFile: "docker-compose.test.yml", upTimeoutMs: 60000, downAfterTest: true, browserSlots: 1 },
-      observer: { enabled: false, intervalMs: 14400000, taskCountTrigger: 10, maxProposalsPerCycle: 5, dataWindowDays: 7, proposalRetentionDays: 30 },
-      selfImprove: { enabled: false, maxRisk: "low", requirePassingTests: true, backupBranch: true },
+      quota: {
+        source: "ccusage",
+        mode: "work",
+        modes: {
+          work: { windowBudgetPercent: 50 },
+          off: { windowBudgetPercent: 90 },
+        },
+        softLimitPercent: 80,
+        hardLimitPercent: 95,
+      },
+      infra: {
+        slots: 1,
+        composeFile: "docker-compose.test.yml",
+        upTimeoutMs: 60000,
+        downAfterTest: true,
+        browserSlots: 1,
+      },
+      observer: {
+        enabled: false,
+        intervalMs: 14400000,
+        taskCountTrigger: 10,
+        maxProposalsPerCycle: 5,
+        dataWindowDays: 7,
+        proposalRetentionDays: 30,
+      },
+      selfImprove: {
+        enabled: false,
+        maxRisk: "low",
+        requirePassingTests: true,
+        backupBranch: true,
+      },
       regulator: { enabled: false },
-      autopilot: { releaseEvery: 4, maxConsecutiveFailures: 3, maxItemsPerSession: 50, reviewRetries: 2, itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 } },
+      autopilot: {
+        releaseEvery: 4,
+        maxConsecutiveFailures: 3,
+        maxItemsPerSession: 50,
+        reviewRetries: 2,
+        itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
+      },
       ...configOverrides,
     };
-    fs.writeFileSync(path.join(this.ucmDir, "config.json"), JSON.stringify(config, null, 2));
+    fs.writeFileSync(
+      path.join(this.ucmDir, "config.json"),
+      JSON.stringify(config, null, 2),
+    );
   }
 
   socketRequest(method, params = {}) {
@@ -76,7 +117,7 @@ class TestEnvironment {
       }, 10000);
 
       conn.on("connect", () => {
-        conn.write(JSON.stringify({ id: "test", method, params }) + "\n");
+        conn.write(`${JSON.stringify({ id: "test", method, params })}\n`);
       });
 
       conn.on("data", (chunk) => {
@@ -121,15 +162,26 @@ class TestEnvironment {
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
           try {
-            resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(data) });
+            resolve({
+              status: res.statusCode,
+              headers: res.headers,
+              body: JSON.parse(data),
+            });
           } catch {
-            resolve({ status: res.statusCode, headers: res.headers, body: data });
+            resolve({
+              status: res.statusCode,
+              headers: res.headers,
+              body: data,
+            });
           }
         });
       });
 
       req.on("error", reject);
-      req.setTimeout(10000, () => { req.destroy(); reject(new Error("http timeout")); });
+      req.setTimeout(10000, () => {
+        req.destroy();
+        reject(new Error("http timeout"));
+      });
 
       if (body) req.write(JSON.stringify(body));
       req.end();
@@ -153,7 +205,8 @@ class TestEnvironment {
     const deadline = Date.now() + timeoutMs;
     return new Promise((resolve, reject) => {
       const attempt = () => {
-        if (Date.now() > deadline) return reject(new Error("UI server not ready"));
+        if (Date.now() > deadline)
+          return reject(new Error("UI server not ready"));
         this.httpRequest("GET", "/api/daemon/status")
           .then((res) => resolve(res))
           .catch(() => setTimeout(attempt, 200));
@@ -176,10 +229,14 @@ class TestEnvironment {
     this.setupDirs();
 
     const ucmdPath = path.join(__dirname, "..", "..", "lib", "ucmd.js");
-    this.daemonProcess = spawn(process.execPath, [ucmdPath, "start", "--foreground"], {
-      env: { ...process.env, UCM_DIR: this.ucmDir },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    this.daemonProcess = spawn(
+      process.execPath,
+      [ucmdPath, "start", "--foreground"],
+      {
+        env: { ...process.env, UCM_DIR: this.ucmDir },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     trackPid(this.daemonProcess.pid);
 
     this.daemonProcess.on("error", (e) => {
@@ -194,7 +251,11 @@ class TestEnvironment {
     this.uiPort = await this.findFreePort();
     const uiPath = path.join(__dirname, "..", "..", "lib", "ucm-ui-server.js");
 
-    this.uiProcess = spawn(process.execPath, ["-e", `
+    this.uiProcess = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
       process.env.UCM_DIR = ${JSON.stringify(this.ucmDir)};
       process.env.UCM_UI_PORT = ${JSON.stringify(String(this.uiPort))};
       const { startUiServer } = require(${JSON.stringify(uiPath)});
@@ -202,10 +263,17 @@ class TestEnvironment {
         console.error(e.message);
         process.exit(1);
       });
-    `], {
-      env: { ...process.env, UCM_DIR: this.ucmDir, UCM_UI_PORT: String(this.uiPort) },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    `,
+      ],
+      {
+        env: {
+          ...process.env,
+          UCM_DIR: this.ucmDir,
+          UCM_UI_PORT: String(this.uiPort),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     trackPid(this.uiProcess.pid);
 
     await this.waitForUiServer();
@@ -218,7 +286,9 @@ class TestEnvironment {
 
   async cleanup() {
     await cleanupAll();
-    try { fs.rmSync(this.ucmDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(this.ucmDir, { recursive: true, force: true });
+    } catch {}
   }
 
   get url() {

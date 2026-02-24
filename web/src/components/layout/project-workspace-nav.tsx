@@ -1,9 +1,9 @@
+import { ArrowLeft, FolderTree, Lightbulb, ListTodo } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, FolderTree, ListTodo, Lightbulb } from "lucide-react";
 import { encodeProjectKeyForRoute } from "@/lib/project";
 
 type WorkspaceTab = "overview" | "tasks" | "proposals";
@@ -39,7 +39,9 @@ export function ProjectWorkspaceNav({
             </p>
             <h2 className="text-base font-semibold truncate">{projectLabel}</h2>
             {projectPath && (
-              <p className="text-xs text-muted-foreground truncate">{projectPath}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {projectPath}
+              </p>
             )}
           </div>
           <Button asChild size="sm" variant="outline">
@@ -57,12 +59,19 @@ export function ProjectWorkspaceNav({
           <WorkspaceLink to={`${base}/tasks`} active={activeTab === "tasks"}>
             <ListTodo className="h-4 w-4" />
             Tasks
-            {typeof taskCount === "number" && <Badge variant="secondary">{taskCount}</Badge>}
+            {typeof taskCount === "number" && (
+              <Badge variant="secondary">{taskCount}</Badge>
+            )}
           </WorkspaceLink>
-          <WorkspaceLink to={`${base}/proposals`} active={activeTab === "proposals"}>
+          <WorkspaceLink
+            to={`${base}/proposals`}
+            active={activeTab === "proposals"}
+          >
             <Lightbulb className="h-4 w-4" />
             Proposals
-            {typeof proposalCount === "number" && <Badge variant="secondary">{proposalCount}</Badge>}
+            {typeof proposalCount === "number" && (
+              <Badge variant="secondary">{proposalCount}</Badge>
+            )}
           </WorkspaceLink>
         </div>
       </CardContent>

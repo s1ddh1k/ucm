@@ -4,7 +4,9 @@ export type Theme = "light" | "dark" | "system";
 
 function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   }
   return theme;
 }
@@ -37,7 +39,9 @@ interface UiState {
   setSelectedTaskId: (id: string | null) => void;
   setSelectedSessionId: (id: string | null) => void;
   setCommandPaletteOpen: (open: boolean) => void;
-  setActiveProject: (project: { key: string; label: string; path?: string | null } | null) => void;
+  setActiveProject: (
+    project: { key: string; label: string; path?: string | null } | null,
+  ) => void;
   clearActiveProject: () => void;
   setTaskFilter: (filter: string) => void;
   setTaskProjectFilter: (filter: string) => void;
@@ -82,13 +86,19 @@ export const useUiStore = create<UiState>((set) => ({
       activeProjectLabel: project?.label || "",
       activeProjectPath: project?.path || "",
     }),
-  clearActiveProject: () => set({ activeProjectKey: "", activeProjectLabel: "", activeProjectPath: "" }),
+  clearActiveProject: () =>
+    set({
+      activeProjectKey: "",
+      activeProjectLabel: "",
+      activeProjectPath: "",
+    }),
   setTaskFilter: (filter) => set({ taskFilter: filter }),
   setTaskProjectFilter: (filter) => set({ taskProjectFilter: filter }),
   setTaskSort: (sort) => set({ taskSort: sort }),
   setTaskSearch: (search) => set({ taskSearch: search }),
   setProposalFilter: (filter) => set({ proposalFilter: filter }),
   setProposalProjectFilter: (filter) => set({ proposalProjectFilter: filter }),
-  setProposalCategoryFilter: (filter) => set({ proposalCategoryFilter: filter }),
+  setProposalCategoryFilter: (filter) =>
+    set({ proposalCategoryFilter: filter }),
   setProposalRiskFilter: (filter) => set({ proposalRiskFilter: filter }),
 }));

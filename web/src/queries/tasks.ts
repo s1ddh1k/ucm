@@ -1,8 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import type { Task } from "@/api/types";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
-import type { Task } from "@/api/types";
 
 export function useTasksQuery(status?: string) {
   return useQuery({
@@ -29,7 +29,11 @@ export function useTaskDiffQuery(taskId: string | null) {
   });
 }
 
-export function useTaskLogsQuery(taskId: string | null, lines?: number, live = true) {
+export function useTaskLogsQuery(
+  taskId: string | null,
+  lines?: number,
+  live = true,
+) {
   return useQuery({
     queryKey: ["task-logs", taskId, lines],
     queryFn: () => api.tasks.logs(taskId!, lines),
@@ -47,7 +51,10 @@ export function useTaskArtifactsQuery(taskId: string | null) {
 }
 
 /** Invalidate both the task list and a specific task detail */
-function invalidateTaskQueries(qc: ReturnType<typeof useQueryClient>, taskId?: string) {
+function invalidateTaskQueries(
+  qc: ReturnType<typeof useQueryClient>,
+  taskId?: string,
+) {
   qc.invalidateQueries({ queryKey: ["tasks"] });
   if (taskId) {
     qc.invalidateQueries({ queryKey: ["task", taskId] });
@@ -60,10 +67,12 @@ function invalidateTaskQueries(qc: ReturnType<typeof useQueryClient>, taskId?: s
 function updateTaskInTaskCaches(
   qc: ReturnType<typeof useQueryClient>,
   taskId: string,
-  updater: (task: Task) => Task
+  updater: (task: Task) => Task,
 ) {
   qc.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-    Array.isArray(old) ? old.map((task) => (task.id === taskId ? updater(task) : task)) : old
+    Array.isArray(old)
+      ? old.map((task) => (task.id === taskId ? updater(task) : task))
+      : old,
   );
   qc.setQueryData<Task>(["task", taskId], (old) => (old ? updater(old) : old));
 }
@@ -87,7 +96,9 @@ export function useStartTask() {
       ]);
 
       const previousTask = qc.getQueryData<Task>(["task", taskId]);
-      const previousTaskLists = qc.getQueriesData<Task[]>({ queryKey: ["tasks"] });
+      const previousTaskLists = qc.getQueriesData<Task[]>({
+        queryKey: ["tasks"],
+      });
       const startedAt = new Date().toISOString();
 
       updateTaskInTaskCaches(qc, taskId, (task) => ({

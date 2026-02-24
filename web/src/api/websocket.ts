@@ -81,7 +81,10 @@ export class WebSocketManager {
     if (this.reconnectTimer) return;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+      this.reconnectDelay = Math.min(
+        this.reconnectDelay * 2,
+        this.maxReconnectDelay,
+      );
       this.connect();
     }, this.reconnectDelay);
   }
@@ -90,7 +93,7 @@ export class WebSocketManager {
     if (!this.handlers.has(event)) {
       this.handlers.set(event, new Set());
     }
-    this.handlers.get(event)!.add(handler);
+    this.handlers.get(event)?.add(handler);
     return () => {
       this.handlers.get(event)?.delete(handler);
     };

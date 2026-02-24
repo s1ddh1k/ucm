@@ -1,6 +1,6 @@
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 // IMPORTANT: setup must happen before requiring hivemind modules
 // store.js reads process.env.HIVEMIND_DIR at module load time
@@ -38,7 +38,9 @@ function assertEqual(actual, expected, message) {
     process.stdout.write(".");
   } else {
     failed++;
-    failures.push(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    failures.push(
+      `${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
     process.stdout.write("F");
   }
 }
@@ -49,7 +51,9 @@ function assertDeepEqual(actual, expected, message) {
     process.stdout.write(".");
   } else {
     failed++;
-    failures.push(`${message}:\n  expected: ${JSON.stringify(expected)}\n  actual:   ${JSON.stringify(actual)}`);
+    failures.push(
+      `${message}:\n  expected: ${JSON.stringify(expected)}\n  actual:   ${JSON.stringify(actual)}`,
+    );
     process.stdout.write("F");
   }
 }
@@ -65,8 +69,16 @@ function testSaveLoadConfig() {
   store.saveConfig(custom);
   const loaded = store.loadConfig();
   assertEqual(loaded.decayDays, 14, "config: custom decayDays preserved");
-  assertEqual(loaded.models.retrieval, "claude-sonnet-4-6", "config: custom model preserved");
-  assertEqual(loaded.models.extraction, store.DEFAULT_CONFIG.models.extraction, "config: deep merge keeps default model slots");
+  assertEqual(
+    loaded.models.retrieval,
+    "claude-sonnet-4-6",
+    "config: custom model preserved",
+  );
+  assertEqual(
+    loaded.models.extraction,
+    store.DEFAULT_CONFIG.models.extraction,
+    "config: deep merge keeps default model slots",
+  );
 
   // Restore original config
   store.saveConfig(store.DEFAULT_CONFIG);
@@ -85,7 +97,7 @@ function testZettelYamlRoundtrip() {
     id: "yaml-test-001",
     kind: "literature",
     title: "한글 제목 with English",
-    keywords: { "한글키": 3, "english-key": 2, "@transactional": 1 },
+    keywords: { 한글키: 3, "english-key": 2, "@transactional": 1 },
     links: ["t001", "t002"],
     createdAt: "2026-02-18T00:00:00.000Z",
     lastAccessed: "2026-02-18T00:00:00.000Z",
@@ -98,11 +110,22 @@ function testZettelYamlRoundtrip() {
 
   assert(loaded !== null, "yaml roundtrip: loaded");
   assertEqual(loaded.title, zettel.title, "yaml roundtrip: title");
-  assertEqual(loaded.keywords["한글키"], 3, "yaml roundtrip: Korean key weight");
-  assertEqual(loaded.keywords["english-key"], 2, "yaml roundtrip: English key weight");
-  assertEqual(loaded.keywords["@transactional"], 1, "yaml roundtrip: special char key");
+  assertEqual(loaded.keywords.한글키, 3, "yaml roundtrip: Korean key weight");
+  assertEqual(
+    loaded.keywords["english-key"],
+    2,
+    "yaml roundtrip: English key weight",
+  );
+  assertEqual(
+    loaded.keywords["@transactional"],
+    1,
+    "yaml roundtrip: special char key",
+  );
   assertDeepEqual(loaded.links, ["t001", "t002"], "yaml roundtrip: links");
-  assert(loaded.body.includes("Second paragraph"), "yaml roundtrip: body preserved");
+  assert(
+    loaded.body.includes("Second paragraph"),
+    "yaml roundtrip: body preserved",
+  );
 
   store.deleteZettel("yaml-test-001");
 }
@@ -130,8 +153,16 @@ function testZettelCrud() {
 
   const deleted = store.deleteZettel("crud-test-001");
   assertEqual(deleted, true, "zettel delete: returns true");
-  assertEqual(store.loadZettel("crud-test-001"), null, "zettel delete: no longer loadable");
-  assertEqual(store.deleteZettel("nonexistent"), false, "zettel delete nonexistent: returns false");
+  assertEqual(
+    store.loadZettel("crud-test-001"),
+    null,
+    "zettel delete: no longer loadable",
+  );
+  assertEqual(
+    store.deleteZettel("nonexistent"),
+    false,
+    "zettel delete nonexistent: returns false",
+  );
 }
 
 function testArchiveRestore() {
@@ -152,15 +183,22 @@ function testArchiveRestore() {
 
   const archived = store.archiveZettel("archive-test-001");
   assertEqual(archived, true, "archive: returns true");
-  assertEqual(store.loadZettel("archive-test-001"), null, "archive: not in zettel dir");
+  assertEqual(
+    store.loadZettel("archive-test-001"),
+    null,
+    "archive: not in zettel dir",
+  );
   assert(
     fs.existsSync(path.join(store.ARCHIVE_DIR, "archive-test-001.md")),
-    "archive: file in archive dir"
+    "archive: file in archive dir",
   );
 
   const restored = store.restoreZettel("archive-test-001");
   assertEqual(restored, true, "restore: returns true");
-  assert(store.loadZettel("archive-test-001") !== null, "restore: back in zettel dir");
+  assert(
+    store.loadZettel("archive-test-001") !== null,
+    "restore: back in zettel dir",
+  );
 
   store.deleteZettel("archive-test-001");
 }
@@ -189,9 +227,18 @@ function testValidateConfig() {
   };
   const warnings = store.validateConfig(invalid);
   assert(warnings.length >= 3, "validateConfig invalid: multiple warnings");
-  assert(warnings.some((w) => w.includes("models.retrieval")), "validateConfig: invalid model warning");
-  assert(warnings.some((w) => w.includes("unknown")), "validateConfig: unknown adapter warning");
-  assert(warnings.some((w) => w.includes("decayDays")), "validateConfig: decayDays range warning");
+  assert(
+    warnings.some((w) => w.includes("models.retrieval")),
+    "validateConfig: invalid model warning",
+  );
+  assert(
+    warnings.some((w) => w.includes("unknown")),
+    "validateConfig: unknown adapter warning",
+  );
+  assert(
+    warnings.some((w) => w.includes("decayDays")),
+    "validateConfig: decayDays range warning",
+  );
 
   const codexValid = {
     ...store.DEFAULT_CONFIG,
@@ -204,7 +251,11 @@ function testValidateConfig() {
     },
   };
   const codexWarnings = store.validateConfig(codexValid);
-  assertEqual(codexWarnings.length, 0, "validateConfig codex: codex models accepted");
+  assertEqual(
+    codexWarnings.length,
+    0,
+    "validateConfig codex: codex models accepted",
+  );
 
   const codexInvalid = {
     ...codexValid,
@@ -213,7 +264,7 @@ function testValidateConfig() {
   const codexInvalidWarnings = store.validateConfig(codexInvalid);
   assert(
     codexInvalidWarnings.some((w) => w.includes("models.retrieval")),
-    "validateConfig codex: claude model rejected"
+    "validateConfig codex: claude model rejected",
   );
 }
 
@@ -240,16 +291,27 @@ function testIndexUnindexZettel() {
   };
 
   indexer.indexZettel(zettel);
-  assertEqual(indexer.getAllEntries().length, countBefore + 1, "indexZettel: count +1");
+  assertEqual(
+    indexer.getAllEntries().length,
+    countBefore + 1,
+    "indexZettel: count +1",
+  );
 
   indexer.unindexZettel("index-test-001");
-  assertEqual(indexer.getAllEntries().length, countBefore, "unindexZettel: count restored");
+  assertEqual(
+    indexer.getAllEntries().length,
+    countBefore,
+    "unindexZettel: count restored",
+  );
 }
 
 function testBm25Search() {
   const enResults = indexer.bm25Search(["kubernetes"]);
   assert(enResults.length > 0, "bm25 English: results found");
-  assert(enResults.some((r) => r.id === "t019"), "bm25 English: t019 (kubernetes)");
+  assert(
+    enResults.some((r) => r.id === "t019"),
+    "bm25 English: t019 (kubernetes)",
+  );
 
   const krResults = indexer.bm25Search(["트랜잭션"]);
   assert(krResults.length > 0, "bm25 Korean: results found");
@@ -297,10 +359,18 @@ function testTitleTokensJaccard() {
   assert(sim > 0, "jaccard: some overlap (spring)");
   assert(sim < 1, "jaccard: not identical");
 
-  assertEqual(extract.jaccardSimilarity(tokensA, tokensA), 1, "jaccard identical: 1");
+  assertEqual(
+    extract.jaccardSimilarity(tokensA, tokensA),
+    1,
+    "jaccard identical: 1",
+  );
 
   const tokensC = extract.titleTokens("completely different words here");
-  assertEqual(extract.jaccardSimilarity(tokensA, tokensC), 0, "jaccard disjoint: 0");
+  assertEqual(
+    extract.jaccardSimilarity(tokensA, tokensC),
+    0,
+    "jaccard disjoint: 0",
+  );
 }
 
 function testCharBigrams() {
@@ -347,12 +417,15 @@ function testNormalizedKwSet() {
 }
 
 function testBodyOverlapDeduplicateBody() {
-  const body1 = "This is the first paragraph with enough words to pass the thirty character minimum threshold easily for testing.";
-  const body2 = "This is the first paragraph with enough words to pass the thirty character minimum threshold easily for testing.";
+  const body1 =
+    "This is the first paragraph with enough words to pass the thirty character minimum threshold easily for testing.";
+  const body2 =
+    "This is the first paragraph with enough words to pass the thirty character minimum threshold easily for testing.";
   const overlap = extract.bodyOverlap(body1, body2);
   assertEqual(overlap, 1, "bodyOverlap identical: 1");
 
-  const different = "Completely different content that has no overlap whatsoever with the original text at all really.";
+  const different =
+    "Completely different content that has no overlap whatsoever with the original text at all really.";
   const noOverlap = extract.bodyOverlap(body1, different);
   assert(noOverlap < 0.5, "bodyOverlap different: low");
 
@@ -362,8 +435,14 @@ function testBodyOverlapDeduplicateBody() {
     "Unique second section content that is definitely long enough to be checked for dedup.",
   ].join("\n\n---\n\n");
   const deduped = extract.deduplicateBody(dupBody);
-  assert(!deduped.includes("---"), "deduplicateBody: duplicate section removed");
-  assert(deduped.includes("Unique second"), "deduplicateBody: unique section kept");
+  assert(
+    !deduped.includes("---"),
+    "deduplicateBody: duplicate section removed",
+  );
+  assert(
+    deduped.includes("Unique second"),
+    "deduplicateBody: unique section kept",
+  );
 }
 
 function testCoreKeywordsExtractKeywords() {
@@ -376,10 +455,13 @@ function testCoreKeywordsExtractKeywords() {
 
   const extracted = extract.extractKeywordsFromText(
     "Kubernetes CronJob",
-    "CronJob scheduling structure and concurrency policy explanation in detail"
+    "CronJob scheduling structure and concurrency policy explanation in detail",
   );
   assert(extracted.length > 0, "extractKeywordsFromText: returns keywords");
-  assert(extracted.includes("cronjob"), "extractKeywordsFromText: contains cronjob");
+  assert(
+    extracted.includes("cronjob"),
+    "extractKeywordsFromText: contains cronjob",
+  );
 }
 
 function testDeduplicateBatch() {
@@ -403,7 +485,10 @@ function testDeduplicateBatch() {
 
   const result = extract.deduplicateBatch(zettels);
   assertEqual(result.length, 2, "deduplicateBatch: merged duplicate pair");
-  assert(result.some((z) => z.title.includes("Kubernetes")), "deduplicateBatch: kept unique zettel");
+  assert(
+    result.some((z) => z.title.includes("Kubernetes")),
+    "deduplicateBatch: kept unique zettel",
+  );
 }
 
 // --- Lifecycle tests ---
@@ -438,7 +523,10 @@ function testCleanupAll() {
   assert(result.kwFixed >= 1, "cleanupAll: keyword cap applied");
 
   const loaded = store.loadZettel("cleanup-test");
-  assert(Object.keys(loaded.keywords).length <= 8, "cleanupAll: keywords capped at 8");
+  assert(
+    Object.keys(loaded.keywords).length <= 8,
+    "cleanupAll: keywords capped at 8",
+  );
 
   store.deleteZettel("cleanup-test");
   indexer.unindexZettel("cleanup-test");
@@ -476,7 +564,10 @@ function testDedupAll() {
   const before = indexer.getAllEntries().length;
   const result = lifecycle.dedupAll({});
   assert(result.merged >= 1, "dedupAll: at least 1 merge");
-  assert(indexer.getAllEntries().length < before, "dedupAll: entry count decreased");
+  assert(
+    indexer.getAllEntries().length < before,
+    "dedupAll: entry count decreased",
+  );
 
   store.deleteZettel("dedup-a");
   store.deleteZettel("dedup-b");
@@ -504,43 +595,69 @@ async function testDocumentScanRead() {
       "## Section Two",
       "",
       "Another section that is also long enough and discusses a completely different topic with sufficient length to pass the threshold easily.",
-    ].join("\n")
+    ].join("\n"),
   );
   fs.writeFileSync(path.join(docDir, "empty.md"), "");
   fs.writeFileSync(path.join(docDir, "short.md"), "Too short.");
 
   // Scan: empty files (size 0) skipped, non-empty files found
   const items = await document.scan({}, { dirs: [docDir] });
-  assertEqual(items.length, 2, "document scan: 2 non-empty files (empty.md skipped)");
+  assertEqual(
+    items.length,
+    2,
+    "document scan: 2 non-empty files (empty.md skipped)",
+  );
 
   // Read: sections split by ## headers
   const testDocItem = items.find((i) => i.ref === "test-doc.md");
   assert(testDocItem !== undefined, "document scan: test-doc.md found");
 
   const chunks = await document.read(testDocItem);
-  assert(chunks.length >= 2, "document read: multiple sections from ## headers");
-  assert(chunks[0].metadata.adapter === "document", "document read: metadata.adapter");
-  assert(chunks[0].metadata.ref === "test-doc.md", "document read: metadata.ref");
+  assert(
+    chunks.length >= 2,
+    "document read: multiple sections from ## headers",
+  );
+  assert(
+    chunks[0].metadata.adapter === "document",
+    "document read: metadata.adapter",
+  );
+  assert(
+    chunks[0].metadata.ref === "test-doc.md",
+    "document read: metadata.ref",
+  );
 
   // Short file returns no chunks (content < 100 chars)
   const shortItem = items.find((i) => i.ref === "short.md");
   if (shortItem) {
     const shortChunks = await document.read(shortItem);
-    assertEqual(shortChunks.length, 0, "document read: short file returns no chunks");
+    assertEqual(
+      shortChunks.length,
+      0,
+      "document read: short file returns no chunks",
+    );
   }
 
   fs.rmSync(docDir, { recursive: true });
 }
 
 async function testCodexAdapterReadCurrentSchema() {
-  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "hivemind-codex-home-"));
-  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2026", "02", "16");
+  const fakeHome = fs.mkdtempSync(
+    path.join(os.tmpdir(), "hivemind-codex-home-"),
+  );
+  const sessionDir = path.join(
+    fakeHome,
+    ".codex",
+    "sessions",
+    "2026",
+    "02",
+    "16",
+  );
   fs.mkdirSync(sessionDir, { recursive: true });
   const sessionPath = path.join(sessionDir, "test-session.jsonl");
 
-  const longUserText = ("사용자 요청 문장입니다. ".repeat(80)).trim();
-  const longAssistantText = ("어시스턴트 응답 문장입니다. ".repeat(80)).trim();
-  const longReasoningText = ("중간 추론 문장입니다. ".repeat(80)).trim();
+  const longUserText = "사용자 요청 문장입니다. ".repeat(80).trim();
+  const longAssistantText = "어시스턴트 응답 문장입니다. ".repeat(80).trim();
+  const longReasoningText = "중간 추론 문장입니다. ".repeat(80).trim();
   const lines = [
     JSON.stringify({ type: "session_meta", payload: { id: "sess-001" } }),
     JSON.stringify({
@@ -584,8 +701,14 @@ async function testCodexAdapterReadCurrentSchema() {
     const chunks = await codex.read(items[0]);
     assertEqual(chunks.length, 1, "codex read: generated one chunk");
     assert(chunks[0].text.includes("[user]"), "codex read: includes user role");
-    assert(chunks[0].text.includes("[assistant]"), "codex read: includes assistant role");
-    assert(chunks[0].text.includes("[reasoning]"), "codex read: includes reasoning role");
+    assert(
+      chunks[0].text.includes("[assistant]"),
+      "codex read: includes assistant role",
+    );
+    assert(
+      chunks[0].text.includes("[reasoning]"),
+      "codex read: includes reasoning role",
+    );
   } finally {
     process.env.HOME = prevHome;
     delete require.cache[modulePath];
@@ -598,31 +721,63 @@ async function testCodexAdapterReadCurrentSchema() {
 function testBuildLlmCallOptions() {
   const codex = buildLlmCallOptions({ provider: "codex", model: "high" });
   assertEqual(codex.provider, "codex", "buildLlmCallOptions codex: provider");
-  assertEqual(codex.outputFormat, "text", "buildLlmCallOptions codex: output text");
+  assertEqual(
+    codex.outputFormat,
+    "text",
+    "buildLlmCallOptions codex: output text",
+  );
 
-  const claude = buildLlmCallOptions({ provider: "claude", model: "claude-sonnet-4-6" });
-  assertEqual(claude.provider, "claude", "buildLlmCallOptions claude: provider");
-  assertEqual(claude.outputFormat, "stream-json", "buildLlmCallOptions claude: stream-json");
+  const claude = buildLlmCallOptions({
+    provider: "claude",
+    model: "claude-sonnet-4-6",
+  });
+  assertEqual(
+    claude.provider,
+    "claude",
+    "buildLlmCallOptions claude: provider",
+  );
+  assertEqual(
+    claude.outputFormat,
+    "stream-json",
+    "buildLlmCallOptions claude: stream-json",
+  );
 
   const fallback = buildLlmCallOptions({ provider: "unknown" });
-  assertEqual(fallback.provider, "claude", "buildLlmCallOptions fallback: claude");
+  assertEqual(
+    fallback.provider,
+    "claude",
+    "buildLlmCallOptions fallback: claude",
+  );
 }
 
 function testExtractJson() {
   const codeBlock = 'Some text\n```json\n{"key": "value"}\n```\nMore text';
-  assertDeepEqual(extractJson(codeBlock), { key: "value" }, "extractJson code block");
+  assertDeepEqual(
+    extractJson(codeBlock),
+    { key: "value" },
+    "extractJson code block",
+  );
 
   const direct = '{"hello": "world"}';
-  assertDeepEqual(extractJson(direct), { hello: "world" }, "extractJson direct object");
+  assertDeepEqual(
+    extractJson(direct),
+    { hello: "world" },
+    "extractJson direct object",
+  );
 
   const array = '[{"a": 1}, {"b": 2}]';
-  assertDeepEqual(extractJson(array), [{ a: 1 }, { b: 2 }], "extractJson array");
+  assertDeepEqual(
+    extractJson(array),
+    [{ a: 1 }, { b: 2 }],
+    "extractJson array",
+  );
 
-  const embedded = 'Here is the result: {"verdict": "MERGE", "reason": "same topic"} end';
+  const embedded =
+    'Here is the result: {"verdict": "MERGE", "reason": "same topic"} end';
   assertDeepEqual(
     extractJson(embedded),
     { verdict: "MERGE", reason: "same topic" },
-    "extractJson embedded object"
+    "extractJson embedded object",
   );
 
   let threw = false;

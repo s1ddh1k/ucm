@@ -1,5 +1,4 @@
-import { BrowserWindow, Utils } from "electrobun/bun";
-import Electrobun from "electrobun/bun";
+import Electrobun, { BrowserWindow, Utils } from "electrobun/bun";
 import { DaemonManager } from "./daemon-manager";
 import { setupTray } from "./tray";
 import { setupUpdater } from "./updater";

@@ -1,9 +1,9 @@
 import type { Task } from "@/api/types";
 import { StatusDot } from "@/components/shared/status-dot";
 import { TimeAgo } from "@/components/shared/time-ago";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
+import { cn } from "@/lib/utils";
 
 interface TaskListItemProps {
   task: Task;
@@ -20,11 +20,13 @@ function formatTokens(n: number): string {
 export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
   const projectPath = getTaskProjectPath(task);
   const projectLabel = getTaskProjectLabel(task);
-  const totalTokens = task.tokenUsage?.totalTokens
-    || task.tokenUsage?.total
-    || ((task.tokenUsage?.inputTokens || 0) + (task.tokenUsage?.outputTokens || 0))
-    || ((task.tokenUsage?.input || 0) + (task.tokenUsage?.output || 0))
-    || 0;
+  const totalTokens =
+    task.tokenUsage?.totalTokens ||
+    task.tokenUsage?.total ||
+    (task.tokenUsage?.inputTokens || 0) +
+      (task.tokenUsage?.outputTokens || 0) ||
+    (task.tokenUsage?.input || 0) + (task.tokenUsage?.output || 0) ||
+    0;
 
   return (
     <button
@@ -32,7 +34,7 @@ export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
       className={cn(
         "w-full text-left px-3 py-3 border-b border-border transition-colors cursor-pointer",
         "hover:bg-accent/50",
-        selected && "bg-accent"
+        selected && "bg-accent",
       )}
     >
       <div className="flex items-start gap-2">
@@ -40,7 +42,11 @@ export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{task.title}</p>
           <div className="mt-1">
-            <Badge variant="outline" className="text-[10px] font-normal" title={projectPath || projectLabel}>
+            <Badge
+              variant="outline"
+              className="text-[10px] font-normal"
+              title={projectPath || projectLabel}
+            >
               {projectLabel}
             </Badge>
           </div>
@@ -52,14 +58,21 @@ export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
                 <span>{task.pipeline}</span>
               </>
             )}
-            {task.currentStage && (task.state === "running" || task.state === "review") && (
-              <>
-                <span>·</span>
-                <span className={task.stageGate ? "text-amber-400" : "text-blue-400"}>
-                  {task.stageGate ? `⏸ ${task.currentStage}` : task.currentStage}
-                </span>
-              </>
-            )}
+            {task.currentStage &&
+              (task.state === "running" || task.state === "review") && (
+                <>
+                  <span>·</span>
+                  <span
+                    className={
+                      task.stageGate ? "text-amber-400" : "text-blue-400"
+                    }
+                  >
+                    {task.stageGate
+                      ? `⏸ ${task.currentStage}`
+                      : task.currentStage}
+                  </span>
+                </>
+              )}
             <span>·</span>
             <TimeAgo date={task.created} />
           </div>

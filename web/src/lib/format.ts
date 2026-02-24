@@ -1,4 +1,4 @@
-import { formatDistanceToNow, format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 
 export function timeAgo(date: string | Date): string {
   return formatDistanceToNow(new Date(date), { addSuffix: true });
@@ -9,7 +9,7 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatDuration(seconds: number): string {
-  if (seconds == null || isNaN(seconds)) return "-";
+  if (seconds == null || Number.isNaN(seconds)) return "-";
   const s = Math.floor(seconds);
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
@@ -26,7 +26,8 @@ export function formatDuration(seconds: number): string {
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
 

@@ -1,6 +1,6 @@
+import { cn } from "@/lib/utils";
 import { useDaemonStore } from "@/stores/daemon";
 import { StatusDot } from "./status-dot";
-import { cn } from "@/lib/utils";
 
 export function ConnectionIndicator() {
   const status = useDaemonStore((s) => s.status);
@@ -18,7 +18,12 @@ export function ConnectionIndicator() {
           : "Offline";
 
   return (
-    <div className={cn("flex items-center gap-2 text-sm", !connected && "text-muted-foreground")}>
+    <div
+      className={cn(
+        "flex items-center gap-2 text-sm",
+        !connected && "text-muted-foreground",
+      )}
+    >
       <span className="text-muted-foreground">Daemon:</span>
       <StatusDot status={displayStatus} />
       <span>{label}</span>

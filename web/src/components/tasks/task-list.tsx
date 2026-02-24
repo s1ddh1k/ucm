@@ -1,27 +1,29 @@
-import type { Task } from "@/api/types";
-import { useTasksQuery } from "@/queries/tasks";
-import { useUiStore } from "@/stores/ui";
-import { TaskFilters } from "./task-filters";
-import { TaskListItem } from "./task-list-item";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Plus, ListTodo } from "lucide-react";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListTodo, Plus } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   getProjectKey,
   getProjectLabel,
   getTaskProjectPath,
   UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
+import { TaskFilters } from "./task-filters";
+import { TaskListItem } from "./task-list-item";
 
 interface TaskListProps {
   onNewTask: () => void;
   projectScopeLocked?: boolean;
 }
 
-export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProps) {
+export function TaskList({
+  onNewTask,
+  projectScopeLocked = false,
+}: TaskListProps) {
   const { data: tasks, isLoading } = useTasksQuery();
   const selectedTaskId = useUiStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
@@ -35,7 +37,7 @@ export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProp
   const taskSearch = useUiStore((s) => s.taskSearch);
   const effectiveProjectFilter = projectScopeLocked
     ? activeProjectKey
-    : (taskProjectFilter || activeProjectKey);
+    : taskProjectFilter || activeProjectKey;
 
   const projectOptions = useMemo(() => {
     if (!tasks) return [];
@@ -53,7 +55,8 @@ export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProp
     }
     return [...unique.entries()]
       .map(([key, label]) => {
-        const duplicated = (labelCounts.get(label) || 0) > 1 && key !== UNKNOWN_PROJECT_KEY;
+        const duplicated =
+          (labelCounts.get(label) || 0) > 1 && key !== UNKNOWN_PROJECT_KEY;
         return { key, label: duplicated ? `${label} · ${key}` : label };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -68,17 +71,23 @@ export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProp
     }
 
     if (effectiveProjectFilter) {
-      result = result.filter((t) => getProjectKey(getTaskProjectPath(t)) === effectiveProjectFilter);
+      result = result.filter(
+        (t) => getProjectKey(getTaskProjectPath(t)) === effectiveProjectFilter,
+      );
     }
 
     if (taskSearch) {
       const search = taskSearch.toLowerCase();
       result = result.filter(
         (t) =>
-          t.title.toLowerCase().includes(search)
-          || t.id.includes(search)
-          || getProjectLabel(getTaskProjectPath(t)).toLowerCase().includes(search)
-          || String(getTaskProjectPath(t) || "").toLowerCase().includes(search)
+          t.title.toLowerCase().includes(search) ||
+          t.id.includes(search) ||
+          getProjectLabel(getTaskProjectPath(t))
+            .toLowerCase()
+            .includes(search) ||
+          String(getTaskProjectPath(t) || "")
+            .toLowerCase()
+            .includes(search),
       );
     }
 
@@ -107,7 +116,10 @@ export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProp
       {activeProjectKey && (
         <div className="px-3 py-2 border-b bg-muted/20 flex items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground truncate">
-            Project scope: <span className="text-foreground">{activeProjectLabel || activeProjectKey}</span>
+            Project scope:{" "}
+            <span className="text-foreground">
+              {activeProjectLabel || activeProjectKey}
+            </span>
           </p>
           {projectScopeLocked ? (
             <p className="text-[11px] text-muted-foreground">Locked</p>
@@ -135,7 +147,11 @@ export function TaskList({ onNewTask, projectScopeLocked = false }: TaskListProp
             ))}
           </div>
         ) : filteredTasks.length === 0 ? (
-          <EmptyState icon={ListTodo} title="No tasks" description="Create a new task to get started" />
+          <EmptyState
+            icon={ListTodo}
+            title="No tasks"
+            description="Create a new task to get started"
+          />
         ) : (
           filteredTasks.map((task) => (
             <TaskListItem

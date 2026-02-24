@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Button } from "@/components/ui/button";
-import { StatusDot } from "@/components/shared/status-dot";
-import { wsManager } from "@/api/websocket";
-import { useTerminalStore } from "@/stores/terminal";
-import { useDaemonStore } from "@/stores/daemon";
-import { useUiStore } from "@/stores/ui";
+import { Terminal as XTerminal } from "@xterm/xterm";
 import { Plus, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { wsManager } from "@/api/websocket";
+import { StatusDot } from "@/components/shared/status-dot";
+import { Button } from "@/components/ui/button";
+import { useDaemonStore } from "@/stores/daemon";
+import { useTerminalStore } from "@/stores/terminal";
+import { useUiStore } from "@/stores/ui";
 import "@xterm/xterm/css/xterm.css";
 
 const XTERM_THEMES = {
@@ -59,7 +59,9 @@ const XTERM_THEMES = {
 
 function resolvedTheme(theme: string): "light" | "dark" {
   if (theme === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   }
   return theme === "light" ? "light" : "dark";
 }
@@ -71,9 +73,9 @@ export default function TerminalPage() {
   const spawned = useTerminalStore((s) => s.spawned);
   const connected = useDaemonStore((s) => s.connected);
   const theme = useUiStore((s) => s.theme);
-  const [sessionStatus, setSessionStatus] = useState<"idle" | "connecting" | "connected">(
-    () => useTerminalStore.getState().spawned ? "connected" : "idle",
-  );
+  const [sessionStatus, setSessionStatus] = useState<
+    "idle" | "connecting" | "connected"
+  >(() => (useTerminalStore.getState().spawned ? "connected" : "idle"));
 
   // Initialize xterm and wire up event handlers.
   // PTY is NOT killed on unmount — it stays alive across page navigations.
@@ -105,7 +107,9 @@ export default function TerminalPage() {
 
     // Handle resize
     const observer = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch {}
+      try {
+        fitAddon.fit();
+      } catch {}
     });
     observer.observe(termRef.current);
 
@@ -207,23 +211,43 @@ export default function TerminalPage() {
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium">Terminal</span>
           <div className="flex items-center gap-1.5">
-            <StatusDot status={sessionStatus === "connected" ? "running" : "offline"} />
+            <StatusDot
+              status={sessionStatus === "connected" ? "running" : "offline"}
+            />
             <span className="text-xs text-muted-foreground">
-              {sessionStatus === "connected" ? "Connected" : sessionStatus === "connecting" ? "Connecting..." : "Idle"}
+              {sessionStatus === "connected"
+                ? "Connected"
+                : sessionStatus === "connecting"
+                  ? "Connecting..."
+                  : "Idle"}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {!spawned ? (
-            <Button size="sm" onClick={() => spawnSession()} disabled={!connected}>
+            <Button
+              size="sm"
+              onClick={() => spawnSession()}
+              disabled={!connected}
+            >
               Start Session
             </Button>
           ) : (
             <>
-              <Button size="sm" variant="outline" onClick={() => spawnSession(true)} disabled={!connected}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => spawnSession(true)}
+                disabled={!connected}
+              >
                 <Plus className="h-4 w-4" /> New Session
               </Button>
-              <Button size="sm" variant="ghost" onClick={endSession} title="End Session">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={endSession}
+                title="End Session"
+              >
                 <Square className="h-4 w-4" />
               </Button>
             </>

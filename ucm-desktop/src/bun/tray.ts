@@ -1,5 +1,5 @@
-import { Tray, Utils } from "electrobun/bun";
 import type { BrowserWindow } from "electrobun/bun";
+import { Tray, Utils } from "electrobun/bun";
 import type { DaemonManager } from "./daemon-manager";
 
 export function setupTray(daemon: DaemonManager, mainWindow: BrowserWindow) {

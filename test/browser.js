@@ -1,17 +1,29 @@
 #!/usr/bin/env node
 // test/browser.js — Chrome CDP browser tests for UCM Dashboard
 
-const { spawn } = require("child_process");
-const path = require("path");
-const os = require("os");
-const fs = require("fs");
-const net = require("net");
-const http = require("http");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+const os = require("node:os");
+const fs = require("node:fs");
+const net = require("node:net");
+const http = require("node:http");
 
-const { state, assert, assertEqual, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
+const {
+  state,
+  assert,
+  assertEqual,
+  runGroup,
+  startSuiteTimer,
+  stopSuiteTimer,
+  summary,
+} = require("./harness.js");
 const { trackPid, cleanupAll } = require("./helpers/cleanup.js");
 const { ensureWebDistBuilt } = require("./helpers/web-build.js");
-const { launchBrowser, killBrowser, findChrome } = require("../lib/core/browser.js");
+const {
+  launchBrowser,
+  killBrowser,
+  findChrome,
+} = require("../lib/core/browser.js");
 
 const UCM_DIR = path.join(os.tmpdir(), `ucm-browser-${Date.now()}`);
 const DAEMON_DIR = path.join(UCM_DIR, "daemon");
@@ -50,16 +62,57 @@ function setupDirs() {
     stageTimeoutMs: 30000,
     httpPort: 0,
     uiPort: 0,
-    resources: { cpuThreshold: 0.8, memoryMinFreeMb: 512, diskMinFreeGb: 1, checkIntervalMs: 60000 },
+    resources: {
+      cpuThreshold: 0.8,
+      memoryMinFreeMb: 512,
+      diskMinFreeGb: 1,
+      checkIntervalMs: 60000,
+    },
     cleanup: { retentionDays: 7, autoCleanOnDiskPressure: true },
-    quota: { source: "ccusage", mode: "work", modes: { work: { windowBudgetPercent: 50 }, off: { windowBudgetPercent: 90 } }, softLimitPercent: 80, hardLimitPercent: 95 },
-    infra: { slots: 1, composeFile: "docker-compose.test.yml", upTimeoutMs: 60000, downAfterTest: true, browserSlots: 1 },
-    observer: { enabled: false, intervalMs: 14400000, taskCountTrigger: 10, maxProposalsPerCycle: 5, dataWindowDays: 7, proposalRetentionDays: 30 },
-    selfImprove: { enabled: false, maxRisk: "low", requirePassingTests: true, backupBranch: true },
+    quota: {
+      source: "ccusage",
+      mode: "work",
+      modes: {
+        work: { windowBudgetPercent: 50 },
+        off: { windowBudgetPercent: 90 },
+      },
+      softLimitPercent: 80,
+      hardLimitPercent: 95,
+    },
+    infra: {
+      slots: 1,
+      composeFile: "docker-compose.test.yml",
+      upTimeoutMs: 60000,
+      downAfterTest: true,
+      browserSlots: 1,
+    },
+    observer: {
+      enabled: false,
+      intervalMs: 14400000,
+      taskCountTrigger: 10,
+      maxProposalsPerCycle: 5,
+      dataWindowDays: 7,
+      proposalRetentionDays: 30,
+    },
+    selfImprove: {
+      enabled: false,
+      maxRisk: "low",
+      requirePassingTests: true,
+      backupBranch: true,
+    },
     regulator: { enabled: false },
-    autopilot: { releaseEvery: 4, maxConsecutiveFailures: 3, maxItemsPerSession: 50, reviewRetries: 2, itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 } },
+    autopilot: {
+      releaseEvery: 4,
+      maxConsecutiveFailures: 3,
+      maxItemsPerSession: 50,
+      reviewRetries: 2,
+      itemMix: { feature: 0.4, refactor: 0.25, docs: 0.15, test: 0.2 },
+    },
   };
-  fs.writeFileSync(path.join(UCM_DIR, "config.json"), JSON.stringify(config, null, 2));
+  fs.writeFileSync(
+    path.join(UCM_DIR, "config.json"),
+    JSON.stringify(config, null, 2),
+  );
 }
 
 function socketRequest(method, params = {}) {
@@ -72,7 +125,7 @@ function socketRequest(method, params = {}) {
     }, 10000);
 
     conn.on("connect", () => {
-      conn.write(JSON.stringify({ id: "test", method, params }) + "\n");
+      conn.write(`${JSON.stringify({ id: "test", method, params })}\n`);
     });
 
     conn.on("data", (chunk) => {
@@ -115,13 +168,19 @@ function httpRequest(method, urlPath, body = null) {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode, body: data });
+        }
       });
     });
 
     req.on("error", reject);
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error("http timeout")); });
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error("http timeout"));
+    });
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
@@ -132,7 +191,9 @@ function waitForSocket(timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     function attempt() {
       if (Date.now() > deadline) return reject(new Error("socket not ready"));
-      socketRequest("stats").then(resolve).catch(() => setTimeout(attempt, 200));
+      socketRequest("stats")
+        .then(resolve)
+        .catch(() => setTimeout(attempt, 200));
     }
     attempt();
   });
@@ -142,7 +203,8 @@ function waitForUiServer(timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     function attempt() {
-      if (Date.now() > deadline) return reject(new Error("UI server not ready"));
+      if (Date.now() > deadline)
+        return reject(new Error("UI server not ready"));
       httpRequest("GET", "/api/daemon/status")
         .then((res) => resolve(res))
         .catch(() => setTimeout(attempt, 200));
@@ -163,25 +225,31 @@ function findFreePort() {
 
 // ── CDP Helper ──
 
-function cdpRequest(debugPort, method, params = {}, sessionId = null) {
+function cdpRequest(debugPort, _method, _params = {}, _sessionId = null) {
   return new Promise((resolve, reject) => {
     // First get the WebSocket URL
-    const listReq = http.get(`http://localhost:${debugPort}/json/list`, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try {
-          const targets = JSON.parse(data);
-          const page = targets.find((t) => t.type === "page");
-          if (!page) return reject(new Error("no page target found"));
-          resolve(page.webSocketDebuggerUrl);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+    const listReq = http.get(
+      `http://localhost:${debugPort}/json/list`,
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const targets = JSON.parse(data);
+            const page = targets.find((t) => t.type === "page");
+            if (!page) return reject(new Error("no page target found"));
+            resolve(page.webSocketDebuggerUrl);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
     listReq.on("error", reject);
-    listReq.setTimeout(5000, () => { listReq.destroy(); reject(new Error("cdp list timeout")); });
+    listReq.setTimeout(5000, () => {
+      listReq.destroy();
+      reject(new Error("cdp list timeout"));
+    });
   });
 }
 
@@ -196,11 +264,13 @@ function cdpEvaluate(wsUrl, expression) {
 
     const msgId = 1;
     ws.on("open", () => {
-      ws.send(JSON.stringify({
-        id: msgId,
-        method: "Runtime.evaluate",
-        params: { expression, returnByValue: true },
-      }));
+      ws.send(
+        JSON.stringify({
+          id: msgId,
+          method: "Runtime.evaluate",
+          params: { expression, returnByValue: true },
+        }),
+      );
     });
 
     ws.on("message", (raw) => {
@@ -210,7 +280,9 @@ function cdpEvaluate(wsUrl, expression) {
           clearTimeout(timer);
           ws.close();
           if (msg.result?.exceptionDetails) {
-            reject(new Error(msg.result.exceptionDetails.text || "evaluation error"));
+            reject(
+              new Error(msg.result.exceptionDetails.text || "evaluation error"),
+            );
           } else {
             resolve(msg.result?.result?.value);
           }
@@ -218,7 +290,10 @@ function cdpEvaluate(wsUrl, expression) {
       } catch {}
     });
 
-    ws.on("error", (e) => { clearTimeout(timer); reject(e); });
+    ws.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
   });
 }
 
@@ -234,7 +309,13 @@ function cdpNavigate(wsUrl, targetUrl) {
     ws.on("open", () => {
       // Enable Page events
       ws.send(JSON.stringify({ id: 1, method: "Page.enable", params: {} }));
-      ws.send(JSON.stringify({ id: 2, method: "Page.navigate", params: { url: targetUrl } }));
+      ws.send(
+        JSON.stringify({
+          id: 2,
+          method: "Page.navigate",
+          params: { url: targetUrl },
+        }),
+      );
     });
 
     ws.on("message", (raw) => {
@@ -257,7 +338,10 @@ function cdpNavigate(wsUrl, targetUrl) {
       } catch {}
     });
 
-    ws.on("error", (e) => { clearTimeout(timer); reject(e); });
+    ws.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
   });
 }
 
@@ -286,7 +370,11 @@ async function startUiServer() {
   uiPort = await findFreePort();
   const uiPath = path.join(__dirname, "..", "lib", "ucm-ui-server.js");
 
-  uiProcess = spawn(process.execPath, ["-e", `
+  uiProcess = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     process.env.UCM_DIR = ${JSON.stringify(UCM_DIR)};
     process.env.UCM_UI_PORT = ${JSON.stringify(String(uiPort))};
     const { startUiServer } = require(${JSON.stringify(uiPath)});
@@ -294,10 +382,13 @@ async function startUiServer() {
       console.error(e.message);
       process.exit(1);
     });
-  `], {
-    env: { ...process.env, UCM_DIR, UCM_UI_PORT: String(uiPort) },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  `,
+    ],
+    {
+      env: { ...process.env, UCM_DIR, UCM_UI_PORT: String(uiPort) },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   trackPid(uiProcess.pid);
   await waitForUiServer();
 }
@@ -305,7 +396,9 @@ async function startUiServer() {
 async function cleanup() {
   if (browser) killBrowser(browser);
   await cleanupAll();
-  try { fs.rmSync(UCM_DIR, { recursive: true, force: true }); } catch {}
+  try {
+    fs.rmSync(UCM_DIR, { recursive: true, force: true });
+  } catch {}
 }
 
 // ── Tests ──
@@ -359,61 +452,85 @@ async function main() {
     process.exit(1);
   }
 
-  await runGroup("Dashboard Page Load", {
-    "page title is UCM Dashboard": async () => {
-      const title = await cdpEvaluate(wsUrl, "document.title");
-      assertEqual(title, "UCM Dashboard", "page title");
-    },
+  await runGroup(
+    "Dashboard Page Load",
+    {
+      "page title is UCM Dashboard": async () => {
+        const title = await cdpEvaluate(wsUrl, "document.title");
+        assertEqual(title, "UCM Dashboard", "page title");
+      },
 
-    "left panel (sidebar) exists": async () => {
-      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('aside')");
-      assert(exists, "left sidebar should exist");
-    },
+      "left panel (sidebar) exists": async () => {
+        const exists = await cdpEvaluate(
+          wsUrl,
+          "!!document.querySelector('aside')",
+        );
+        assert(exists, "left sidebar should exist");
+      },
 
-    "main content panel exists": async () => {
-      const exists = await cdpEvaluate(wsUrl, "!!document.querySelector('main')");
-      assert(exists, "main content should exist");
-    },
+      "main content panel exists": async () => {
+        const exists = await cdpEvaluate(
+          wsUrl,
+          "!!document.querySelector('main')",
+        );
+        assert(exists, "main content should exist");
+      },
 
-    "header exists with Dashboard title": async () => {
-      const text = await cdpEvaluate(wsUrl, "document.querySelector('header h1')?.textContent || ''");
-      assert(text.includes("Dashboard"), "header should contain Dashboard");
+      "header exists with Dashboard title": async () => {
+        const text = await cdpEvaluate(
+          wsUrl,
+          "document.querySelector('header h1')?.textContent || ''",
+        );
+        assert(text.includes("Dashboard"), "header should contain Dashboard");
+      },
     },
-  }, { timeout: 15000 });
+    { timeout: 15000 },
+  );
 
   // Create a task via HTTP API, then check if it appears in the UI
   let taskId = null;
-  await runGroup("Dynamic Task Rendering", {
-    "create task via API": async () => {
-      const res = await httpRequest("POST", "/api/submit", {
-        title: "browser test task",
-        body: "task for browser testing",
-      });
-      assertEqual(res.status, 200, "submit status");
-      taskId = res.body?.id;
-      assert(!!taskId, "task id should be returned");
+  await runGroup(
+    "Dynamic Task Rendering",
+    {
+      "create task via API": async () => {
+        const res = await httpRequest("POST", "/api/submit", {
+          title: "browser test task",
+          body: "task for browser testing",
+        });
+        assertEqual(res.status, 200, "submit status");
+        taskId = res.body?.id;
+        assert(!!taskId, "task id should be returned");
+      },
+
+      "task appears in UI task list": async () => {
+        // Wait a moment for WebSocket update to propagate
+        await new Promise((r) => setTimeout(r, 2000));
+
+        await cdpNavigate(wsUrl, `http://localhost:${uiPort}/tasks`);
+        wsUrl = await cdpRequest(browser.port);
+
+        let hasTask = false;
+        for (let i = 0; i < 12; i++) {
+          hasTask = await cdpEvaluate(
+            wsUrl,
+            "document.body.textContent.includes('browser test task')",
+          );
+          if (hasTask) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        assert(hasTask, "task should appear in task list");
+      },
     },
+    { timeout: 20000 },
+  );
 
-    "task appears in UI task list": async () => {
-      // Wait a moment for WebSocket update to propagate
-      await new Promise((r) => setTimeout(r, 2000));
-
-      await cdpNavigate(wsUrl, `http://localhost:${uiPort}/tasks`);
-      wsUrl = await cdpRequest(browser.port);
-
-      let hasTask = false;
-      for (let i = 0; i < 12; i++) {
-        hasTask = await cdpEvaluate(wsUrl, "document.body.textContent.includes('browser test task')");
-        if (hasTask) break;
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      assert(hasTask, "task should appear in task list");
-    },
-  }, { timeout: 20000 });
-
-  await runGroup("UI Panels", {
-    "proposals tab or section exists": async () => {
-      const hasProposals = await cdpEvaluate(wsUrl, `
+  await runGroup(
+    "UI Panels",
+    {
+      "proposals tab or section exists": async () => {
+        const hasProposals = await cdpEvaluate(
+          wsUrl,
+          `
         (function() {
           const links = document.querySelectorAll('aside a');
           for (const el of links) {
@@ -421,12 +538,15 @@ async function main() {
           }
           return false;
         })()
-      `);
-      assert(hasProposals, "proposals section should exist");
-    },
+      `,
+        );
+        assert(hasProposals, "proposals section should exist");
+      },
 
-    "autopilot tab exists": async () => {
-      const hasAutopilot = await cdpEvaluate(wsUrl, `
+      "autopilot tab exists": async () => {
+        const hasAutopilot = await cdpEvaluate(
+          wsUrl,
+          `
         (function() {
           const links = document.querySelectorAll('aside a');
           for (const el of links) {
@@ -434,10 +554,13 @@ async function main() {
           }
           return false;
         })()
-      `);
-      assert(hasAutopilot, "autopilot tab should exist in UI");
+      `,
+        );
+        assert(hasAutopilot, "autopilot tab should exist in UI");
+      },
     },
-  }, { timeout: 15000 });
+    { timeout: 15000 },
+  );
 
   await runGroup("Browser Cleanup", {
     "chrome and daemon shutdown": async () => {

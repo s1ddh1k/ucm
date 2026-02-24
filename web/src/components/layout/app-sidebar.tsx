@@ -1,17 +1,29 @@
+import {
+  BarChart3,
+  Bot,
+  FolderTree,
+  LayoutDashboard,
+  Lightbulb,
+  ListTodo,
+  PanelLeft,
+  PanelLeftClose,
+  Settings,
+  Terminal,
+} from "lucide-react";
 import { useMemo } from "react";
 import { NavLink } from "react-router";
-import {
-  LayoutDashboard, FolderTree, ListTodo, Lightbulb, Bot, Terminal, BarChart3, Settings,
-  PanelLeftClose, PanelLeft,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useUiStore } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { useAutopilotStatusQuery } from "@/queries/autopilot";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 interface BadgeInfo {
   count: number;
@@ -28,9 +40,7 @@ const navItems = [
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
 ];
 
-const bottomItems = [
-  { to: "/settings", icon: Settings, label: "Settings" },
-];
+const bottomItems = [{ to: "/settings", icon: Settings, label: "Settings" }];
 
 function useAttentionBadges(): Record<string, BadgeInfo> {
   const { data: tasks } = useTasksQuery();
@@ -74,25 +84,61 @@ export function AppSidebar() {
     <aside
       className={cn(
         "flex flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200",
-        collapsed ? "w-16" : "w-56"
+        collapsed ? "w-16" : "w-56",
       )}
     >
       {/* Logo */}
       <div className="flex h-14 items-center px-4 gap-2">
         <div className="flex h-8 w-8 items-center justify-center shrink-0">
-          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8">
-            <rect x="0" y="0" width="64" height="64" rx="14" fill="#0a0a0f"/>
-            <path d="M32 8L55 20.5V45.5L32 58L9 45.5V20.5L32 8Z" stroke="#3b82f6" strokeWidth="2.5" fill="none"/>
-            <circle cx="32" cy="10" r="4" fill="#60a5fa"/>
-            <circle cx="53" cy="44" r="4" fill="#60a5fa"/>
-            <circle cx="11" cy="44" r="4" fill="#60a5fa"/>
-            <line x1="32" y1="10" x2="53" y2="44" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
-            <line x1="53" y1="44" x2="11" y2="44" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
-            <line x1="11" y1="44" x2="32" y2="10" stroke="#3b82f6" strokeWidth="1.5" strokeOpacity="0.4"/>
-            <circle cx="32" cy="33" r="3" fill="#93c5fd"/>
+          <svg
+            viewBox="0 0 64 64"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-8 h-8"
+          >
+            <rect x="0" y="0" width="64" height="64" rx="14" fill="#0a0a0f" />
+            <path
+              d="M32 8L55 20.5V45.5L32 58L9 45.5V20.5L32 8Z"
+              stroke="#3b82f6"
+              strokeWidth="2.5"
+              fill="none"
+            />
+            <circle cx="32" cy="10" r="4" fill="#60a5fa" />
+            <circle cx="53" cy="44" r="4" fill="#60a5fa" />
+            <circle cx="11" cy="44" r="4" fill="#60a5fa" />
+            <line
+              x1="32"
+              y1="10"
+              x2="53"
+              y2="44"
+              stroke="#3b82f6"
+              strokeWidth="1.5"
+              strokeOpacity="0.4"
+            />
+            <line
+              x1="53"
+              y1="44"
+              x2="11"
+              y2="44"
+              stroke="#3b82f6"
+              strokeWidth="1.5"
+              strokeOpacity="0.4"
+            />
+            <line
+              x1="11"
+              y1="44"
+              x2="32"
+              y2="10"
+              stroke="#3b82f6"
+              strokeWidth="1.5"
+              strokeOpacity="0.4"
+            />
+            <circle cx="32" cy="33" r="3" fill="#93c5fd" />
           </svg>
         </div>
-        {!collapsed && <span className="font-semibold text-foreground">UCM</span>}
+        {!collapsed && (
+          <span className="font-semibold text-foreground">UCM</span>
+        )}
       </div>
 
       <Separator className="bg-sidebar-border" />
@@ -122,10 +168,14 @@ export function AppSidebar() {
           onClick={toggleSidebar}
           className={cn(
             "w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-            collapsed && "justify-center px-0"
+            collapsed && "justify-center px-0",
           )}
         >
-          {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {collapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
           {!collapsed && <span className="ml-2">Collapse</span>}
         </Button>
       </div>
@@ -134,9 +184,17 @@ export function AppSidebar() {
 }
 
 function SidebarNavLink({
-  to, icon: Icon, label, collapsed, badge,
+  to,
+  icon: Icon,
+  label,
+  collapsed,
+  badge,
 }: {
-  to: string; icon: typeof LayoutDashboard; label: string; collapsed: boolean; badge?: BadgeInfo;
+  to: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  collapsed: boolean;
+  badge?: BadgeInfo;
 }) {
   const link = (
     <NavLink
@@ -149,7 +207,7 @@ function SidebarNavLink({
           isActive
             ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-sidebar-foreground",
-          collapsed && "justify-center px-0"
+          collapsed && "justify-center px-0",
         )
       }
     >
@@ -160,7 +218,7 @@ function SidebarNavLink({
             <span
               className={cn(
                 "absolute -top-1 -right-1 h-2 w-2 rounded-full",
-                badge.color
+                badge.color,
               )}
             />
           )}
@@ -173,7 +231,7 @@ function SidebarNavLink({
             <span
               className={cn(
                 "min-w-5 h-5 rounded-full text-white text-[10px] font-medium flex items-center justify-center px-1",
-                badge.color
+                badge.color,
               )}
             >
               {badge.count}
@@ -191,10 +249,12 @@ function SidebarNavLink({
         <TooltipContent side="right">
           {label}
           {badge && (
-            <span className={cn(
-              "ml-2 inline-flex min-w-4 h-4 rounded-full text-white text-[10px] font-medium items-center justify-center px-1",
-              badge.color
-            )}>
+            <span
+              className={cn(
+                "ml-2 inline-flex min-w-4 h-4 rounded-full text-white text-[10px] font-medium items-center justify-center px-1",
+                badge.color,
+              )}
+            >
               {badge.count}
             </span>
           )}

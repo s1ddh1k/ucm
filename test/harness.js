@@ -35,7 +35,9 @@ function assertEqual(actual, expected, message) {
     process.stdout.write(".");
   } else {
     state.failed++;
-    state.failures.push(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    state.failures.push(
+      `${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
     process.stdout.write("F");
   }
 }
@@ -46,7 +48,9 @@ function assertDeepEqual(actual, expected, message) {
     process.stdout.write(".");
   } else {
     state.failed++;
-    state.failures.push(`${message}:\n  expected: ${JSON.stringify(expected)}\n  actual:   ${JSON.stringify(actual)}`);
+    state.failures.push(
+      `${message}:\n  expected: ${JSON.stringify(expected)}\n  actual:   ${JSON.stringify(actual)}`,
+    );
     process.stdout.write("F");
   }
 }
@@ -59,8 +63,14 @@ async function withTimeout(fn, timeoutMs, label) {
     }, timeoutMs);
 
     fn()
-      .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch((err) => { clearTimeout(timer); reject(err); });
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
   });
 }
 
@@ -84,20 +94,30 @@ async function runGroup(name, tests, { timeout = 30_000 } = {}) {
 }
 
 function summary() {
-  console.log(`\n${state.passed + state.failed} tests, ${state.passed} passed, ${state.failed} failed`);
+  console.log(
+    `\n${state.passed + state.failed} tests, ${state.passed} passed, ${state.failed} failed`,
+  );
   if (state.failures.length > 0) {
     console.log("\nFailures:");
     for (const f of state.failures) {
       console.log(`  - ${f}`);
     }
   }
-  return { passed: state.passed, failed: state.failed, failures: state.failures };
+  return {
+    passed: state.passed,
+    failed: state.failed,
+    failures: state.failures,
+  };
 }
 
 module.exports = {
   state,
-  assert, assertEqual, assertDeepEqual,
-  withTimeout, runGroup,
-  startSuiteTimer, stopSuiteTimer,
+  assert,
+  assertEqual,
+  assertDeepEqual,
+  withTimeout,
+  runGroup,
+  startSuiteTimer,
+  stopSuiteTimer,
   summary,
 };

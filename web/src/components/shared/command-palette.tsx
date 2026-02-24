@@ -1,21 +1,21 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import {
+  ArrowRight,
+  Bot,
+  FileText,
+  FolderTree,
+  LayoutDashboard,
+  Lightbulb,
+  ListTodo,
+  Search,
+  Settings,
+  Terminal,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useUiStore } from "@/stores/ui";
-import { useTasksQuery } from "@/queries/tasks";
 import { useProposalsQuery } from "@/queries/proposals";
-import {
-  LayoutDashboard,
-  FolderTree,
-  ListTodo,
-  Lightbulb,
-  Bot,
-  Terminal,
-  Settings,
-  Search,
-  FileText,
-  ArrowRight,
-} from "lucide-react";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 interface CommandItem {
   id: string;
@@ -201,15 +201,12 @@ export function CommandPalette() {
   }, [filteredItems]);
 
   // Flat list for keyboard navigation indexing
-  const flatItems = useMemo(
-    () => grouped.flatMap((g) => g.items),
-    [grouped],
-  );
+  const flatItems = useMemo(() => grouped.flatMap((g) => g.items), [grouped]);
 
   // Reset selection when query changes
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, []);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -315,9 +312,7 @@ export function CommandPalette() {
         {/* Footer with keyboard hints */}
         <div className="border-t px-3 py-2 flex items-center gap-3 text-[10px] text-muted-foreground">
           <span>
-            <kbd className="bg-muted px-1 py-0.5 rounded font-mono">
-              ↑↓
-            </kbd>{" "}
+            <kbd className="bg-muted px-1 py-0.5 rounded font-mono">↑↓</kbd>{" "}
             navigate
           </span>
           <span>

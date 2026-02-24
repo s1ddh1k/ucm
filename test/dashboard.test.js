@@ -3,14 +3,29 @@
 // Layer 1: API tests (direct HTTP/Socket)
 // Layer 2: Browser Agent + Chrome DevTools MCP browser tests (batched spawn)
 
-const { state, assert, runGroup, startSuiteTimer, stopSuiteTimer, summary } = require("./harness.js");
+const {
+  state,
+  assert,
+  runGroup,
+  startSuiteTimer,
+  stopSuiteTimer,
+  summary,
+} = require("./harness.js");
 const { TestEnvironment } = require("./helpers/test-infra.js");
 const { apiTestGroups, geminiTestCases } = require("./dashboard-cases.js");
-const { execSync } = require("child_process");
+const { execSync } = require("node:child_process");
 
 const VALID_LAYERS = new Set(["all", "api", "browser"]);
 const VALID_PROFILES = new Set(["full", "release", "smoke", "changed"]);
-const SMOKE_BROWSER_IDS = ["TC-001", "TC-010", "TC-020", "TC-040", "TC-050", "TC-060", "TC-080"];
+const SMOKE_BROWSER_IDS = [
+  "TC-001",
+  "TC-010",
+  "TC-020",
+  "TC-040",
+  "TC-050",
+  "TC-060",
+  "TC-080",
+];
 
 const SYSTEM_PROMPT = `You are a QA test agent for the UCM Dashboard.
 You have Chrome DevTools MCP tools to interact with the browser.
@@ -38,7 +53,10 @@ After ALL tests, respond with a JSON array (no markdown fences):
 
 function parseCsv(value) {
   if (!value) return [];
-  return value.split(",").map((x) => x.trim()).filter(Boolean);
+  return value
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 function parseArgs(argv) {
@@ -170,7 +188,10 @@ function parseArgs(argv) {
 
 function readChangedFiles() {
   try {
-    const out = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const out = execSync("git status --porcelain", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     return out
       .split("\n")
       .map((line) => line.trim())
@@ -191,7 +212,11 @@ function inferChangedSelection(files) {
   for (const file of files) {
     const f = file.toLowerCase();
 
-    if (f.includes("browser-agent") || f.includes("gemini-runner") || f.includes("dashboard.test")) {
+    if (
+      f.includes("browser-agent") ||
+      f.includes("gemini-runner") ||
+      f.includes("dashboard.test")
+    ) {
       browser.add("Page Load");
       browser.add("Navigation");
       browser.add("Task CRUD");
@@ -256,10 +281,14 @@ function resolvePlan(raw, apiGroupNames, browserGroupNames) {
     errors.push(`invalid --layer: ${plan.layer} (use all|api|browser)`);
   }
   if (!VALID_PROFILES.has(plan.profile)) {
-    errors.push(`invalid --profile: ${plan.profile} (use full|release|smoke|changed)`);
+    errors.push(
+      `invalid --profile: ${plan.profile} (use full|release|smoke|changed)`,
+    );
   }
   if (!Number.isFinite(raw.watchIntervalMs) || raw.watchIntervalMs <= 0) {
-    errors.push(`invalid --watch-interval-ms: ${raw.watchIntervalMs} (must be > 0)`);
+    errors.push(
+      `invalid --watch-interval-ms: ${raw.watchIntervalMs} (must be > 0)`,
+    );
   }
   if (!Number.isFinite(raw.maxCycles) || raw.maxCycles < 0) {
     errors.push(`invalid --max-cycles: ${raw.maxCycles} (must be >= 0)`);
@@ -270,7 +299,12 @@ function resolvePlan(raw, apiGroupNames, browserGroupNames) {
     plan.ids = SMOKE_BROWSER_IDS.slice();
   }
 
-  if (plan.profile === "changed" && plan.apiGroups.length === 0 && plan.browserGroups.length === 0 && plan.ids.length === 0) {
+  if (
+    plan.profile === "changed" &&
+    plan.apiGroups.length === 0 &&
+    plan.browserGroups.length === 0 &&
+    plan.ids.length === 0
+  ) {
     const inferred = inferChangedSelection(readChangedFiles());
     plan.apiGroups = inferred.apiGroups;
     plan.browserGroups = inferred.browserGroups;
@@ -285,11 +319,16 @@ function resolvePlan(raw, apiGroupNames, browserGroupNames) {
   const idSet = new Set(geminiTestCases.map((x) => x.id));
 
   const invalidApi = plan.apiGroups.filter((x) => !apiNameSet.has(x));
-  const invalidBrowser = plan.browserGroups.filter((x) => !browserNameSet.has(x));
+  const invalidBrowser = plan.browserGroups.filter(
+    (x) => !browserNameSet.has(x),
+  );
   const invalidIds = plan.ids.filter((x) => !idSet.has(x));
-  if (invalidApi.length > 0) errors.push(`unknown api groups: ${invalidApi.join(", ")}`);
-  if (invalidBrowser.length > 0) errors.push(`unknown browser groups: ${invalidBrowser.join(", ")}`);
-  if (invalidIds.length > 0) errors.push(`unknown ids: ${invalidIds.join(", ")}`);
+  if (invalidApi.length > 0)
+    errors.push(`unknown api groups: ${invalidApi.join(", ")}`);
+  if (invalidBrowser.length > 0)
+    errors.push(`unknown browser groups: ${invalidBrowser.join(", ")}`);
+  if (invalidIds.length > 0)
+    errors.push(`unknown ids: ${invalidIds.join(", ")}`);
 
   if (plan.layer === "api") {
     plan.browserGroups = [];
@@ -336,7 +375,10 @@ function resetState() {
 
 function gitStatusSignature() {
   try {
-    const out = execSync("git status --porcelain", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const out = execSync("git status --porcelain", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     return out.split("\n").filter(Boolean).sort().join("\n");
   } catch {
     return "";
@@ -369,11 +411,17 @@ async function main() {
     process.exit(1);
   }
 
-  const provider = (process.env.UCM_BROWSER_AGENT_PROVIDER || "codex").toLowerCase();
+  const provider = (
+    process.env.UCM_BROWSER_AGENT_PROVIDER || "codex"
+  ).toLowerCase();
   const basePlan = initial.plan;
   const suiteTimeoutMs = raw.watch
     ? null
-    : (basePlan.layer === "api" ? 300_000 : (provider === "codex" ? 1_800_000 : 600_000));
+    : basePlan.layer === "api"
+      ? 300_000
+      : provider === "codex"
+        ? 1_800_000
+        : 600_000;
   if (suiteTimeoutMs) startSuiteTimer(suiteTimeoutMs);
 
   const env = new TestEnvironment("ucm-dashboard-test");
@@ -384,9 +432,13 @@ async function main() {
   });
 
   console.log("Dashboard Test Suite\n");
-  console.log(`Suite timeout: ${suiteTimeoutMs ? `${suiteTimeoutMs}ms` : "disabled (watch mode)"}`);
+  console.log(
+    `Suite timeout: ${suiteTimeoutMs ? `${suiteTimeoutMs}ms` : "disabled (watch mode)"}`,
+  );
   if (raw.watch) {
-    console.log(`Watch mode: interval=${raw.watchIntervalMs}ms${raw.watchOnChange ? ", trigger=git-change" : ""}${raw.maxCycles > 0 ? `, maxCycles=${raw.maxCycles}` : ""}`);
+    console.log(
+      `Watch mode: interval=${raw.watchIntervalMs}ms${raw.watchOnChange ? ", trigger=git-change" : ""}${raw.maxCycles > 0 ? `, maxCycles=${raw.maxCycles}` : ""}`,
+    );
   }
   console.log("\nStarting daemon + UI server...");
 
@@ -417,10 +469,18 @@ async function main() {
       lastGitSig = currentGitSig;
       resetState();
       console.log(`\n=== Cycle ${cycle} ===`);
-      console.log(`Execution plan: profile=${plan.profile}, layer=${plan.layer}`);
-      console.log(`API groups: ${plan.apiGroups.length > 0 ? plan.apiGroups.join(", ") : (plan.layer === "browser" ? "(skipped)" : "all")}`);
-      console.log(`Browser groups: ${plan.browserGroups.length > 0 ? plan.browserGroups.join(", ") : (plan.layer === "api" ? "(skipped)" : "all")}`);
-      console.log(`Browser ids: ${plan.ids.length > 0 ? plan.ids.join(", ") : (plan.layer === "api" ? "(skipped)" : "all")}`);
+      console.log(
+        `Execution plan: profile=${plan.profile}, layer=${plan.layer}`,
+      );
+      console.log(
+        `API groups: ${plan.apiGroups.length > 0 ? plan.apiGroups.join(", ") : plan.layer === "browser" ? "(skipped)" : "all"}`,
+      );
+      console.log(
+        `Browser groups: ${plan.browserGroups.length > 0 ? plan.browserGroups.join(", ") : plan.layer === "api" ? "(skipped)" : "all"}`,
+      );
+      console.log(
+        `Browser ids: ${plan.ids.length > 0 ? plan.ids.join(", ") : plan.layer === "api" ? "(skipped)" : "all"}`,
+      );
       if (plan.profile === "changed" && plan.inferredFromChanged) {
         console.log("Changed profile: inferred filters from git working tree");
       }
@@ -428,9 +488,10 @@ async function main() {
       // ── Layer 1: API Tests ──
       if (plan.layer !== "browser") {
         console.log("\n═══ Layer 1: API Tests ═══\n");
-        const selectedApiGroups = plan.apiGroups.length > 0
-          ? apiTestGroups.filter((x) => plan.apiGroups.includes(x.name))
-          : apiTestGroups;
+        const selectedApiGroups =
+          plan.apiGroups.length > 0
+            ? apiTestGroups.filter((x) => plan.apiGroups.includes(x.name))
+            : apiTestGroups;
         const ctx = {};
         for (const group of selectedApiGroups) {
           const tests = {};
@@ -455,12 +516,16 @@ async function main() {
         const { GeminiRunner } = require("./helpers/gemini-runner.js");
         const runner = new GeminiRunner();
         try {
-          console.log(`Starting browser runner (provider: ${runner.provider}, perTaskTimeoutMs: ${runner.perTaskTimeoutMs}, batchSize: ${runner.batchSize || "all"})...`);
+          console.log(
+            `Starting browser runner (provider: ${runner.provider}, perTaskTimeoutMs: ${runner.perTaskTimeoutMs}, batchSize: ${runner.batchSize || "all"})...`,
+          );
           await runner.start();
           console.log("Browser runner ready\n");
 
           const selectedCases = geminiTestCases.filter((tc) => {
-            const groupOk = plan.browserGroups.length === 0 || plan.browserGroups.includes(tc.group);
+            const groupOk =
+              plan.browserGroups.length === 0 ||
+              plan.browserGroups.includes(tc.group);
             const idOk = plan.ids.length === 0 || plan.ids.includes(tc.id);
             return groupOk && idOk;
           });
@@ -490,12 +555,14 @@ async function main() {
               process.stdout.write(`${groupName}:\n`);
               for (const tc of groupCases) {
                 const r = results.find((x) => x.id === tc.id);
-                if (r && r.pass) {
+                if (r?.pass) {
                   state.passed++;
                   process.stdout.write(".");
                 } else {
                   state.failed++;
-                  state.failures.push(`${tc.id} ${tc.name}: ${r?.evidence?.slice(0, 200) || "no result"}`);
+                  state.failures.push(
+                    `${tc.id} ${tc.name}: ${r?.evidence?.slice(0, 200) || "no result"}`,
+                  );
                   process.stdout.write("F");
                 }
               }

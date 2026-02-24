@@ -1,22 +1,46 @@
-import { useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useSubmitTask } from "@/queries/tasks";
-import { useProjectCatalogQuery } from "@/queries/projects";
-import { useUiStore } from "@/stores/ui";
+import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { BrowseResult } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useProjectCatalogQuery } from "@/queries/projects";
+import { useSubmitTask } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 const PIPELINE_INFO: Record<string, { stages: string; desc: string }> = {
-  trivial: { stages: "implement → verify → deliver", desc: "Single file edit, simple bug fix" },
-  small: { stages: "design → implement → verify → deliver", desc: "A few files, clearly scoped change" },
-  medium: { stages: "clarify → specify → design → implement → verify → ux-review → polish → deliver", desc: "Multi-file feature, design decisions required" },
-  large: { stages: "clarify → specify → decompose → design → implement → verify → ux-review → polish → integrate → deliver", desc: "Multi-module, architecture-level changes" },
+  trivial: {
+    stages: "implement → verify → deliver",
+    desc: "Single file edit, simple bug fix",
+  },
+  small: {
+    stages: "design → implement → verify → deliver",
+    desc: "A few files, clearly scoped change",
+  },
+  medium: {
+    stages:
+      "clarify → specify → design → implement → verify → ux-review → polish → deliver",
+    desc: "Multi-file feature, design decisions required",
+  },
+  large: {
+    stages:
+      "clarify → specify → decompose → design → implement → verify → ux-review → polish → integrate → deliver",
+    desc: "Multi-module, architecture-level changes",
+  },
 };
 
 interface TaskCreateDialogProps {
@@ -25,7 +49,11 @@ interface TaskCreateDialogProps {
   defaultProjectPath?: string;
 }
 
-export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: TaskCreateDialogProps) {
+export function TaskCreateDialog({
+  open,
+  onOpenChange,
+  defaultProjectPath,
+}: TaskCreateDialogProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [project, setProject] = useState("");
@@ -53,7 +81,7 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
         body: body.trim() || undefined,
         project: project.trim() || undefined,
         pipeline,
-        priority: parseInt(priority) || 0,
+        priority: parseInt(priority, 10) || 0,
       },
       {
         onSuccess: (data) => {
@@ -68,7 +96,7 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
             setSelectedTaskId(newId);
           }
         },
-      }
+      },
     );
   };
 
@@ -109,7 +137,9 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New Task</DialogTitle>
-          <DialogDescription>Create a new task for the daemon to process.</DialogDescription>
+          <DialogDescription>
+            Create a new task for the daemon to process.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -124,7 +154,9 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Description</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Description
+            </label>
             <textarea
               placeholder="Task description (optional)..."
               value={body}
@@ -134,16 +166,21 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Project Path</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Project Path
+            </label>
             {(projectCatalog?.length || 0) === 0 && (
               <p className="text-xs text-amber-400 mb-2">
-                No registered project yet. Add one in Projects for better task organization.
+                No registered project yet. Add one in Projects for better task
+                organization.
               </p>
             )}
             {(projectCatalog?.length || 0) > 0 && (
               <Select
                 value={project || "__custom__"}
-                onValueChange={(value) => setProject(value === "__custom__" ? "" : value)}
+                onValueChange={(value) =>
+                  setProject(value === "__custom__" ? "" : value)
+                }
               >
                 <SelectTrigger className="mb-2">
                   <SelectValue placeholder="Select from registered projects" />
@@ -152,7 +189,9 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
                   <SelectItem value="__custom__">Custom path...</SelectItem>
                   {(projectCatalog || []).map((entry) => (
                     <SelectItem key={entry.path} value={entry.path}>
-                      {entry.name ? `${entry.name} · ${entry.path}` : entry.path}
+                      {entry.name
+                        ? `${entry.name} · ${entry.path}`
+                        : entry.path}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -165,15 +204,28 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
                 onChange={(e) => setProject(e.target.value)}
                 className="flex-1"
               />
-              <Button type="button" variant="outline" size="icon" onClick={openBrowser} title="Browse directories">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={openBrowser}
+                title="Browse directories"
+              >
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
             {browsing && browseResult && (
               <div className="mt-2 border rounded-md max-h-48 overflow-auto bg-muted/50">
                 <div className="px-3 py-1.5 border-b flex items-center justify-between">
-                  <span className="text-xs font-mono truncate">{browseResult.current}</span>
-                  <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => selectDirectory(browseResult.current)}>
+                  <span className="text-xs font-mono truncate">
+                    {browseResult.current}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs"
+                    onClick={() => selectDirectory(browseResult.current)}
+                  >
                     Select
                   </Button>
                 </div>
@@ -200,7 +252,9 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
 
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="text-sm font-medium mb-1.5 block">Pipeline</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                Pipeline
+              </label>
               <Select value={pipeline} onValueChange={setPipeline}>
                 <SelectTrigger>
                   <SelectValue />
@@ -209,13 +263,17 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
                   {Object.entries(PIPELINE_INFO).map(([key, val]) => (
                     <SelectItem key={key} value={key}>
                       <span className="capitalize">{key}</span>
-                      <span className="text-muted-foreground ml-1 text-xs">- {val.desc}</span>
+                      <span className="text-muted-foreground ml-1 text-xs">
+                        - {val.desc}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {info && (
-                <p className="text-xs text-muted-foreground mt-1.5">{info.stages}</p>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  {info.stages}
+                </p>
               )}
             </div>
 
@@ -228,7 +286,9 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground mt-1">Higher = sooner</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Higher = sooner
+              </p>
             </div>
           </div>
 
@@ -236,7 +296,10 @@ export function TaskCreateDialog({ open, onOpenChange, defaultProjectPath }: Tas
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={!title.trim() || submitTask.isPending}>
+            <Button
+              onClick={handleSubmit}
+              disabled={!title.trim() || submitTask.isPending}
+            >
               {submitTask.isPending ? "Creating..." : "Create Task"}
             </Button>
           </div>

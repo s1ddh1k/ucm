@@ -70,9 +70,9 @@ export interface DaemonStats {
 }
 
 export interface ResourceInfo {
-  cpuLoad: number;              // CPU load average normalized to core count
-  memoryFreeMb: number;         // free memory in MB
-  diskFreeGb: number | null;    // free disk in GB (null if unavailable)
+  cpuLoad: number; // CPU load average normalized to core count
+  memoryFreeMb: number; // free memory in MB
+  diskFreeGb: number | null; // free disk in GB (null if unavailable)
 }
 
 // Diff — backend getWorktreeDiff returns an array directly
@@ -102,7 +102,12 @@ export interface VerifyReport {
 
 // Polish summary artifact
 export interface PolishSummary {
-  lenses: Array<{ lens: string; rounds: number; issuesFound: number; converged: boolean }>;
+  lenses: Array<{
+    lens: string;
+    rounds: number;
+    issuesFound: number;
+    converged: boolean;
+  }>;
   totalRounds: number;
   totalIssuesFound: number;
 }
@@ -112,7 +117,12 @@ export interface UxReviewReport {
   score: number;
   summary: string;
   canUserAccomplishGoal: { goal: string; result: string; blockers: string[] };
-  usabilityIssues: Array<{ severity: string; description: string; where?: string; fix?: string }>;
+  usabilityIssues: Array<{
+    severity: string;
+    description: string;
+    where?: string;
+    fix?: string;
+  }>;
   confusingElements: string[];
   positives: string[];
   mobile: { usable: boolean; issues: string[] };
@@ -138,7 +148,11 @@ export interface Proposal {
   evaluation?: ProposalEvaluation;
 }
 
-export type ProposalStatus = "proposed" | "approved" | "rejected" | "implemented";
+export type ProposalStatus =
+  | "proposed"
+  | "approved"
+  | "rejected"
+  | "implemented";
 
 export interface ProposalEvaluation {
   regulatorApproved: boolean;
@@ -187,8 +201,13 @@ export interface AutopilotSession {
 }
 
 export type AutopilotSessionStatus =
-  | "planning" | "running" | "paused" | "awaiting_review"
-  | "releasing" | "stopped" | "completed";
+  | "planning"
+  | "running"
+  | "paused"
+  | "awaiting_review"
+  | "releasing"
+  | "stopped"
+  | "completed";
 
 export interface AutopilotSessionSummary {
   id: string;
@@ -263,9 +282,7 @@ export interface WsEvent {
 }
 
 // Daemon status — /api/daemon/status returns { online: true, ...stats } or { online: false }
-export type DaemonStatus =
-  | { online: true } & DaemonStats
-  | { online: false };
+export type DaemonStatus = ({ online: true } & DaemonStats) | { online: false };
 
 // Stage Approval Config
 export interface StageApprovalConfig {

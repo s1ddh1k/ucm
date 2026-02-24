@@ -10,7 +10,12 @@ interface TerminalState {
   provider: string | null;
   scrollback: Uint8Array[];
   scrollbackSize: number;
-  setSpawned: (spawned: boolean, sessionId?: number, cwd?: string, provider?: string) => void;
+  setSpawned: (
+    spawned: boolean,
+    sessionId?: number,
+    cwd?: string,
+    provider?: string,
+  ) => void;
   appendScrollback: (data: Uint8Array) => void;
   reset: () => void;
   clearScrollback: () => void;
@@ -24,7 +29,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   scrollback: [],
   scrollbackSize: 0,
   setSpawned: (spawned, sessionId, cwd, provider) =>
-    set({ spawned, sessionId: sessionId ?? null, cwd: cwd ?? null, provider: provider ?? null }),
+    set({
+      spawned,
+      sessionId: sessionId ?? null,
+      cwd: cwd ?? null,
+      provider: provider ?? null,
+    }),
   appendScrollback: (data) => {
     const state = get();
     const newSize = state.scrollbackSize + data.byteLength;
@@ -38,7 +48,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }
     set({ scrollback: chunks.slice(start), scrollbackSize: size });
   },
-  reset: () => set({ spawned: false, sessionId: null, cwd: null, provider: null }),
+  reset: () =>
+    set({ spawned: false, sessionId: null, cwd: null, provider: null }),
   clearScrollback: () => set({ scrollback: [], scrollbackSize: 0 }),
 }));
 
@@ -51,12 +62,14 @@ wsManager.on("pty:data", (eventData) => {
 });
 
 wsManager.on("pty:spawned", (data) => {
-  useTerminalStore.getState().setSpawned(
-    true,
-    data.id as number,
-    data.cwd as string,
-    data.provider as string | undefined,
-  );
+  useTerminalStore
+    .getState()
+    .setSpawned(
+      true,
+      data.id as number,
+      data.cwd as string,
+      data.provider as string | undefined,
+    );
 });
 
 wsManager.on("pty:exit", () => {

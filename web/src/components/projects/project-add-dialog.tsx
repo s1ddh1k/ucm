@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "@/api/client";
+import type { BrowseResult } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -7,10 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/api/client";
-import type { BrowseResult } from "@/api/types";
 import { useUpsertProjectCatalogItem } from "@/queries/projects";
 
 interface ProjectAddDialogProps {
@@ -20,7 +20,12 @@ interface ProjectAddDialogProps {
   onAdded?: (project: { path: string; name?: string }) => void;
 }
 
-export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: ProjectAddDialogProps) {
+export function ProjectAddDialog({
+  open,
+  onOpenChange,
+  defaultPath,
+  onAdded,
+}: ProjectAddDialogProps) {
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
@@ -68,7 +73,7 @@ export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: P
           onOpenChange(false);
           onAdded?.({ path: nextPath, name: nextName });
         },
-      }
+      },
     );
   };
 
@@ -78,13 +83,16 @@ export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: P
         <DialogHeader>
           <DialogTitle>Add Project</DialogTitle>
           <DialogDescription>
-            Register a repository path so tasks and proposals can be organized by project.
+            Register a repository path so tasks and proposals can be organized
+            by project.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Project Path</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Project Path
+            </label>
             <div className="flex gap-1">
               <Input
                 placeholder="~/git/my-project"
@@ -92,15 +100,28 @@ export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: P
                 onChange={(e) => setPath(e.target.value)}
                 className="flex-1"
               />
-              <Button type="button" variant="outline" size="icon" onClick={openBrowser} title="Browse directories">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={openBrowser}
+                title="Browse directories"
+              >
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
             {browsing && browseResult && (
               <div className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40">
                 <div className="px-3 py-1.5 border-b flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono truncate">{browseResult.current}</span>
-                  <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => selectDirectory(browseResult.current)}>
+                  <span className="text-xs font-mono truncate">
+                    {browseResult.current}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs"
+                    onClick={() => selectDirectory(browseResult.current)}
+                  >
                     Select
                   </Button>
                 </div>
@@ -126,7 +147,9 @@ export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: P
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Label (optional)</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Label (optional)
+            </label>
             <Input
               placeholder="e.g. Console Frontend"
               value={name}
@@ -138,7 +161,10 @@ export function ProjectAddDialog({ open, onOpenChange, defaultPath, onAdded }: P
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={!path.trim() || upsertProject.isPending}>
+            <Button
+              onClick={handleSubmit}
+              disabled={!path.trim() || upsertProject.isPending}
+            >
               {upsertProject.isPending ? "Adding..." : "Add Project"}
             </Button>
           </div>

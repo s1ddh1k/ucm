@@ -1,25 +1,25 @@
+import { FileText, GanttChart, LayoutGrid, List, ListTodo } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
-import { TaskList } from "@/components/tasks/task-list";
+import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
+import { EmptyState } from "@/components/shared/empty-state";
+import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
+import { TaskList } from "@/components/tasks/task-list";
 import { TaskTimeline } from "@/components/tasks/task-timeline";
-import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
-import { useUiStore } from "@/stores/ui";
-import { FileText, LayoutGrid, List, ListTodo, GanttChart } from "lucide-react";
-import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
-import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import {
-  UNKNOWN_PROJECT_KEY,
   decodeProjectKeyFromRoute,
-  getProjectLabel,
   getProjectKey,
-  getTaskProjectPath,
+  getProjectLabel,
   getProposalProjectPath,
+  getTaskProjectPath,
+  UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 export default function TasksPage() {
   const [createOpen, setCreateOpen] = useState(false);
@@ -31,15 +31,20 @@ export default function TasksPage() {
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
   const setActiveProject = useUiStore((s) => s.setActiveProject);
-  const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">("list");
+  const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">(
+    "list",
+  );
   const { data: tasks } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
 
   const projectKey = useMemo(
     () => decodeProjectKeyFromRoute(params.projectKey),
-    [params.projectKey]
+    [params.projectKey],
   );
-  const projectLabel = projectKey === UNKNOWN_PROJECT_KEY ? "Unknown Project" : getProjectLabel(projectKey);
+  const projectLabel =
+    projectKey === UNKNOWN_PROJECT_KEY
+      ? "Unknown Project"
+      : getProjectLabel(projectKey);
 
   useEffect(() => {
     setSelectedTaskId(null);
@@ -65,23 +70,32 @@ export default function TasksPage() {
   ]);
 
   const projectTaskCount = useMemo(
-    () => (tasks || []).filter((t) => getProjectKey(getTaskProjectPath(t)) === projectKey).length,
-    [tasks, projectKey]
+    () =>
+      (tasks || []).filter(
+        (t) => getProjectKey(getTaskProjectPath(t)) === projectKey,
+      ).length,
+    [tasks, projectKey],
   );
   const projectProposalCount = useMemo(
-    () => (proposals || []).filter((p) => getProjectKey(getProposalProjectPath(p)) === projectKey).length,
-    [proposals, projectKey]
+    () =>
+      (proposals || []).filter(
+        (p) => getProjectKey(getProposalProjectPath(p)) === projectKey,
+      ).length,
+    [proposals, projectKey],
   );
 
-  const defaultProjectPath = routeScoped && projectKey !== UNKNOWN_PROJECT_KEY ? projectKey : undefined;
+  const defaultProjectPath =
+    routeScoped && projectKey !== UNKNOWN_PROJECT_KEY ? projectKey : undefined;
 
   const boardTasks = useMemo(() => {
     if (!tasks) return [];
     let result = [...tasks];
-    const projectFilter = routeScoped ? projectKey : useUiStore.getState().taskProjectFilter;
+    const projectFilter = routeScoped
+      ? projectKey
+      : useUiStore.getState().taskProjectFilter;
     if (projectFilter) {
       result = result.filter(
-        (t) => getProjectKey(getTaskProjectPath(t)) === projectFilter
+        (t) => getProjectKey(getTaskProjectPath(t)) === projectFilter,
       );
     }
     return result;
@@ -104,7 +118,9 @@ export default function TasksPage() {
             <ProjectWorkspaceNav
               projectKey={projectKey}
               projectLabel={projectLabel}
-              projectPath={projectKey === UNKNOWN_PROJECT_KEY ? null : projectKey}
+              projectPath={
+                projectKey === UNKNOWN_PROJECT_KEY ? null : projectKey
+              }
               activeTab="tasks"
               taskCount={projectTaskCount}
               proposalCount={projectProposalCount}
@@ -118,7 +134,8 @@ export default function TasksPage() {
                 </p>
                 <h2 className="text-base font-semibold">Task Inbox</h2>
                 <p className="text-sm text-muted-foreground">
-                  View and triage tasks across all projects, then drill down into a project workspace.
+                  View and triage tasks across all projects, then drill down
+                  into a project workspace.
                 </p>
               </CardContent>
             </Card>

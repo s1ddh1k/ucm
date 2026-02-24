@@ -1,11 +1,37 @@
-export const TASK_STATES = ["pending", "running", "review", "done", "failed"] as const;
+export const TASK_STATES = [
+  "pending",
+  "running",
+  "review",
+  "done",
+  "failed",
+] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 export const PIPELINES = {
   trivial: ["implement", "verify", "deliver"],
   small: ["design", "implement", "verify", "deliver"],
-  medium: ["clarify", "specify", "design", "implement", "verify", "ux-review", "polish", "deliver"],
-  large: ["clarify", "specify", "decompose", "design", "implement", "verify", "ux-review", "polish", "integrate", "deliver"],
+  medium: [
+    "clarify",
+    "specify",
+    "design",
+    "implement",
+    "verify",
+    "ux-review",
+    "polish",
+    "deliver",
+  ],
+  large: [
+    "clarify",
+    "specify",
+    "decompose",
+    "design",
+    "implement",
+    "verify",
+    "ux-review",
+    "polish",
+    "integrate",
+    "deliver",
+  ],
 } as const;
 
 export type PipelineName = keyof typeof PIPELINES;
@@ -26,12 +52,25 @@ export const STATE_BG_COLORS: Record<TaskState, string> = {
   failed: "bg-red-400/10 text-red-400 border-red-400/20",
 };
 
-export const PROPOSAL_STATUSES = ["proposed", "approved", "rejected", "implemented"] as const;
+export const PROPOSAL_STATUSES = [
+  "proposed",
+  "approved",
+  "rejected",
+  "implemented",
+] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
 export const PROPOSAL_CATEGORIES = [
-  "template", "core", "config", "test",
-  "bugfix", "ux", "architecture", "performance", "docs", "research",
+  "template",
+  "core",
+  "config",
+  "test",
+  "bugfix",
+  "ux",
+  "architecture",
+  "performance",
+  "docs",
+  "research",
 ] as const;
 
 export const RISK_LEVELS = ["low", "medium", "high"] as const;
@@ -44,7 +83,12 @@ export const RISK_COLORS: Record<RiskLevel, string> = {
 };
 
 export const AUTOPILOT_STATUSES = [
-  "planning", "running", "paused", "awaiting_review",
-  "releasing", "stopped", "completed",
+  "planning",
+  "running",
+  "paused",
+  "awaiting_review",
+  "releasing",
+  "stopped",
+  "completed",
 ] as const;
 export type AutopilotStatus = (typeof AUTOPILOT_STATUSES)[number];

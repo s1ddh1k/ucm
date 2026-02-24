@@ -29,9 +29,16 @@ export function StatusDot({ status, pulse, className }: StatusDotProps) {
   return (
     <span className={cn("relative inline-flex h-2 w-2", className)}>
       {shouldPulse && (
-        <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-75", color)} />
+        <span
+          className={cn(
+            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+            color,
+          )}
+        />
       )}
-      <span className={cn("relative inline-flex h-2 w-2 rounded-full", color)} />
+      <span
+        className={cn("relative inline-flex h-2 w-2 rounded-full", color)}
+      />
     </span>
   );
 }

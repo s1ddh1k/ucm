@@ -18,18 +18,7 @@
 
 # 작업
 
-프로젝트에서 성능 병목 또는 보안 취약점 1건을 찾아 수정한다.
+프로젝트에서 발견한 성능 병목 또는 보안 취약점을 수정한다.
 
-- git log --oneline -20 으로 이전 수정 내역을 확인하고 새로운 항목을 선택한다
 - 수정 전후 동작이 동일한지 확인한다
 - 수정 후 `node test/core.test.js` 와 해당 파일의 require 검증을 통과시킨다
-
-# 보고
-
-```
-[category] performance | security
-[type] 문제 유형
-[file] 변경 파일
-[what] 한 줄 요약
-[verify] 검증 결과
-```

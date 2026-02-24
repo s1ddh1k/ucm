@@ -14,10 +14,12 @@ const apiTestGroups = [
     tests: [
       {
         name: "GET /api/stats → 200, has pid/daemonStatus",
-        fn: async (env, ctx) => {
+        fn: async (env, _ctx) => {
           const res = await env.httpRequest("GET", "/api/stats");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (typeof res.body !== "object") return { pass: false, reason: "body not object" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (typeof res.body !== "object")
+            return { pass: false, reason: "body not object" };
           return { pass: true };
         },
       },
@@ -25,8 +27,10 @@ const apiTestGroups = [
         name: "GET /api/list → 200, empty array initially",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/list");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "body not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "body not array" };
           return { pass: true };
         },
       },
@@ -37,7 +41,8 @@ const apiTestGroups = [
             title: "api test task",
             body: "created by dashboard test",
           });
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           if (!res.body?.id) return { pass: false, reason: "no id returned" };
           ctx.taskId = res.body.id;
           return { pass: true };
@@ -47,17 +52,21 @@ const apiTestGroups = [
         name: "GET /api/list → 200, length >= 1",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/list");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body) || res.body.length < 1) return { pass: false, reason: `length ${res.body?.length}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body) || res.body.length < 1)
+            return { pass: false, reason: `length ${res.body?.length}` };
           return { pass: true };
         },
       },
       {
         name: "GET /api/status/:taskId → 200, has title",
         fn: async (env, ctx) => {
-          if (!ctx.taskId) return { pass: false, reason: "no taskId from submit" };
+          if (!ctx.taskId)
+            return { pass: false, reason: "no taskId from submit" };
           const res = await env.httpRequest("GET", `/api/status/${ctx.taskId}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -66,7 +75,8 @@ const apiTestGroups = [
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
           const res = await env.httpRequest("GET", `/api/diff/${ctx.taskId}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -75,7 +85,8 @@ const apiTestGroups = [
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
           const res = await env.httpRequest("GET", `/api/logs/${ctx.taskId}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -83,8 +94,12 @@ const apiTestGroups = [
         name: "GET /api/logs/:taskId?lines=5 → 200",
         fn: async (env, ctx) => {
           if (!ctx.taskId) return { pass: false, reason: "no taskId" };
-          const res = await env.httpRequest("GET", `/api/logs/${ctx.taskId}?lines=5`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          const res = await env.httpRequest(
+            "GET",
+            `/api/logs/${ctx.taskId}?lines=5`,
+          );
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -102,7 +117,8 @@ const apiTestGroups = [
             title: "lifecycle test task",
             body: "task for lifecycle testing",
           });
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           ctx.lifecycleTaskId = res.body?.id;
           return { pass: true };
         },
@@ -110,22 +126,31 @@ const apiTestGroups = [
       {
         name: "POST /api/approve/:taskId → 200",
         fn: async (env, ctx) => {
-          if (!ctx.lifecycleTaskId) return { pass: false, reason: "no lifecycleTaskId" };
-          const res = await env.httpRequest("POST", `/api/approve/${ctx.lifecycleTaskId}`);
+          if (!ctx.lifecycleTaskId)
+            return { pass: false, reason: "no lifecycleTaskId" };
+          const res = await env.httpRequest(
+            "POST",
+            `/api/approve/${ctx.lifecycleTaskId}`,
+          );
           // May be 200 or error depending on state — accept both
           return { pass: res.status === 200 || res.status === 500 };
         },
       },
       {
         name: "POST /api/submit + reject → 200 or state error",
-        fn: async (env, ctx) => {
+        fn: async (env, _ctx) => {
           const sub = await env.httpRequest("POST", "/api/submit", {
-            title: "reject test", body: "to be rejected",
+            title: "reject test",
+            body: "to be rejected",
           });
           if (!sub.body?.id) return { pass: false, reason: "no id" };
-          const res = await env.httpRequest("POST", `/api/reject/${sub.body.id}`, {
-            feedback: "not good enough",
-          });
+          const res = await env.httpRequest(
+            "POST",
+            `/api/reject/${sub.body.id}`,
+            {
+              feedback: "not good enough",
+            },
+          );
           // reject may fail if task is not in review state — that's expected
           return { pass: res.status === 200 || res.status === 500 };
         },
@@ -134,10 +159,14 @@ const apiTestGroups = [
         name: "POST /api/submit + cancel → 200",
         fn: async (env) => {
           const sub = await env.httpRequest("POST", "/api/submit", {
-            title: "cancel test", body: "to be cancelled",
+            title: "cancel test",
+            body: "to be cancelled",
           });
           if (!sub.body?.id) return { pass: false, reason: "no id" };
-          const res = await env.httpRequest("POST", `/api/cancel/${sub.body.id}`);
+          const res = await env.httpRequest(
+            "POST",
+            `/api/cancel/${sub.body.id}`,
+          );
           return { pass: res.status === 200 };
         },
       },
@@ -145,24 +174,35 @@ const apiTestGroups = [
         name: "POST /api/submit + delete → task removed from list",
         fn: async (env) => {
           const sub = await env.httpRequest("POST", "/api/submit", {
-            title: "delete test", body: "to be deleted",
+            title: "delete test",
+            body: "to be deleted",
           });
           if (!sub.body?.id) return { pass: false, reason: "no id" };
           // Cancel first (to stop if running), then delete
           await env.httpRequest("POST", `/api/cancel/${sub.body.id}`);
-          const del = await env.httpRequest("POST", `/api/delete/${sub.body.id}`);
+          const del = await env.httpRequest(
+            "POST",
+            `/api/delete/${sub.body.id}`,
+          );
           // Accept 200 or 500 (task may already be in a terminal state)
-          if (del.status !== 200 && del.status !== 500) return { pass: false, reason: `delete status ${del.status}` };
+          if (del.status !== 200 && del.status !== 500)
+            return { pass: false, reason: `delete status ${del.status}` };
           const list = await env.httpRequest("GET", "/api/list");
-          const found = Array.isArray(list.body) && list.body.some((t) => t.id === sub.body.id);
+          const found =
+            Array.isArray(list.body) &&
+            list.body.some((t) => t.id === sub.body.id);
           return { pass: !found || del.status === 200 };
         },
       },
       {
         name: "POST /api/retry/:taskId → 200 or appropriate error",
         fn: async (env, ctx) => {
-          if (!ctx.lifecycleTaskId) return { pass: false, reason: "no lifecycleTaskId" };
-          const res = await env.httpRequest("POST", `/api/retry/${ctx.lifecycleTaskId}`);
+          if (!ctx.lifecycleTaskId)
+            return { pass: false, reason: "no lifecycleTaskId" };
+          const res = await env.httpRequest(
+            "POST",
+            `/api/retry/${ctx.lifecycleTaskId}`,
+          );
           // retry may fail if task is not in failed state, that's ok
           return { pass: res.status === 200 || res.status === 500 };
         },
@@ -171,10 +211,14 @@ const apiTestGroups = [
         name: "GET /api/list?status=pending → returns filtered array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/list?status=pending");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           // Daemon returns `state` field, not `status`; empty is also valid
-          const allMatch = res.body.length === 0 || res.body.every((t) => t.state === "pending");
+          const allMatch =
+            res.body.length === 0 ||
+            res.body.every((t) => t.state === "pending");
           return { pass: allMatch };
         },
       },
@@ -189,7 +233,8 @@ const apiTestGroups = [
         name: "GET /api/daemon/status → 200, online=true",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/daemon/status");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           if (!res.body?.online) return { pass: false, reason: "not online" };
           return { pass: true };
         },
@@ -205,7 +250,8 @@ const apiTestGroups = [
         name: "GET /api/stats → paused state confirmed",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/stats");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -220,7 +266,8 @@ const apiTestGroups = [
         name: "GET /api/stats → running state confirmed",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/stats");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -235,16 +282,22 @@ const apiTestGroups = [
         name: "GET /api/proposals → 200, array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/proposals");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           return { pass: true };
         },
       },
       {
         name: "GET /api/proposals?status=proposed → 200",
         fn: async (env) => {
-          const res = await env.httpRequest("GET", "/api/proposals?status=proposed");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          const res = await env.httpRequest(
+            "GET",
+            "/api/proposals?status=proposed",
+          );
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -252,7 +305,8 @@ const apiTestGroups = [
         name: "GET /api/observe/status → 200, has cycle/lastRunAt",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/observe/status");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           return { pass: true };
         },
       },
@@ -267,17 +321,28 @@ const apiTestGroups = [
         name: "GET /api/autopilot/status → 200, array",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/api/autopilot/status");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!Array.isArray(res.body)) return { pass: false, reason: "not array" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!Array.isArray(res.body))
+            return { pass: false, reason: "not array" };
           return { pass: true };
         },
       },
       {
         name: "GET /api/autopilot/directives/nonexistent → appropriate error",
         fn: async (env) => {
-          const res = await env.httpRequest("GET", "/api/autopilot/directives/nonexistent");
+          const res = await env.httpRequest(
+            "GET",
+            "/api/autopilot/directives/nonexistent",
+          );
           // Should return error or empty — not crash
-          return { pass: res.status === 200 || res.status === 404 || res.status === 500 || res.status === 503 };
+          return {
+            pass:
+              res.status === 200 ||
+              res.status === 404 ||
+              res.status === 500 ||
+              res.status === 503,
+          };
         },
       },
     ],
@@ -291,30 +356,46 @@ const apiTestGroups = [
         name: "GET / → 200, Content-Type text/html, body has UCM Dashboard",
         fn: async (env) => {
           const res = await env.httpRequest("GET", "/");
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
           const ct = res.headers?.["content-type"] || "";
-          if (!ct.includes("text/html")) return { pass: false, reason: `content-type: ${ct}` };
-          if (typeof res.body === "string" && !res.body.includes("UCM")) return { pass: false, reason: "no UCM in body" };
+          if (!ct.includes("text/html"))
+            return { pass: false, reason: `content-type: ${ct}` };
+          if (typeof res.body === "string" && !res.body.includes("UCM"))
+            return { pass: false, reason: "no UCM in body" };
           return { pass: true };
         },
       },
       {
         name: "GET /api/browse → 200, has directories array",
         fn: async (env) => {
-          const os = require("os");
-          const res = await env.httpRequest("GET", `/api/browse?path=${encodeURIComponent(os.homedir())}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!res.body?.directories) return { pass: false, reason: "no directories" };
+          const os = require("node:os");
+          const res = await env.httpRequest(
+            "GET",
+            `/api/browse?path=${encodeURIComponent(os.homedir())}`,
+          );
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!res.body?.directories)
+            return { pass: false, reason: "no directories" };
           return { pass: true };
         },
       },
       {
         name: "GET /api/browse?path=~ → 200, resolves to home directory",
         fn: async (env) => {
-          const os = require("os");
-          const res = await env.httpRequest("GET", `/api/browse?path=${encodeURIComponent("~")}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (res.body?.current !== os.homedir()) return { pass: false, reason: `unexpected current: ${res.body?.current}` };
+          const os = require("node:os");
+          const res = await env.httpRequest(
+            "GET",
+            `/api/browse?path=${encodeURIComponent("~")}`,
+          );
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (res.body?.current !== os.homedir())
+            return {
+              pass: false,
+              reason: `unexpected current: ${res.body?.current}`,
+            };
           return { pass: true };
         },
       },
@@ -323,8 +404,10 @@ const apiTestGroups = [
         fn: async (env, ctx) => {
           const id = ctx.taskId || "0000000000";
           const res = await env.httpRequest("GET", `/api/artifacts/${id}`);
-          if (res.status !== 200) return { pass: false, reason: `status ${res.status}` };
-          if (!("files" in res.body)) return { pass: false, reason: "no files key" };
+          if (res.status !== 200)
+            return { pass: false, reason: `status ${res.status}` };
+          if (!("files" in res.body))
+            return { pass: false, reason: "no files key" };
           return { pass: true };
         },
       },
@@ -355,7 +438,10 @@ const apiTestGroups = [
           const WebSocket = require("ws");
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 5000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 5000);
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -366,7 +452,10 @@ const apiTestGroups = [
                 }
               } catch {}
             });
-            ws.on("error", () => { clearTimeout(timer); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -376,9 +465,14 @@ const apiTestGroups = [
           const WebSocket = require("ws");
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 5000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 5000);
             let ready = false;
-            ws.on("open", () => { ready = true; });
+            ws.on("open", () => {
+              ready = true;
+            });
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -393,10 +487,17 @@ const apiTestGroups = [
             const waitReady = setInterval(() => {
               if (ready) {
                 clearInterval(waitReady);
-                env.httpRequest("POST", "/api/submit", { title: "ws-create-test", body: "ws test" });
+                env.httpRequest("POST", "/api/submit", {
+                  title: "ws-create-test",
+                  body: "ws test",
+                });
               }
             }, 100);
-            ws.on("error", () => { clearTimeout(timer); clearInterval(waitReady); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              clearInterval(waitReady);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -405,16 +506,24 @@ const apiTestGroups = [
         fn: async (env) => {
           const WebSocket = require("ws");
           // First create a task then cancel it so it can be deleted
-          const sub = await env.httpRequest("POST", "/api/submit", { title: "ws-delete-test", body: "ws test" });
+          const sub = await env.httpRequest("POST", "/api/submit", {
+            title: "ws-delete-test",
+            body: "ws test",
+          });
           const taskId = sub.body?.id;
           if (!taskId) return { pass: false, reason: "no task id" };
           await env.httpRequest("POST", `/api/cancel/${taskId}`);
 
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 8000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 8000);
             let ready = false;
-            ws.on("open", () => { ready = true; });
+            ws.on("open", () => {
+              ready = true;
+            });
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -428,10 +537,17 @@ const apiTestGroups = [
             const waitReady = setInterval(() => {
               if (ready) {
                 clearInterval(waitReady);
-                setTimeout(() => env.httpRequest("POST", `/api/delete/${taskId}`), 500);
+                setTimeout(
+                  () => env.httpRequest("POST", `/api/delete/${taskId}`),
+                  500,
+                );
               }
             }, 100);
-            ws.on("error", () => { clearTimeout(timer); clearInterval(waitReady); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              clearInterval(waitReady);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -441,10 +557,15 @@ const apiTestGroups = [
           const WebSocket = require("ws");
           return new Promise((resolve) => {
             const ws = new WebSocket(`ws://localhost:${env.uiPort}`);
-            const timer = setTimeout(() => { ws.close(); resolve({ pass: false, reason: "timeout" }); }, 5000);
+            const timer = setTimeout(() => {
+              ws.close();
+              resolve({ pass: false, reason: "timeout" });
+            }, 5000);
             let statusCount = 0;
             let ready = false;
-            ws.on("open", () => { ready = true; });
+            ws.on("open", () => {
+              ready = true;
+            });
             ws.on("message", (raw) => {
               try {
                 const msg = JSON.parse(raw.toString());
@@ -464,7 +585,11 @@ const apiTestGroups = [
                 env.httpRequest("POST", "/api/pause");
               }
             }, 100);
-            ws.on("error", () => { clearTimeout(timer); clearInterval(waitReady); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              clearInterval(waitReady);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -482,14 +607,19 @@ const apiTestGroups = [
               resolve({ pass: true });
             }, 2000);
             ws.on("open", () => {
-              ws.send(JSON.stringify({ action: "nonexistent_action_xyz", data: {} }));
+              ws.send(
+                JSON.stringify({ action: "nonexistent_action_xyz", data: {} }),
+              );
             });
             ws.on("close", () => {
               // If WS closes unexpectedly before timeout, still pass if it was clean
               clearTimeout(timer);
               resolve({ pass: true });
             });
-            ws.on("error", () => { clearTimeout(timer); resolve({ pass: false, reason: "ws error" }); });
+            ws.on("error", () => {
+              clearTimeout(timer);
+              resolve({ pass: false, reason: "ws error" });
+            });
           });
         },
       },
@@ -503,7 +633,9 @@ const apiTestGroups = [
       {
         name: "POST /api/cleanup {maxAgeDays:30} → 200",
         fn: async (env) => {
-          const res = await env.httpRequest("POST", "/api/cleanup", { maxAgeDays: 30 });
+          const res = await env.httpRequest("POST", "/api/cleanup", {
+            maxAgeDays: 30,
+          });
           return { pass: res.status === 200 };
         },
       },
@@ -516,7 +648,8 @@ const apiTestGroups = [
 const geminiTestCases = [
   // ── Page Load & Structure (3) ──
   {
-    id: "TC-001", group: "Page Load",
+    id: "TC-001",
+    group: "Page Load",
     name: "dashboard load and structure",
     instruction: `
       Navigate to {URL}.
@@ -527,7 +660,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-002", group: "Page Load",
+    id: "TC-002",
+    group: "Page Load",
     name: "default layout verification",
     instruction: `
       Navigate to {URL}.
@@ -539,7 +673,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-003", group: "Page Load",
+    id: "TC-003",
+    group: "Page Load",
     name: "stats bar data display",
     instruction: `
       Navigate to {URL}.
@@ -551,7 +686,8 @@ const geminiTestCases = [
 
   // ── Panel Navigation (3) ──
   {
-    id: "TC-010", group: "Navigation",
+    id: "TC-010",
+    group: "Navigation",
     name: "tab click panel switching",
     instruction: `
       Navigate to {URL}.
@@ -566,7 +702,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-011", group: "Navigation",
+    id: "TC-011",
+    group: "Navigation",
     name: "active tab highlight",
     instruction: `
       Navigate to {URL}.
@@ -576,7 +713,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-012", group: "Navigation",
+    id: "TC-012",
+    group: "Navigation",
     name: "keyboard shortcut panel switching",
     instruction: `
       Navigate to {URL}.
@@ -588,7 +726,8 @@ const geminiTestCases = [
 
   // ── Task CRUD (5) ──
   {
-    id: "TC-020", group: "Task CRUD",
+    id: "TC-020",
+    group: "Task CRUD",
     name: "task creation via modal",
     instruction: `
       Navigate to {URL}.
@@ -602,7 +741,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-021", group: "Task CRUD",
+    id: "TC-021",
+    group: "Task CRUD",
     name: "task selection and detail view",
     instruction: `
       Navigate to {URL}.
@@ -614,7 +754,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-022", group: "Task CRUD",
+    id: "TC-022",
+    group: "Task CRUD",
     name: "task detail tab switching",
     instruction: `
       Navigate to {URL}.
@@ -627,7 +768,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-023", group: "Task CRUD",
+    id: "TC-023",
+    group: "Task CRUD",
     name: "task action buttons",
     instruction: `
       Navigate to {URL}.
@@ -638,7 +780,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-024", group: "Task CRUD",
+    id: "TC-024",
+    group: "Task CRUD",
     name: "new task modal",
     instruction: `
       Navigate to {URL}.
@@ -653,7 +796,8 @@ const geminiTestCases = [
 
   // ── Task Filtering & Sorting (3) ──
   {
-    id: "TC-030", group: "Task Filter",
+    id: "TC-030",
+    group: "Task Filter",
     name: "task status filter",
     instruction: `
       Navigate to {URL}.
@@ -663,7 +807,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-031", group: "Task Filter",
+    id: "TC-031",
+    group: "Task Filter",
     name: "task search",
     instruction: `
       Navigate to {URL}.
@@ -676,7 +821,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-032", group: "Task Filter",
+    id: "TC-032",
+    group: "Task Filter",
     name: "task sorting",
     instruction: `
       Navigate to {URL}.
@@ -687,7 +833,8 @@ const geminiTestCases = [
 
   // ── Proposals Panel (3) ──
   {
-    id: "TC-040", group: "Proposals",
+    id: "TC-040",
+    group: "Proposals",
     name: "proposals panel structure",
     instruction: `
       Navigate to {URL}.
@@ -699,7 +846,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-041", group: "Proposals",
+    id: "TC-041",
+    group: "Proposals",
     name: "observer status display",
     instruction: `
       Navigate to {URL}.
@@ -708,7 +856,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-042", group: "Proposals",
+    id: "TC-042",
+    group: "Proposals",
     name: "observer controls",
     instruction: `
       Navigate to {URL}.
@@ -720,7 +869,8 @@ const geminiTestCases = [
 
   // ── Autopilot Panel (3) ──
   {
-    id: "TC-050", group: "Autopilot",
+    id: "TC-050",
+    group: "Autopilot",
     name: "autopilot panel structure",
     instruction: `
       Navigate to {URL}.
@@ -732,7 +882,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-051", group: "Autopilot",
+    id: "TC-051",
+    group: "Autopilot",
     name: "autopilot start form",
     instruction: `
       Navigate to {URL}.
@@ -744,7 +895,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-052", group: "Autopilot",
+    id: "TC-052",
+    group: "Autopilot",
     name: "autopilot new button exists",
     instruction: `
       Navigate to {URL}.
@@ -757,7 +909,8 @@ const geminiTestCases = [
 
   // ── Daemon Control UI (2) ──
   {
-    id: "TC-060", group: "Daemon",
+    id: "TC-060",
+    group: "Daemon",
     name: "daemon status display",
     instruction: `
       Navigate to {URL}.
@@ -767,7 +920,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-061", group: "Daemon",
+    id: "TC-061",
+    group: "Daemon",
     name: "pause/resume behavior",
     instruction: `
       Navigate to {URL}.
@@ -780,7 +934,8 @@ const geminiTestCases = [
 
   // ── Toast/Notification (1) ──
   {
-    id: "TC-070", group: "Toast",
+    id: "TC-070",
+    group: "Toast",
     name: "toast notification",
     instruction: `
       Navigate to {URL}.
@@ -792,7 +947,8 @@ const geminiTestCases = [
 
   // ── Visual Regression (3) ──
   {
-    id: "TC-080", group: "Visual",
+    id: "TC-080",
+    group: "Visual",
     name: "full layout visual check",
     instruction: `
       Navigate to {URL}.
@@ -808,7 +964,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-081", group: "Visual",
+    id: "TC-081",
+    group: "Visual",
     name: "proposals panel layout",
     instruction: `
       Navigate to {URL}.
@@ -821,7 +978,8 @@ const geminiTestCases = [
     `,
   },
   {
-    id: "TC-082", group: "Visual",
+    id: "TC-082",
+    group: "Visual",
     name: "autopilot panel layout",
     instruction: `
       Navigate to {URL}.

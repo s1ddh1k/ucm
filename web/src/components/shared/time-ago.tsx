@@ -14,5 +14,9 @@ export function TimeAgo({ date, className }: TimeAgoProps) {
     return () => clearInterval(interval);
   }, [date]);
 
-  return <span className={className} title={new Date(date).toLocaleString()}>{text}</span>;
+  return (
+    <span className={className} title={new Date(date).toLocaleString()}>
+      {text}
+    </span>
+  );
 }

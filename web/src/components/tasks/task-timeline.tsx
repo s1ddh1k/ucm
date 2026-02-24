@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
-import { useUiStore } from "@/stores/ui";
-import { getTaskProjectLabel } from "@/lib/project";
 import type { Task } from "@/api/types";
+import { getTaskProjectLabel } from "@/lib/project";
+import { useUiStore } from "@/stores/ui";
 
 const STATE_COLORS: Record<string, string> = {
   pending: "bg-yellow-400/70",
@@ -23,19 +23,28 @@ export function TaskTimeline({ tasks }: TaskTimelineProps) {
   // Filter tasks with time data and compute layout
   const { timelineTasks, groups, timeRange, hourMarkers } = useMemo(() => {
     // Only include tasks that have startedAt
-    const withTime = tasks.filter(t => t.startedAt).map(t => {
-      const start = new Date(t.startedAt!).getTime();
-      const end = t.completedAt ? new Date(t.completedAt).getTime() : Date.now();
-      return { ...t, startMs: start, endMs: end };
-    });
+    const withTime = tasks
+      .filter((t) => t.startedAt)
+      .map((t) => {
+        const start = new Date(t.startedAt!).getTime();
+        const end = t.completedAt
+          ? new Date(t.completedAt).getTime()
+          : Date.now();
+        return { ...t, startMs: start, endMs: end };
+      });
 
     if (withTime.length === 0) {
-      return { timelineTasks: [], groups: [], timeRange: { min: 0, max: 0, span: 0 }, hourMarkers: [] };
+      return {
+        timelineTasks: [],
+        groups: [],
+        timeRange: { min: 0, max: 0, span: 0 },
+        hourMarkers: [],
+      };
     }
 
     // Time range
-    const allStarts = withTime.map(t => t.startMs);
-    const allEnds = withTime.map(t => t.endMs);
+    const allStarts = withTime.map((t) => t.startMs);
+    const allEnds = withTime.map((t) => t.endMs);
     const min = Math.min(...allStarts);
     const max = Math.max(...allEnds);
     const span = max - min || 1; // avoid division by zero
@@ -45,7 +54,7 @@ export function TaskTimeline({ tasks }: TaskTimelineProps) {
     for (const t of withTime) {
       const project = getTaskProjectLabel(t);
       if (!groupMap.has(project)) groupMap.set(project, []);
-      groupMap.get(project)!.push(t);
+      groupMap.get(project)?.push(t);
     }
 
     // Sort within each group by start time
@@ -67,9 +76,10 @@ export function TaskTimeline({ tasks }: TaskTimelineProps) {
     const firstMarker = Math.ceil(min / intervalMs) * intervalMs;
     for (let t = firstMarker; t <= max; t += intervalMs) {
       const d = new Date(t);
-      const label = intervalMs >= hourMs * 24
-        ? `${d.getMonth() + 1}/${d.getDate()}`
-        : `${d.getHours().toString().padStart(2, "0")}:00`;
+      const label =
+        intervalMs >= hourMs * 24
+          ? `${d.getMonth() + 1}/${d.getDate()}`
+          : `${d.getHours().toString().padStart(2, "0")}:00`;
       markers.push({ time: t, label });
     }
 
@@ -103,7 +113,10 @@ export function TaskTimeline({ tasks }: TaskTimelineProps) {
   return (
     <div ref={containerRef} className="h-full overflow-auto">
       {/* Time axis header */}
-      <div className="sticky top-0 z-10 bg-background border-b flex" style={{ height: 28 }}>
+      <div
+        className="sticky top-0 z-10 bg-background border-b flex"
+        style={{ height: 28 }}
+      >
         <div className="shrink-0" style={{ width: LEFT_GUTTER }} />
         <div className="flex-1 relative">
           {hourMarkers.map((m, i) => (
@@ -123,14 +136,21 @@ export function TaskTimeline({ tasks }: TaskTimelineProps) {
         <div key={group.project}>
           {/* Group header */}
           <div className="flex items-center sticky top-7 bg-muted/50 z-[5] border-b">
-            <div className="text-xs font-medium text-muted-foreground px-3 py-1 truncate" style={{ width: LEFT_GUTTER }}>
+            <div
+              className="text-xs font-medium text-muted-foreground px-3 py-1 truncate"
+              style={{ width: LEFT_GUTTER }}
+            >
               {group.project}
             </div>
           </div>
 
           {/* Task rows */}
           {group.tasks.map((task) => (
-            <div key={task.id} className="flex items-center border-b border-border/30" style={{ height: ROW_HEIGHT }}>
+            <div
+              key={task.id}
+              className="flex items-center border-b border-border/30"
+              style={{ height: ROW_HEIGHT }}
+            >
               {/* Task label */}
               <div
                 className="text-xs truncate px-3 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"

@@ -15,14 +15,18 @@ function normalizeCatalog(raw: unknown): ProjectCatalogItem[] {
     const path = String((entry as { path?: unknown }).path || "").trim();
     if (!path) continue;
     const name = String((entry as { name?: unknown }).name || "").trim();
-    const createdAt = String((entry as { createdAt?: unknown }).createdAt || "").trim();
+    const createdAt = String(
+      (entry as { createdAt?: unknown }).createdAt || "",
+    ).trim();
     unique.set(path, {
       path,
       name: name || undefined,
       createdAt: createdAt || undefined,
     });
   }
-  return [...unique.values()].sort((a, b) => (a.name || a.path).localeCompare(b.name || b.path));
+  return [...unique.values()].sort((a, b) =>
+    (a.name || a.path).localeCompare(b.name || b.path),
+  );
 }
 
 export function useProjectCatalogQuery() {
@@ -44,11 +48,14 @@ export function useUpsertProjectCatalogItem() {
       const current = normalizeCatalog(config.projectCatalog);
       const path = item.path.trim();
       const name = item.name?.trim();
-      const next = [...current.filter((p) => p.path !== path), {
-        path,
-        name: name || undefined,
-        createdAt: new Date().toISOString(),
-      }];
+      const next = [
+        ...current.filter((p) => p.path !== path),
+        {
+          path,
+          name: name || undefined,
+          createdAt: new Date().toISOString(),
+        },
+      ];
       return api.config.set({ projectCatalog: normalizeCatalog(next) });
     },
     onSuccess: () => {

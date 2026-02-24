@@ -11,12 +11,21 @@ function untrackPid(pid) {
 }
 
 function isProcessAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function killDaemon(pid, { waitMs = 3000 } = {}) {
   if (!pid) return;
-  try { process.kill(pid, "SIGTERM"); } catch { return; }
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return;
+  }
 
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline && isProcessAlive(pid)) {
@@ -24,7 +33,9 @@ async function killDaemon(pid, { waitMs = 3000 } = {}) {
   }
 
   if (isProcessAlive(pid)) {
-    try { process.kill(pid, "SIGKILL"); } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
   }
   trackedPids.delete(pid);
 }
@@ -39,8 +50,16 @@ async function cleanupAll() {
 // Safety net: kill all tracked daemons on process exit
 process.on("exit", () => {
   for (const pid of trackedPids) {
-    try { process.kill(pid, "SIGKILL"); } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
   }
 });
 
-module.exports = { trackPid, untrackPid, killDaemon, cleanupAll, isProcessAlive };
+module.exports = {
+  trackPid,
+  untrackPid,
+  killDaemon,
+  cleanupAll,
+  isProcessAlive,
+};

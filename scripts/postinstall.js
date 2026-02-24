@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+const { execSync } = require("node:child_process");
+const path = require("node:path");
+
+// set up git hooks
+try {
+  const hooksDir = path.join(__dirname, "hooks");
+  execSync(`git config core.hooksPath "${hooksDir}"`, { stdio: "ignore" });
+} catch {}
+
 const msg = `
   ucm 설치 완료!
 

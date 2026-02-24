@@ -13,19 +13,7 @@
 
 # 작업
 
-사용자 관점에서 불편하거나 혼란스러운 부분 1건을 찾아 수정한다. 내부 구현보다 메시지, 피드백, 상태 표시 등 사용자가 직접 경험하는 영역을 우선한다.
-
-- git log --oneline -20 으로 이전 수정 내역을 확인하고 새로운 항목을 선택한다
+사용자 관점에서 불편하거나 혼란스러운 문제를 찾아 수정한다. 내부 구현보다 메시지, 피드백, 상태 표시 등 사용자가 직접 경험하는 영역을 우선한다.
 - 수정 후 `node test/core.test.js` 와 해당 파일의 검증을 통과시킨다
 - web/ 변경 시 `cd web && npx tsc --noEmit` 도 통과시킨다
 - ucm-desktop/ 변경 시 `cd ucm-desktop && bun run build` 도 통과시킨다
-
-# 보고
-
-```
-[area] cli | daemon | web | desktop | forge
-[what] 한 줄 요약
-[before] 수정 전 사용자 경험
-[after] 수정 후 사용자 경험
-[verify] 검증 결과
-```

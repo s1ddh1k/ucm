@@ -25,9 +25,12 @@ export default function RootLayout() {
   const setTheme = useUiStore((s) => s.setTheme);
   useEffect(() => {
     // Apply stored theme
-    const resolved = theme === "system"
-      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-      : theme;
+    const resolved =
+      theme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
     document.documentElement.classList.toggle("dark", resolved === "dark");
 
     // Listen for system preference changes when in "system" mode

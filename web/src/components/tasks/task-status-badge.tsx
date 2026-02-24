@@ -9,7 +9,10 @@ interface TaskStatusBadgeProps {
 
 export function TaskStatusBadge({ state, className }: TaskStatusBadgeProps) {
   return (
-    <Badge variant="outline" className={cn("text-xs border", STATE_BG_COLORS[state], className)}>
+    <Badge
+      variant="outline"
+      className={cn("text-xs border", STATE_BG_COLORS[state], className)}
+    >
       {state}
     </Badge>
   );

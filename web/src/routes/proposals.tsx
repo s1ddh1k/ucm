@@ -1,32 +1,53 @@
-import { useState, useMemo, useEffect } from "react";
+import {
+  Check,
+  Eye,
+  FlaskConical,
+  LayoutGrid,
+  Lightbulb,
+  List,
+  Search as SearchIcon,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
-import { Lightbulb, Eye, Search as SearchIcon, FlaskConical, LayoutGrid, List, Check, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import type { Proposal } from "@/api/types";
+import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { ProposalCard } from "@/components/proposals/proposal-card";
 import { ProposalDetailDialog } from "@/components/proposals/proposal-detail-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { StatusDot } from "@/components/shared/status-dot";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  useProposalsQuery, useApproveProposal, useRejectProposal,
-  useSetProposalPriority, useObserverStatusQuery, useRunObserver,
-  useAnalyzeProject, useResearchProject, useDeleteProposal,
-} from "@/queries/proposals";
-import { useTasksQuery } from "@/queries/tasks";
-import { useUiStore } from "@/stores/ui";
-import type { Proposal } from "@/api/types";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
+  decodeProjectKeyFromRoute,
   getProjectKey,
   getProjectLabel,
   getProposalProjectPath,
-  decodeProjectKeyFromRoute,
-  UNKNOWN_PROJECT_KEY,
   getTaskProjectPath,
+  UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
-import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
+import {
+  useAnalyzeProject,
+  useApproveProposal,
+  useDeleteProposal,
+  useObserverStatusQuery,
+  useProposalsQuery,
+  useRejectProposal,
+  useResearchProject,
+  useRunObserver,
+  useSetProposalPriority,
+} from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
+import { useUiStore } from "@/stores/ui";
 
 export default function ProposalsPage() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
@@ -41,7 +62,9 @@ export default function ProposalsPage() {
   const categoryFilter = useUiStore((s) => s.proposalCategoryFilter);
   const riskFilter = useUiStore((s) => s.proposalRiskFilter);
   const setProposalFilter = useUiStore((s) => s.setProposalFilter);
-  const setProposalProjectFilter = useUiStore((s) => s.setProposalProjectFilter);
+  const setProposalProjectFilter = useUiStore(
+    (s) => s.setProposalProjectFilter,
+  );
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setCategoryFilter = useUiStore((s) => s.setProposalCategoryFilter);
@@ -59,13 +82,17 @@ export default function ProposalsPage() {
   const researchProject = useResearchProject();
   const routeProjectKey = useMemo(
     () => decodeProjectKeyFromRoute(params.projectKey),
-    [params.projectKey]
+    [params.projectKey],
   );
-  const routeProjectLabel = routeProjectKey === UNKNOWN_PROJECT_KEY ? "Unknown Project" : getProjectLabel(routeProjectKey);
+  const routeProjectLabel =
+    routeProjectKey === UNKNOWN_PROJECT_KEY
+      ? "Unknown Project"
+      : getProjectLabel(routeProjectKey);
   const effectiveProjectFilter = routeScoped
     ? routeProjectKey
     : proposalProjectFilter;
-  const projectPathForActions = routeProjectKey === UNKNOWN_PROJECT_KEY ? "." : routeProjectKey;
+  const projectPathForActions =
+    routeProjectKey === UNKNOWN_PROJECT_KEY ? "." : routeProjectKey;
 
   useEffect(() => {
     if (!routeScoped) {
@@ -100,15 +127,28 @@ export default function ProposalsPage() {
     const next = new URLSearchParams(searchParams);
     next.delete("kickoff");
     setSearchParams(next, { replace: true });
-  }, [analyzeProject, projectPathForActions, researchProject, routeScoped, searchParams, setSearchParams]);
+  }, [
+    analyzeProject,
+    projectPathForActions,
+    researchProject,
+    routeScoped,
+    searchParams,
+    setSearchParams,
+  ]);
 
   const projectTaskCount = useMemo(
-    () => (tasks || []).filter((t) => getProjectKey(getTaskProjectPath(t)) === routeProjectKey).length,
-    [tasks, routeProjectKey]
+    () =>
+      (tasks || []).filter(
+        (t) => getProjectKey(getTaskProjectPath(t)) === routeProjectKey,
+      ).length,
+    [tasks, routeProjectKey],
   );
   const projectProposalCount = useMemo(
-    () => (proposals || []).filter((p) => getProjectKey(getProposalProjectPath(p)) === routeProjectKey).length,
-    [proposals, routeProjectKey]
+    () =>
+      (proposals || []).filter(
+        (p) => getProjectKey(getProposalProjectPath(p)) === routeProjectKey,
+      ).length,
+    [proposals, routeProjectKey],
   );
 
   const projectOptions = useMemo(() => {
@@ -127,7 +167,8 @@ export default function ProposalsPage() {
     }
     return [...unique.entries()]
       .map(([key, label]) => {
-        const duplicated = (labelCounts.get(label) || 0) > 1 && key !== UNKNOWN_PROJECT_KEY;
+        const duplicated =
+          (labelCounts.get(label) || 0) > 1 && key !== UNKNOWN_PROJECT_KEY;
         return { key, label: duplicated ? `${label} · ${key}` : label };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
@@ -144,15 +185,26 @@ export default function ProposalsPage() {
   const filteredProposals = useMemo(() => {
     if (!proposals) return [];
     let result = [...proposals];
-    if (proposalFilter) result = result.filter((p) => p.status === proposalFilter);
+    if (proposalFilter)
+      result = result.filter((p) => p.status === proposalFilter);
     if (effectiveProjectFilter) {
-      result = result.filter((p) => getProjectKey(getProposalProjectPath(p)) === effectiveProjectFilter);
+      result = result.filter(
+        (p) =>
+          getProjectKey(getProposalProjectPath(p)) === effectiveProjectFilter,
+      );
     }
-    if (categoryFilter) result = result.filter((p) => p.category === categoryFilter);
+    if (categoryFilter)
+      result = result.filter((p) => p.category === categoryFilter);
     if (riskFilter) result = result.filter((p) => p.risk === riskFilter);
     result.sort((a, b) => (b.priority || 0) - (a.priority || 0));
     return result;
-  }, [proposals, proposalFilter, effectiveProjectFilter, categoryFilter, riskFilter]);
+  }, [
+    proposals,
+    proposalFilter,
+    effectiveProjectFilter,
+    categoryFilter,
+    riskFilter,
+  ]);
 
   const handleApprove = (id: string) => {
     approveProposal.mutate(id);
@@ -169,7 +221,9 @@ export default function ProposalsPage() {
 
   useEffect(() => {
     if (!detailProposal || !proposals) return;
-    const exists = proposals.some((proposal) => proposal.id === detailProposal.id);
+    const exists = proposals.some(
+      (proposal) => proposal.id === detailProposal.id,
+    );
     if (!exists) {
       setDetailOpen(false);
       setDetailProposal(null);
@@ -184,7 +238,9 @@ export default function ProposalsPage() {
         <ProjectWorkspaceNav
           projectKey={routeProjectKey}
           projectLabel={routeProjectLabel}
-          projectPath={routeProjectKey === UNKNOWN_PROJECT_KEY ? null : routeProjectKey}
+          projectPath={
+            routeProjectKey === UNKNOWN_PROJECT_KEY ? null : routeProjectKey
+          }
           activeTab="proposals"
           taskCount={projectTaskCount}
           proposalCount={projectProposalCount}
@@ -192,10 +248,13 @@ export default function ProposalsPage() {
       ) : (
         <Card className="border-dashed">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Global Proposal Queue</p>
+            <p className="text-xs text-muted-foreground">
+              Global Proposal Queue
+            </p>
             <h2 className="text-base font-semibold">Proposal Inbox</h2>
             <p className="text-sm text-muted-foreground">
-              Review improvement suggestions across every project, then move into project workspaces.
+              Review improvement suggestions across every project, then move
+              into project workspaces.
             </p>
           </CardContent>
         </Card>
@@ -219,7 +278,10 @@ export default function ProposalsPage() {
           ))}
         </div>
 
-        <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
+        <Select
+          value={categoryFilter || "all"}
+          onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}
+        >
           <SelectTrigger className="w-28 h-7 text-xs">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
@@ -238,7 +300,10 @@ export default function ProposalsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={riskFilter || "all"} onValueChange={(v) => setRiskFilter(v === "all" ? "" : v)}>
+        <Select
+          value={riskFilter || "all"}
+          onValueChange={(v) => setRiskFilter(v === "all" ? "" : v)}
+        >
           <SelectTrigger className="w-28 h-7 text-xs">
             <SelectValue placeholder="Risk" />
           </SelectTrigger>
@@ -251,7 +316,12 @@ export default function ProposalsPage() {
         </Select>
 
         {!routeScoped && (
-          <Select value={effectiveProjectFilter || "all"} onValueChange={(v) => setProposalProjectFilter(v === "all" ? "" : v)}>
+          <Select
+            value={effectiveProjectFilter || "all"}
+            onValueChange={(v) =>
+              setProposalProjectFilter(v === "all" ? "" : v)
+            }
+          >
             <SelectTrigger className="w-44 h-7 text-xs">
               <SelectValue placeholder="Project" />
             </SelectTrigger>
@@ -259,7 +329,9 @@ export default function ProposalsPage() {
               <SelectItem value="all">All Projects</SelectItem>
               {projectOptions.map((project) => (
                 <SelectItem key={project.key} value={project.key}>
-                  {project.key === UNKNOWN_PROJECT_KEY ? "Unknown Project" : project.label}
+                  {project.key === UNKNOWN_PROJECT_KEY
+                    ? "Unknown Project"
+                    : project.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -337,24 +409,53 @@ export default function ProposalsPage() {
             <div
               key={proposal.id}
               className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 cursor-pointer transition-colors"
-              onClick={() => { setDetailProposal(proposal); setDetailOpen(true); }}
+              onClick={() => {
+                setDetailProposal(proposal);
+                setDetailOpen(true);
+              }}
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{proposal.title}</p>
               </div>
-              <Badge variant="outline" className="text-[10px] shrink-0">{proposal.category}</Badge>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
-                proposal.risk === "high" ? "bg-red-500/20 text-red-400" :
-                proposal.risk === "medium" ? "bg-yellow-500/20 text-yellow-400" :
-                "bg-emerald-500/20 text-emerald-400"
-              }`}>{proposal.risk}</span>
-              <span className="text-xs text-muted-foreground w-8 text-center shrink-0">{proposal.priority || 0}</span>
+              <Badge variant="outline" className="text-[10px] shrink-0">
+                {proposal.category}
+              </Badge>
+              <span
+                className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+                  proposal.risk === "high"
+                    ? "bg-red-500/20 text-red-400"
+                    : proposal.risk === "medium"
+                      ? "bg-yellow-500/20 text-yellow-400"
+                      : "bg-emerald-500/20 text-emerald-400"
+                }`}
+              >
+                {proposal.risk}
+              </span>
+              <span className="text-xs text-muted-foreground w-8 text-center shrink-0">
+                {proposal.priority || 0}
+              </span>
               {proposal.status === "proposed" && (
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300" onClick={(e) => { e.stopPropagation(); handleApprove(proposal.id); }}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleApprove(proposal.id);
+                    }}
+                  >
                     <Check className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-300" onClick={(e) => { e.stopPropagation(); handleReject(proposal.id); }}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReject(proposal.id);
+                    }}
+                  >
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -371,8 +472,12 @@ export default function ProposalsPage() {
               onApprove={() => handleApprove(proposal.id)}
               onReject={() => handleReject(proposal.id)}
               onDelete={() => handleDelete(proposal.id)}
-              onPriorityUp={() => setPriority.mutate({ proposalId: proposal.id, delta: 1 })}
-              onPriorityDown={() => setPriority.mutate({ proposalId: proposal.id, delta: -1 })}
+              onPriorityUp={() =>
+                setPriority.mutate({ proposalId: proposal.id, delta: 1 })
+              }
+              onPriorityDown={() =>
+                setPriority.mutate({ proposalId: proposal.id, delta: -1 })
+              }
               onClick={() => {
                 setDetailProposal(proposal);
                 setDetailOpen(true);

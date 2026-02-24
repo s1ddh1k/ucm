@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { Proposal } from "@/api/types";
 
@@ -40,9 +40,13 @@ export function useDeleteProposal() {
     mutationFn: (proposalId: string) => api.proposals.delete(proposalId),
     onMutate: async (proposalId) => {
       await qc.cancelQueries({ queryKey: ["proposals"] });
-      const previous = qc.getQueriesData<Proposal[]>({ queryKey: ["proposals"] });
+      const previous = qc.getQueriesData<Proposal[]>({
+        queryKey: ["proposals"],
+      });
       qc.setQueriesData<Proposal[]>({ queryKey: ["proposals"] }, (old) =>
-        Array.isArray(old) ? old.filter((proposal) => proposal.id !== proposalId) : old
+        Array.isArray(old)
+          ? old.filter((proposal) => proposal.id !== proposalId)
+          : old,
       );
       return { previous };
     },
@@ -60,8 +64,13 @@ export function useDeleteProposal() {
 export function useSetProposalPriority() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ proposalId, delta }: { proposalId: string; delta: number }) =>
-      api.proposals.priority(proposalId, delta),
+    mutationFn: ({
+      proposalId,
+      delta,
+    }: {
+      proposalId: string;
+      delta: number;
+    }) => api.proposals.priority(proposalId, delta),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["proposals"] }),
   });
 }

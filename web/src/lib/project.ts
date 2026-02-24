@@ -20,7 +20,9 @@ export function encodeProjectKeyForRoute(projectKey: string): string {
   return encodeURIComponent(projectKey);
 }
 
-export function decodeProjectKeyFromRoute(routeProjectKey?: string | null): string {
+export function decodeProjectKeyFromRoute(
+  routeProjectKey?: string | null,
+): string {
   if (!routeProjectKey) return UNKNOWN_PROJECT_KEY;
   try {
     return decodeURIComponent(routeProjectKey);
@@ -35,10 +37,12 @@ export function getProjectLabel(projectPath?: string | null): string {
 }
 
 export function getTaskProjectPath(task: Task): string | null {
-  if (task.project && String(task.project).trim()) return String(task.project).trim();
+  if (task.project && String(task.project).trim())
+    return String(task.project).trim();
   if (task.projects && task.projects.length > 0) {
     const first = task.projects[0];
-    if (first && typeof first.path === "string" && first.path.trim()) return first.path.trim();
+    if (first && typeof first.path === "string" && first.path.trim())
+      return first.path.trim();
   }
   return null;
 }

@@ -1,8 +1,14 @@
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
-const FIXTURE_DIR = path.join(__dirname, "..", "fixtures", "hivemind", "zettel");
+const FIXTURE_DIR = path.join(
+  __dirname,
+  "..",
+  "fixtures",
+  "hivemind",
+  "zettel",
+);
 
 // IMPORTANT: setupTestDir()는 require("./lib/hivemind/...") 전에 호출해야 한다.
 // store.js가 최초 로드 시 process.env.HIVEMIND_DIR을 읽어 경로를 확정하므로,
@@ -18,7 +24,14 @@ function setupTestDir() {
   const daemonDir = path.join(testDir, "daemon");
   const adaptersDir = path.join(testDir, "adapters");
 
-  for (const dir of [zettelDir, indexDir, archiveDir, sourcesDir, daemonDir, adaptersDir]) {
+  for (const dir of [
+    zettelDir,
+    indexDir,
+    archiveDir,
+    sourcesDir,
+    daemonDir,
+    adaptersDir,
+  ]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
@@ -30,13 +43,20 @@ function setupTestDir() {
 
   // Write config
   const config = {
-    adapters: { claude: { enabled: true }, codex: { enabled: true }, document: { enabled: true, dirs: [] } },
+    adapters: {
+      claude: { enabled: true },
+      codex: { enabled: true },
+      document: { enabled: true, dirs: [] },
+    },
     decayDays: 30,
     decayWeight: 0.2,
     gcThreshold: 0.05,
     minKeep: 50,
   };
-  fs.writeFileSync(path.join(testDir, "config.json"), JSON.stringify(config, null, 2) + "\n");
+  fs.writeFileSync(
+    path.join(testDir, "config.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+  );
 
   return testDir;
 }

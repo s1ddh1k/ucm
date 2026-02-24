@@ -1,10 +1,10 @@
+import { Bell, Monitor, Moon, Search, Sun } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "react-router";
 import { ConnectionIndicator } from "@/components/shared/connection-indicator";
 import { InboxDrawer, useInboxCount } from "@/components/shared/inbox-drawer";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Monitor, Search, Bell } from "lucide-react";
-import { useUiStore, type Theme } from "@/stores/ui";
+import { type Theme, useUiStore } from "@/stores/ui";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -29,13 +29,22 @@ export function Header() {
   const inboxCount = useInboxCount();
 
   const title = (() => {
-    if (location.pathname.startsWith("/projects/") && location.pathname.split("/").length === 3) {
+    if (
+      location.pathname.startsWith("/projects/") &&
+      location.pathname.split("/").length === 3
+    ) {
       return "Project Overview";
     }
-    if (location.pathname.startsWith("/projects/") && location.pathname.endsWith("/tasks")) {
+    if (
+      location.pathname.startsWith("/projects/") &&
+      location.pathname.endsWith("/tasks")
+    ) {
       return "Project Tasks";
     }
-    if (location.pathname.startsWith("/projects/") && location.pathname.endsWith("/proposals")) {
+    if (
+      location.pathname.startsWith("/projects/") &&
+      location.pathname.endsWith("/proposals")
+    ) {
       return "Project Proposals";
     }
     return pageTitles[location.pathname] || "UCM";

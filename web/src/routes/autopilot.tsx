@@ -1,11 +1,11 @@
+import { Bot, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Plus, Bot } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { SessionCard } from "@/components/autopilot/session-card";
 import { SessionDetail } from "@/components/autopilot/session-detail";
 import { SessionStartDialog } from "@/components/autopilot/session-start-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAutopilotStatusQuery } from "@/queries/autopilot";
 import { useUiStore } from "@/stores/ui";
@@ -18,8 +18,9 @@ export default function AutopilotPage() {
 
   useEffect(() => {
     if (isLoading || !selectedSessionId) return;
-    const hasSelectedSession = Array.isArray(sessions)
-      && sessions.some((session) => session.id === selectedSessionId);
+    const hasSelectedSession =
+      Array.isArray(sessions) &&
+      sessions.some((session) => session.id === selectedSessionId);
     if (!hasSelectedSession) {
       setSelectedSessionId(sessions?.[0]?.id ?? null);
     }
@@ -30,7 +31,11 @@ export default function AutopilotPage() {
       {/* Session List */}
       <div className="w-72 shrink-0 flex flex-col border-r">
         <div className="p-3 border-b">
-          <Button onClick={() => setStartOpen(true)} className="w-full" size="sm">
+          <Button
+            onClick={() => setStartOpen(true)}
+            className="w-full"
+            size="sm"
+          >
             <Plus className="h-4 w-4" /> New Session
           </Button>
         </div>
@@ -43,7 +48,11 @@ export default function AutopilotPage() {
               ))}
             </div>
           ) : !sessions?.length ? (
-            <EmptyState icon={Bot} title="No sessions" description="Start an autopilot session" />
+            <EmptyState
+              icon={Bot}
+              title="No sessions"
+              description="Start an autopilot session"
+            />
           ) : (
             sessions.map((session) => (
               <SessionCard

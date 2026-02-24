@@ -1,5 +1,5 @@
-const { execFileSync } = require("child_process");
-const path = require("path");
+const { execFileSync } = require("node:child_process");
+const path = require("node:path");
 const { validateWebDist } = require("../../lib/core/web-dist.js");
 
 const WEB_DIR = path.join(__dirname, "..", "..", "web");
@@ -19,7 +19,9 @@ function ensureWebDistBuilt() {
     const suffix = afterBuild.missingAssets?.length
       ? ` (missing: ${afterBuild.missingAssets.join(", ")})`
       : "";
-    throw new Error(`web dist validation failed after build: ${afterBuild.reason}${suffix}`);
+    throw new Error(
+      `web dist validation failed after build: ${afterBuild.reason}${suffix}`,
+    );
   }
 }
 

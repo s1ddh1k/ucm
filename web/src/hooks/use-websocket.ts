@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
+import type { Proposal, Task } from "@/api/types";
 import { wsManager } from "@/api/websocket";
 import { useDaemonStore } from "@/stores/daemon";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
-import type { Proposal, Task } from "@/api/types";
 
 const BASE_TITLE = "UCM Dashboard";
 
@@ -64,35 +64,44 @@ export function useWebSocket() {
     document.title = BASE_TITLE;
   }, []);
 
-  const markPending = useCallback((type: PendingType, taskId: string | null): boolean => {
-    if (!taskId) return false;
-    const bucket = pendingByType.current[type];
-    if (bucket.has(taskId)) return false;
-    bucket.add(taskId);
-    updateTitleBadge(1);
-    return true;
-  }, [updateTitleBadge]);
+  const markPending = useCallback(
+    (type: PendingType, taskId: string | null): boolean => {
+      if (!taskId) return false;
+      const bucket = pendingByType.current[type];
+      if (bucket.has(taskId)) return false;
+      bucket.add(taskId);
+      updateTitleBadge(1);
+      return true;
+    },
+    [updateTitleBadge],
+  );
 
-  const clearPending = useCallback((type: PendingType, taskId: string | null): boolean => {
-    if (!taskId) return false;
-    const bucket = pendingByType.current[type];
-    const removed = bucket.delete(taskId);
-    if (removed) updateTitleBadge(-1);
-    return removed;
-  }, [updateTitleBadge]);
+  const clearPending = useCallback(
+    (type: PendingType, taskId: string | null): boolean => {
+      if (!taskId) return false;
+      const bucket = pendingByType.current[type];
+      const removed = bucket.delete(taskId);
+      if (removed) updateTitleBadge(-1);
+      return removed;
+    },
+    [updateTitleBadge],
+  );
 
-  const clearPendingForTask = useCallback((taskId: string | null) => {
-    if (!taskId) return;
-    let removed = 0;
-    for (const type of Object.keys(pendingByType.current) as PendingType[]) {
-      if (pendingByType.current[type].delete(taskId)) {
-        removed++;
+  const clearPendingForTask = useCallback(
+    (taskId: string | null) => {
+      if (!taskId) return;
+      let removed = 0;
+      for (const type of Object.keys(pendingByType.current) as PendingType[]) {
+        if (pendingByType.current[type].delete(taskId)) {
+          removed++;
+        }
       }
-    }
-    if (removed > 0) {
-      updateTitleBadge(-removed);
-    }
-  }, [updateTitleBadge]);
+      if (removed > 0) {
+        updateTitleBadge(-removed);
+      }
+    },
+    [updateTitleBadge],
+  );
 
   // Reset the badge when the user focuses the tab
   useEffect(() => {
@@ -103,7 +112,10 @@ export function useWebSocket() {
 
   // Request notification permission on mount (non-blocking)
   useEffect(() => {
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    if (
+      typeof Notification !== "undefined" &&
+      Notification.permission === "default"
+    ) {
       Notification.requestPermission();
     }
   }, []);
@@ -119,24 +131,41 @@ export function useWebSocket() {
 
     const patchTaskCaches = (taskId: string, updater: (task: Task) => Task) => {
       queryClient.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        Array.isArray(old) ? old.map((task) => (task.id === taskId ? updater(task) : task)) : old
+        Array.isArray(old)
+          ? old.map((task) => (task.id === taskId ? updater(task) : task))
+          : old,
       );
-      queryClient.setQueryData<Task>(["task", taskId], (old) => (old ? updater(old) : old));
+      queryClient.setQueryData<Task>(["task", taskId], (old) =>
+        old ? updater(old) : old,
+      );
     };
 
     const removeTaskFromCaches = (taskId: string) => {
       queryClient.setQueriesData<Task[]>({ queryKey: ["tasks"] }, (old) =>
-        Array.isArray(old) ? old.filter((task) => task.id !== taskId) : old
+        Array.isArray(old) ? old.filter((task) => task.id !== taskId) : old,
       );
       queryClient.removeQueries({ queryKey: ["task", taskId], exact: true });
-      queryClient.removeQueries({ queryKey: ["task-diff", taskId], exact: true });
-      queryClient.removeQueries({ queryKey: ["task-logs", taskId], exact: false });
-      queryClient.removeQueries({ queryKey: ["task-artifacts", taskId], exact: true });
+      queryClient.removeQueries({
+        queryKey: ["task-diff", taskId],
+        exact: true,
+      });
+      queryClient.removeQueries({
+        queryKey: ["task-logs", taskId],
+        exact: false,
+      });
+      queryClient.removeQueries({
+        queryKey: ["task-artifacts", taskId],
+        exact: true,
+      });
     };
 
     const removeProposalFromCaches = (proposalId: string) => {
-      queryClient.setQueriesData<Proposal[]>({ queryKey: ["proposals"] }, (old) =>
-        Array.isArray(old) ? old.filter((proposal) => proposal.id !== proposalId) : old
+      queryClient.setQueriesData<Proposal[]>(
+        { queryKey: ["proposals"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.filter((proposal) => proposal.id !== proposalId)
+            : old,
       );
     };
 
@@ -150,7 +179,11 @@ export function useWebSocket() {
       // Daemon status
       wsManager.on("daemon:status", (data) => {
         const status = data.status as string;
-        if (status === "running" || status === "paused" || status === "offline") {
+        if (
+          status === "running" ||
+          status === "paused" ||
+          status === "offline"
+        ) {
           setStatus(status);
         }
       }),
@@ -167,11 +200,18 @@ export function useWebSocket() {
 
         if (taskId && nextState) {
           patchTaskCaches(taskId, (task) => {
-            const updates: Partial<Task> = { state: nextState as Task["state"] };
+            const updates: Partial<Task> = {
+              state: nextState as Task["state"],
+            };
             if (nextState === "running" && !task.startedAt) {
               updates.startedAt = nowIso();
             }
-            if ((nextState === "review" || nextState === "done" || nextState === "failed") && !task.completedAt) {
+            if (
+              (nextState === "review" ||
+                nextState === "done" ||
+                nextState === "failed") &&
+              !task.completedAt
+            ) {
               updates.completedAt = nowIso();
             }
             if (nextState === "pending" || nextState === "running") {
@@ -194,12 +234,20 @@ export function useWebSocket() {
         const reviewEvent = nextState === "review" || nextStatus === "review";
         if (reviewEvent && markPending("review", taskId)) {
           const taskLabel = (data.taskId as string) || "unknown";
-          notify("Task ready for review", `Task ${taskLabel} is ready for review.`);
+          notify(
+            "Task ready for review",
+            `Task ${taskLabel} is ready for review.`,
+          );
         } else if (taskId && nextState && nextState !== "review") {
           clearPending("review", taskId);
         }
 
-        if (taskId && (nextState === "pending" || nextState === "running" || nextState === "done")) {
+        if (
+          taskId &&
+          (nextState === "pending" ||
+            nextState === "running" ||
+            nextState === "done")
+        ) {
           clearPending("gate", taskId);
           clearPending("pipelineError", taskId);
         }
@@ -224,10 +272,19 @@ export function useWebSocket() {
 
       // Stats events — validate shape before overwriting cache
       wsManager.on("stats:updated", (data) => {
-        if (data && typeof data.pid === "number" && typeof data.uptime === "number" && data.resources) {
+        if (
+          data &&
+          typeof data.pid === "number" &&
+          typeof data.uptime === "number" &&
+          data.resources
+        ) {
           queryClient.setQueryData(["stats"], data);
           const daemonStatus = data.daemonStatus as string;
-          if (daemonStatus === "running" || daemonStatus === "paused" || daemonStatus === "offline") {
+          if (
+            daemonStatus === "running" ||
+            daemonStatus === "paused" ||
+            daemonStatus === "offline"
+          ) {
             setStatus(daemonStatus);
           }
         }
@@ -239,13 +296,20 @@ export function useWebSocket() {
         addActivity("proposal:created", data);
       }),
       wsManager.on("proposal:updated", (data) => {
-        const proposalId = typeof data.proposalId === "string" ? data.proposalId : null;
+        const proposalId =
+          typeof data.proposalId === "string" ? data.proposalId : null;
         const status = typeof data.status === "string" ? data.status : null;
         if (proposalId && status) {
-          queryClient.setQueriesData<Proposal[]>({ queryKey: ["proposals"] }, (old) =>
-            Array.isArray(old)
-              ? old.map((proposal) => (proposal.id === proposalId ? { ...proposal, status: status as Proposal["status"] } : proposal))
-              : old
+          queryClient.setQueriesData<Proposal[]>(
+            { queryKey: ["proposals"] },
+            (old) =>
+              Array.isArray(old)
+                ? old.map((proposal) =>
+                    proposal.id === proposalId
+                      ? { ...proposal, status: status as Proposal["status"] }
+                      : proposal,
+                  )
+                : old,
           );
         } else {
           queryClient.invalidateQueries({ queryKey: ["proposals"] });
@@ -253,7 +317,8 @@ export function useWebSocket() {
         addActivity("proposal:updated", data);
       }),
       wsManager.on("proposal:deleted", (data) => {
-        const proposalId = typeof data.proposalId === "string" ? data.proposalId : null;
+        const proposalId =
+          typeof data.proposalId === "string" ? data.proposalId : null;
         if (proposalId) {
           removeProposalFromCaches(proposalId);
         } else {
@@ -290,7 +355,7 @@ export function useWebSocket() {
         queryClient.invalidateQueries({ queryKey: ["autopilot"] });
         addActivity("autopilot:executing", data);
       }),
-      wsManager.on("autopilot:progress", (data) => {
+      wsManager.on("autopilot:progress", (_data) => {
         queryClient.invalidateQueries({ queryKey: ["autopilot"] });
       }),
       wsManager.on("autopilot:awaiting_review", (data) => {
@@ -345,7 +410,8 @@ export function useWebSocket() {
       // Stage gate events
       wsManager.on("stage:gate", (data) => {
         const taskId = typeof data.taskId === "string" ? data.taskId : null;
-        const stageName = (data.stage as string) || (data.stageName as string) || "unknown";
+        const stageName =
+          (data.stage as string) || (data.stageName as string) || "unknown";
         if (taskId) {
           patchTaskCaches(taskId, (task) => ({
             ...task,
@@ -359,7 +425,10 @@ export function useWebSocket() {
         // Notify on stage gate awaiting approval
         const taskLabel = taskId || "unknown";
         if (markPending("gate", taskId)) {
-          notify("Stage awaiting approval", `Task ${taskLabel} is waiting for approval at stage "${stageName}".`);
+          notify(
+            "Stage awaiting approval",
+            `Task ${taskLabel} is waiting for approval at stage "${stageName}".`,
+          );
         }
       }),
       wsManager.on("stage:gate_resolved", (data) => {
@@ -380,7 +449,10 @@ export function useWebSocket() {
         const taskLabel = (data.taskId as string) || "unknown";
         const taskId = typeof data.taskId === "string" ? data.taskId : null;
         if (markPending("pipelineError", taskId)) {
-          notify("Task failed", `Task ${taskLabel} encountered a pipeline error.`);
+          notify(
+            "Task failed",
+            `Task ${taskLabel} encountered a pipeline error.`,
+          );
         }
         addActivity("pipeline:error", data);
       }),
@@ -393,7 +465,15 @@ export function useWebSocket() {
       resetPendingBadge();
     };
   }, [
-    queryClient, setStatus, setConnected, addActivity, addTaskLog, clearTaskLogs,
-    markPending, clearPending, clearPendingForTask, resetPendingBadge,
+    queryClient,
+    setStatus,
+    setConnected,
+    addActivity,
+    addTaskLog,
+    clearTaskLogs,
+    markPending,
+    clearPending,
+    clearPendingForTask,
+    resetPendingBadge,
   ]);
 }
