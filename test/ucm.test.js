@@ -134,6 +134,7 @@ const {
   formatRefinedRequirements,
 } = require("../lib/qna-core.js");
 const { buildQnaArgs } = require("../lib/req.js");
+const { MAX_SOCKET_REQUEST_BYTES } = require("../lib/ucmd-constants.js");
 
 let passed = 0;
 let failed = 0;
@@ -1912,6 +1913,41 @@ function socketRequest(request) {
           reject(new Error(`response parse error: ${e.message}`));
         }
         conn.end();
+      }
+    });
+
+    conn.on("error", (e) => {
+      clearTimeout(timeout);
+      reject(e);
+    });
+  });
+}
+
+function socketRawRequest(rawPayload) {
+  return new Promise((resolve, reject) => {
+    const conn = net.createConnection(SOCK_PATH);
+    let data = "";
+    const timeout = setTimeout(() => {
+      conn.destroy();
+      reject(new Error("TIMEOUT"));
+    }, CLIENT_TIMEOUT_MS);
+
+    conn.on("connect", () => {
+      conn.write(rawPayload);
+    });
+
+    conn.on("data", (chunk) => {
+      data += chunk;
+      const newlineIndex = data.indexOf("\n");
+      if (newlineIndex !== -1) {
+        clearTimeout(timeout);
+        const responseLine = data.slice(0, newlineIndex);
+        try {
+          resolve(JSON.parse(responseLine));
+        } catch (e) {
+          reject(new Error(`response parse error: ${e.message}`));
+        }
+        conn.destroy();
       }
     });
 
@@ -13127,6 +13163,228 @@ async function testSocketResumeRollbackRestoresSuspendedTracking() {
   }
 }
 
+async function testSocketRejectsInvalidJsonRequest() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let handlerCalls = 0;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleStats: async () => {
+        handlerCalls += 1;
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+    await ucmdServer.startSocketServer();
+
+    const response = await socketRawRequest('{"id":"bad","method":"stats"\n');
+    assertEqual(
+      response?.ok,
+      false,
+      "socket invalid JSON: responds with ok=false",
+    );
+    assertEqual(
+      response?.error,
+      "invalid JSON",
+      "socket invalid JSON: returns explicit parse error",
+    );
+    assertEqual(response?.id, null, "socket invalid JSON: response id is null");
+    assertEqual(
+      handlerCalls,
+      0,
+      "socket invalid JSON: does not dispatch any handler",
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+  }
+}
+
+async function testSocketRejectsOversizedRequest() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let handlerCalls = 0;
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleStats: async () => {
+        handlerCalls += 1;
+        return { ok: true };
+      },
+    }),
+    log: () => {},
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+    await ucmdServer.startSocketServer();
+
+    const oversized = "x".repeat(MAX_SOCKET_REQUEST_BYTES + 1);
+    const response = await socketRawRequest(oversized);
+    assertEqual(
+      response?.ok,
+      false,
+      "socket oversized request: responds with ok=false",
+    );
+    assertEqual(
+      response?.error,
+      "request too large",
+      "socket oversized request: returns explicit size limit error",
+    );
+    assertEqual(
+      response?.id,
+      null,
+      "socket oversized request: response id is null",
+    );
+    assertEqual(
+      handlerCalls,
+      0,
+      "socket oversized request: does not dispatch any handler",
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+  }
+}
+
+async function testSocketErrorLogMarksRetryableSeverity() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  const logs = [];
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleLogs: async () => {
+        const error = new Error("temporary backend pressure");
+        error.code = "EAGAIN";
+        throw error;
+      },
+    }),
+    log: (line) => logs.push(line),
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caught = null;
+    try {
+      await socketRequest({
+        method: "logs",
+        params: { taskId: "forge-20260222-eeee" },
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    assert(caught !== null, "socket retryable logging: request fails");
+    assert(
+      String(caught?.message || "").includes("temporary backend pressure"),
+      "socket retryable logging: returns original handler error",
+    );
+    assert(
+      logs.some((line) =>
+        line.includes(
+          "[socket] logs (taskId=forge-20260222-eeee) retryable error: temporary backend pressure",
+        ),
+      ),
+      "socket retryable logging: includes method, context, and retryable severity",
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+  }
+}
+
+async function testSocketErrorLogMarksFatalSeverity() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  const logs = [];
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleDiff: async () => {
+        const error = new Error("diff failed permanently");
+        error.code = "EINVAL";
+        throw error;
+      },
+    }),
+    log: (line) => logs.push(line),
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caught = null;
+    try {
+      await socketRequest({
+        method: "diff",
+        params: {
+          taskId: "forge-20260222-dddd",
+          path: "/tmp/socket-fatal-context",
+        },
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    assert(caught !== null, "socket fatal logging: request fails");
+    assert(
+      String(caught?.message || "").includes("diff failed permanently"),
+      "socket fatal logging: returns original handler error",
+    );
+    assert(
+      logs.some((line) =>
+        line.includes(
+          "[socket] diff (taskId=forge-20260222-dddd, path=/tmp/socket-fatal-context) fatal error: diff failed permanently",
+        ),
+      ),
+      "socket fatal logging: includes method, context, and fatal severity",
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+  }
+}
+
 async function testSocketRefinementAnswerAcceptsFlatPayload() {
   const ucmdServer = require("../lib/ucmd-server.js");
   let captured = null;
@@ -13899,24 +14157,16 @@ function testWatchdogRebindsExitHandlerOnRespawn() {
 
 function testAutopilotPageReconcilesSelectedSession() {
   const autopilotSource = fs.readFileSync(
-    path.join(__dirname, "..", "web", "src", "routes", "autopilot.tsx"),
+    path.join(__dirname, "..", "web", "src", "app.tsx"),
     "utf-8",
   );
   assert(
-    autopilotSource.includes("useEffect"),
-    "autopilot page: uses reconciliation effect",
+    autopilotSource.includes('path="autopilot"'),
+    "autopilot route: route entry exists",
   );
   assert(
-    autopilotSource.includes(
-      "sessions.some((session) => session.id === selectedSessionId)",
-    ),
-    "autopilot page: validates selected session",
-  );
-  assert(
-    autopilotSource.includes(
-      "setSelectedSessionId(sessions?.[0]?.id ?? null);",
-    ),
-    "autopilot page: falls back when selection disappears",
+    autopilotSource.includes('element={<Navigate to="/?tab=automation" replace />}'),
+    "autopilot route: redirects to automation tab",
   );
 }
 
@@ -16669,6 +16919,10 @@ async function main() {
   await testSocketResumeRejectsNonResumableTaskState();
   await testSocketResumeRejectsUnsuspendedRunningTask();
   await testSocketResumeRollbackRestoresSuspendedTracking();
+  await testSocketRejectsInvalidJsonRequest();
+  await testSocketRejectsOversizedRequest();
+  await testSocketErrorLogMarksRetryableSeverity();
+  await testSocketErrorLogMarksFatalSeverity();
   await testSocketRefinementAnswerAcceptsFlatPayload();
   await testSocketRefinementAnswerAcceptsLegacyAnswerAlias();
   await testSocketRefinementAnswerAcceptsNestedLegacyAnswerAlias();
