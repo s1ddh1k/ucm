@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Brain,
   FileText,
   FolderTree,
   LayoutDashboard,
@@ -105,6 +106,13 @@ export function CommandPalette() {
         category: "page",
         icon: ToggleRight,
         onSelect: () => navigate("/?tab=automation"),
+      },
+      {
+        id: "page-hivemind",
+        label: "Hivemind",
+        category: "page",
+        icon: Brain,
+        onSelect: () => navigate("/hivemind"),
       },
       {
         id: "page-terminal",

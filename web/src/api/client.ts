@@ -7,11 +7,16 @@ import type {
   DaemonStatus,
   DiffResult,
   Directive,
+  GcResult,
+  HivemindStats,
   ObserverStatus,
   Proposal,
+  ReindexResult,
   Release,
   Task,
   UcmConfig,
+  Zettel,
+  ZettelSearchResult,
 } from "./types";
 
 const BASE = "";
@@ -300,6 +305,28 @@ export const automation = {
   set: (params: Partial<AutomationConfig>) => post<UcmConfig>("/api/automation", params),
 };
 
+// Hivemind
+export const hivemind = {
+  search: (query: string, limit?: number) =>
+    request<ZettelSearchResult[]>(
+      `/api/hivemind/search?q=${encodeURIComponent(query)}&limit=${limit || 20}`,
+    ),
+  list: (kind?: string, limit?: number) =>
+    request<Zettel[]>(
+      `/api/hivemind/list?kind=${encodeURIComponent(kind || "")}&limit=${limit || 100}`,
+    ),
+  show: (id: string) =>
+    request<Zettel>(`/api/hivemind/show/${encodeURIComponent(id)}`),
+  stats: () => request<HivemindStats>("/api/hivemind/stats"),
+  delete: (id: string) =>
+    post<{ deleted: string }>(`/api/hivemind/delete/${encodeURIComponent(id)}`),
+  restore: (id: string) =>
+    post<{ restored: string }>(`/api/hivemind/restore/${encodeURIComponent(id)}`),
+  gc: (dryRun?: boolean) =>
+    post<GcResult>("/api/hivemind/gc", { dryRun: dryRun ?? false }),
+  reindex: () => post<ReindexResult>("/api/hivemind/reindex"),
+};
+
 // Cleanup
 export const cleanup = {
   run: (params?: { retentionDays?: number }) =>
@@ -319,6 +346,7 @@ export const api = {
   cleanup,
   config,
   automation,
+  hivemind,
 };
 
 export default api;

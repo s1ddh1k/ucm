@@ -36,3 +36,53 @@
 - P1(결정/이유) / P2(구현 세부) / P3(참고) 우선순위 분류
 - SKIP 판정: 의미 없는 세션 자동 건너뛰기
 - 대형 트랜스크립트는 파트 분할 후 개별 요약 → 통합
+
+## UCM 통합 현황
+
+### 읽기 경로 (Hivemind → UCM) — 동작함
+
+| 위치 | 파일 | 방식 |
+|------|------|------|
+| Forge `implement` 스테이지 | `lib/forge/implement.js` | `search()` 호출, 관련 지식 컨텍스트 주입 |
+| Forge `design` 스테이지 | `lib/forge/design.js` | `searchHivemind()` 호출 |
+| Observer 제안 생성 | `lib/ucmd-observer.js` | `{{HIVEMIND_KNOWLEDGE}}` 템플릿 |
+
+### 쓰기 경로 (UCM → Hivemind) — 부실함
+
+| 위치 | 파일 | 문제 |
+|------|------|------|
+| Forge 완료 시 `learnToHivemind()` | `lib/forge/index.js:823-868` | 키워드 비어있음 `{}`, kind=`fleeting`(GC 대상), LLM 추출 안함 |
+
+- store를 직접 import해서 hmd 데몬의 dedup/통합 파이프라인 우회
+- `summary.md` 없으면 제텔 생성 안 됨
+
+### kind 분류 버그
+
+`lib/hivemind/extract.js:237-242`의 `typeToKind` 매핑이 전부 `"literature"`로 하드코딩:
+
+```js
+const typeToKind = {
+  pattern: "literature",   // ← 전부 같은 값
+  project: "literature",
+  discovery: "literature",
+  episode: "literature",
+};
+```
+
+실제 제텔의 `memoryType` 필드에는 분류가 잘 되어있음 (discovery 1131, project 1060, pattern 647, episode 465). kind 매핑만 고치면 해결.
+
+### 없는 것
+
+1. **`ucm init` → hivemind 초기화**: `ucm init`에 hivemind 언급 없음, `hm init`을 별도 실행해야 함
+2. **UCM 데몬 → hmd 자동 스폰**: `ucmd.js`에 hivemind 참조 0건
+3. **오토파일럿 → 제텔 생성**: `lib/ucmd-autopilot.js`에 hivemind write 0건 (아이템 완료/실패/릴리스 모두)
+4. **태스크 실패 학습**: Forge 실패 시 제텔 생성 없음, 실패 패턴 유실
+5. **Observer 쓰기**: 읽기만 하고 관찰/메트릭/교훈을 hivemind에 쓰지 않음
+
+### 우선순위 제안
+
+1. **typeToKind 매핑 수정** + 기존 3288개 제텔 kind 일괄 업데이트 (`extract.js:237-242`)
+2. `ucm init`에 hivemind 초기화 통합
+3. `learnToHivemind()` 키워드 추출 + kind 개선
+4. 오토파일럿 제텔 생성 (아이템 완료/실패/릴리스)
+5. UCM 데몬이 hmd 자동 스폰

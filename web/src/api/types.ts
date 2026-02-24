@@ -305,6 +305,61 @@ export interface UcmConfig {
   [key: string]: unknown;
 }
 
+// Hivemind
+export interface ZettelSource {
+  adapter: string;
+  ref: string;
+  timestamp?: string;
+}
+
+export interface Zettel {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  keywords: Record<string, number>;
+  links?: string[];
+  source?: ZettelSource | null;
+  attention?: string | null;
+  memoryType?: string;
+  createdAt: string;
+  lastAccessed: string;
+  boostCount?: number;
+  supersededBy?: string;
+}
+
+// Search results have a subset of fields + score
+export interface ZettelSearchResult {
+  id: string;
+  score: number;
+  rrf: number;
+  decay: number;
+  title: string;
+  kind: string;
+  keywords: Record<string, number>;
+  createdAt: string;
+  supersededBy?: string;
+}
+
+export interface HivemindStats {
+  totalZettels: number;
+  totalKeywords: number;
+  byKind: Record<string, number>;
+  queueLength: number;
+  processing: boolean;
+}
+
+export interface GcResult {
+  archived: number;
+  wouldArchive?: number;
+  total: number;
+}
+
+export interface ReindexResult {
+  zettels: number;
+  keywords: number;
+}
+
 // Refinement
 export interface RefinementQuestion {
   id: string;

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Brain,
   FolderTree,
   LayoutDashboard,
   PanelLeft,
@@ -29,6 +30,7 @@ interface BadgeInfo {
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/projects", icon: FolderTree, label: "Projects" },
+  { to: "/hivemind", icon: Brain, label: "Hivemind" },
   { to: "/terminal", icon: Terminal, label: "Terminal" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
 ];
