@@ -67,6 +67,7 @@ const { TaskDag, generateForgeId } = require("../lib/core/task");
 // ── ucmd pure functions ──
 
 const { mapPipelineToForge, mergeStateStats } = require("../lib/ucmd");
+const { enqueueTaskFileOp } = require("../lib/task-file-lock");
 
 // ── forge pipeline tests ──
 
@@ -2349,6 +2350,79 @@ exit 0
     "assigns basename as default name": () => {
       const result = normalizeProjects({ projects: ["/tmp/my-project"] });
       assertEqual(result[0].name, "my-project", "basename as name");
+    },
+  });
+
+  // ── enqueueTaskFileOp ──
+  await runGroup("enqueueTaskFileOp", {
+    "serializes operations for same task id": async () => {
+      const events = [];
+      let releaseFirst;
+      const firstGate = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      const first = enqueueTaskFileOp("task-lock-1", async () => {
+        events.push("first:start");
+        await firstGate;
+        events.push("first:end");
+      });
+      const second = enqueueTaskFileOp("task-lock-1", async () => {
+        events.push("second:start");
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assertDeepEqual(
+        events,
+        ["first:start"],
+        "second operation waits for first to finish",
+      );
+
+      releaseFirst();
+      await Promise.all([first, second]);
+      assertDeepEqual(
+        events,
+        ["first:start", "first:end", "second:start"],
+        "same task operations run in order",
+      );
+    },
+
+    "allows parallel start for different task ids": async () => {
+      const started = [];
+      let releaseBoth;
+      const gate = new Promise((resolve) => {
+        releaseBoth = resolve;
+      });
+
+      const first = enqueueTaskFileOp("task-lock-a", async () => {
+        started.push("a");
+        await gate;
+      });
+      const second = enqueueTaskFileOp("task-lock-b", async () => {
+        started.push("b");
+        await gate;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert(started.includes("a"), "task a started");
+      assert(started.includes("b"), "task b started");
+
+      releaseBoth();
+      await Promise.all([first, second]);
+    },
+
+    "continues queue after prior failure": async () => {
+      const events = [];
+      await enqueueTaskFileOp("task-lock-fail", async () => {
+        events.push("first");
+        throw new Error("intentional");
+      }).catch(() => {});
+
+      await enqueueTaskFileOp("task-lock-fail", async () => {
+        events.push("second");
+      });
+
+      assertDeepEqual(events, ["first", "second"], "queue recovered");
     },
   });
 
