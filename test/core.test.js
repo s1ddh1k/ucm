@@ -9,7 +9,7 @@ const { extractJson, buildCommand, sanitizeEnv, REASONING_EFFORTS } = require(".
 
 // ── quoteUserContent / summarizeDecisions tests ──
 
-const { quoteUserContent, summarizeDecisions, computeCoverage, isFullyCovered, buildQuestionPrompt, EXPECTED_GREENFIELD } = require("../lib/core/qna");
+const { quoteUserContent, summarizeDecisions, computeCoverage, isFullyCovered, buildQuestionPrompt, parseDecisionsFile, formatDecisions, EXPECTED_GREENFIELD } = require("../lib/core/qna");
 
 // ── sanitizeContent tests ──
 
@@ -17,7 +17,7 @@ const { sanitizeContent } = require("../lib/core/worktree");
 
 // ── parseTaskFile / serializeTaskFile tests ──
 
-const { parseTaskFile, serializeTaskFile } = require("../lib/ucmd-task");
+const { parseTaskFile, serializeTaskFile, expandHome, normalizeProjects } = require("../lib/ucmd-task");
 
 // ── TaskDag tests ──
 
@@ -1263,6 +1263,213 @@ title: line1\\nline2
       for (const [stage, t] of Object.entries(STAGE_TIMEOUTS)) {
         assert(t.idle >= 2 * 60_000, `${stage} idle >= 2m`);
       }
+    },
+  });
+
+  // ── isFullyCovered ──
+  await runGroup("isFullyCovered", {
+    "returns true when all areas >= 1.0": () => {
+      assert(isFullyCovered({ "제품 정의": 1.0, "핵심 기능": 1.0, "기술 스택": 1.0 }), "all 1.0");
+    },
+
+    "returns true when areas exceed 1.0": () => {
+      assert(isFullyCovered({ "제품 정의": 1.5, "핵심 기능": 1.0 }), "above 1.0");
+    },
+
+    "returns false when any area < 1.0": () => {
+      assert(!isFullyCovered({ "제품 정의": 1.0, "핵심 기능": 0.5 }), "one below");
+    },
+
+    "returns false when area is 0": () => {
+      assert(!isFullyCovered({ "제품 정의": 0, "핵심 기능": 1.0 }), "one zero");
+    },
+
+    "returns true for empty coverage object": () => {
+      assert(isFullyCovered({}), "empty object");
+    },
+  });
+
+  // ── parseDecisionsFile ──
+  await runGroup("parseDecisionsFile", {
+    "parses single decision": () => {
+      const content = `### 작업 목표\n- **Q:** 무엇을 만들까?\n  - **A:** 웹 앱\n  - **이유:** 접근성`;
+      const decisions = parseDecisionsFile(content);
+      assertEqual(decisions.length, 1, "one decision");
+      assertEqual(decisions[0].area, "작업 목표", "area");
+      assertEqual(decisions[0].question, "무엇을 만들까?", "question");
+      assertEqual(decisions[0].answer, "웹 앱", "answer");
+      assertEqual(decisions[0].reason, "접근성", "reason");
+    },
+
+    "parses multiple decisions across areas": () => {
+      const content = [
+        "### 제품 정의",
+        "- **Q:** Q1",
+        "  - **A:** A1",
+        "### 기술 스택",
+        "- **Q:** Q2",
+        "  - **A:** A2",
+        "  - **이유:** R2",
+      ].join("\n");
+      const decisions = parseDecisionsFile(content);
+      assertEqual(decisions.length, 2, "two decisions");
+      assertEqual(decisions[0].area, "제품 정의", "first area");
+      assertEqual(decisions[1].area, "기술 스택", "second area");
+      assertEqual(decisions[1].reason, "R2", "second reason");
+    },
+
+    "handles decision without reason": () => {
+      const content = `### Area\n- **Q:** Question\n  - **A:** Answer`;
+      const decisions = parseDecisionsFile(content);
+      assertEqual(decisions.length, 1, "one decision");
+      assertEqual(decisions[0].reason, "", "empty reason");
+    },
+
+    "returns empty array for non-decision content": () => {
+      const decisions = parseDecisionsFile("Just some text\nNo decisions here\n");
+      assertEqual(decisions.length, 0, "no decisions");
+    },
+
+    "returns empty array for empty string": () => {
+      const decisions = parseDecisionsFile("");
+      assertEqual(decisions.length, 0, "empty string");
+    },
+
+    "handles multiple decisions in same area": () => {
+      const content = [
+        "### 설계 결정",
+        "- **Q:** Q1",
+        "  - **A:** A1",
+        "- **Q:** Q2",
+        "  - **A:** A2",
+      ].join("\n");
+      const decisions = parseDecisionsFile(content);
+      assertEqual(decisions.length, 2, "two decisions");
+      assertEqual(decisions[0].area, "설계 결정", "same area first");
+      assertEqual(decisions[1].area, "설계 결정", "same area second");
+    },
+  });
+
+  // ── formatDecisions ──
+  await runGroup("formatDecisions", {
+    "formats decisions with coverage": () => {
+      const decisions = [{ area: "작업 목표", question: "Q?", answer: "A", reason: "R" }];
+      const coverage = { "작업 목표": 0.5 };
+      const md = formatDecisions(decisions, coverage);
+      assert(md.includes("# 설계 결정"), "has title");
+      assert(md.includes("## 커버리지"), "has coverage section");
+      assert(md.includes("50%"), "has percentage");
+      assert(md.includes("**Q:** Q?"), "has question");
+      assert(md.includes("**A:** A"), "has answer");
+      assert(md.includes("**이유:** R"), "has reason");
+    },
+
+    "formats decisions without coverage": () => {
+      const decisions = [{ area: "A", question: "Q", answer: "A", reason: "" }];
+      const md = formatDecisions(decisions, null);
+      assert(!md.includes("## 커버리지"), "no coverage section");
+      assert(md.includes("**Q:** Q"), "has question");
+    },
+
+    "omits reason when empty": () => {
+      const decisions = [{ area: "A", question: "Q", answer: "A", reason: "" }];
+      const md = formatDecisions(decisions, null);
+      assert(!md.includes("**이유:**"), "no reason line");
+    },
+  });
+
+  // ── expandHome ──
+  await runGroup("expandHome", {
+    "expands tilde prefix": () => {
+      const result = expandHome("~/projects");
+      assert(!result.startsWith("~"), "tilde expanded");
+      assert(result.endsWith("/projects"), "path preserved");
+    },
+
+    "expands bare tilde": () => {
+      const result = expandHome("~");
+      assert(!result.startsWith("~"), "bare tilde expanded");
+      assert(result.length > 1, "has home dir content");
+    },
+
+    "passes through absolute path": () => {
+      assertEqual(expandHome("/usr/local"), "/usr/local", "absolute unchanged");
+    },
+
+    "passes through relative path": () => {
+      assertEqual(expandHome("relative/path"), "relative/path", "relative unchanged");
+    },
+  });
+
+  // ── normalizeProjects ──
+  await runGroup("normalizeProjects", {
+    "normalizes string project array": () => {
+      const result = normalizeProjects({ projects: ["/tmp/proj1", "/tmp/proj2"] });
+      assertEqual(result.length, 2, "two projects");
+      assertEqual(result[0].path, "/tmp/proj1", "first path");
+      assertEqual(result[0].role, "primary", "first is primary");
+      assertEqual(result[1].role, "secondary", "second is secondary");
+    },
+
+    "normalizes object project array": () => {
+      const result = normalizeProjects({
+        projects: [{ path: "/tmp/a", name: "myname", role: "primary" }],
+      });
+      assertEqual(result.length, 1, "one project");
+      assertEqual(result[0].name, "myname", "custom name");
+      assertEqual(result[0].role, "primary", "explicit role");
+    },
+
+    "deduplicates projects by resolved path": () => {
+      const result = normalizeProjects({ projects: ["/tmp/proj", "/tmp/proj"] });
+      assertEqual(result.length, 1, "deduplicated");
+    },
+
+    "falls back to meta.project when projects array empty": () => {
+      const result = normalizeProjects({ projects: [], project: "/tmp/fallback" });
+      assertEqual(result.length, 1, "one project from fallback");
+      assertEqual(result[0].path, "/tmp/fallback", "fallback path");
+      assertEqual(result[0].role, "primary", "fallback is primary");
+    },
+
+    "falls back to meta.project when no projects key": () => {
+      const result = normalizeProjects({ project: "/tmp/single" });
+      assertEqual(result.length, 1, "one project");
+      assertEqual(result[0].path, "/tmp/single", "single path");
+    },
+
+    "returns empty array when no project info": () => {
+      const result = normalizeProjects({});
+      assertEqual(result.length, 0, "empty");
+    },
+
+    "filters null and invalid entries": () => {
+      const result = normalizeProjects({ projects: [null, "", "undefined", "/tmp/valid"] });
+      assertEqual(result.length, 1, "only valid entry");
+      assertEqual(result[0].path, "/tmp/valid", "valid path");
+    },
+
+    "forces primary when no explicit primary in array": () => {
+      const result = normalizeProjects({
+        projects: [
+          { path: "/tmp/a", role: "secondary" },
+          { path: "/tmp/b", role: "secondary" },
+        ],
+      });
+      assertEqual(result[0].role, "primary", "first forced to primary");
+    },
+
+    "preserves origin and baseCommit": () => {
+      const result = normalizeProjects({
+        projects: [{ path: "/tmp/a", origin: "/tmp/origin", baseCommit: "abc123" }],
+      });
+      assertEqual(result[0].origin, "/tmp/origin", "origin resolved");
+      assertEqual(result[0].baseCommit, "abc123", "baseCommit preserved");
+    },
+
+    "assigns basename as default name": () => {
+      const result = normalizeProjects({ projects: ["/tmp/my-project"] });
+      assertEqual(result[0].name, "my-project", "basename as name");
     },
   });
 
