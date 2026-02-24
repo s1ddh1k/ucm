@@ -979,6 +979,58 @@ title: line1\\nline2
     },
   });
 
+  // ── TaskDag.save ──
+  await runGroup("TaskDag.save", {
+    "allows concurrent saves for separate instances with same task id": async () => {
+      const id = `forge-save-race-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const dir = path.join(FORGE_DIR, id);
+      const filePath = path.join(dir, "task.json");
+      const dagA = new TaskDag({ id, title: "alpha" });
+      const dagB = new TaskDag({ id, title: "beta" });
+
+      try {
+        await Promise.all([dagA.save(), dagB.save()]);
+        const parsed = JSON.parse(await readFile(filePath, "utf-8"));
+        assertEqual(parsed.id, id, "saved task id");
+        assert(
+          parsed.title === "alpha" || parsed.title === "beta",
+          "last writer wins without write corruption",
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+
+    "wraps save errors with taskId and filePath context": async () => {
+      const id = `forge-save-error-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const dir = path.join(FORGE_DIR, id);
+      const filePath = path.join(dir, "task.json");
+      const dag = new TaskDag({ id, title: "context test" });
+
+      await mkdir(filePath, { recursive: true });
+      let err;
+      try {
+        await dag.save();
+      } catch (e) {
+        err = e;
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+
+      assert(!!err, "save should throw when destination is a directory");
+      assert(
+        err.message.includes(`task save failed: ${id}`),
+        "error contains task id",
+      );
+      assert(
+        err.message.includes(filePath),
+        "error contains destination file path",
+      );
+      assertEqual(err.taskId, id, "error.taskId");
+      assertEqual(err.filePath, filePath, "error.filePath");
+    },
+  });
+
   // ── TaskDag.load ──
   await runGroup("TaskDag.load", {
     "throws task not found when task.json is missing": async () => {
