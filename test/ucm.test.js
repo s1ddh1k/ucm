@@ -3579,6 +3579,53 @@ function testUiServerResolveHomePath() {
   );
 }
 
+function testUiServerResolvePathWithinHome() {
+  const { resolvePathWithinHome } = require("../lib/ucm-ui-server.js");
+  const home = os.homedir();
+
+  const homeRoot = resolvePathWithinHome("~");
+  assert(homeRoot.allowed, "uiServer path guard: allows home root");
+  assertEqual(
+    homeRoot.resolved,
+    home,
+    "uiServer path guard: resolves home root correctly",
+  );
+
+  const nested = resolvePathWithinHome("~/ucm-test");
+  assert(nested.allowed, "uiServer path guard: allows nested home path");
+  assertEqual(
+    nested.resolved,
+    path.join(home, "ucm-test"),
+    "uiServer path guard: resolves nested home path correctly",
+  );
+
+  const escaped = resolvePathWithinHome(path.join(home, ".."));
+  assert(!escaped.allowed, "uiServer path guard: blocks parent directory escape");
+}
+
+function testUiServerGitInitRouteUsesPathGuardAndAsyncExec() {
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "lib", "ucm-ui-server.js"),
+    "utf-8",
+  );
+  const start = src.indexOf('pathname === "/api/git-init"');
+  const end = src.indexOf("// Artifacts API (local)");
+  const section = start >= 0 && end > start ? src.slice(start, end) : "";
+
+  assert(
+    section.includes("resolvePathWithinHome(dirPath)"),
+    "uiServer git-init: validates path is within home",
+  );
+  assert(
+    section.includes("await execFileAsync("),
+    "uiServer git-init: uses async process execution",
+  );
+  assert(
+    !section.includes("execFileSync("),
+    "uiServer git-init: avoids sync process execution in request path",
+  );
+}
+
 function testDashboardCommandPassesDevFlag() {
   const src = fs.readFileSync(
     path.join(__dirname, "..", "bin", "ucm.js"),
@@ -16294,6 +16341,8 @@ async function main() {
   testDashboardCommandUsesCrossPlatformOpen();
   testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();
   testUiServerResolveHomePath();
+  testUiServerResolvePathWithinHome();
+  testUiServerGitInitRouteUsesPathGuardAndAsyncExec();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
   testUiRightPanelRefinementGuard();
