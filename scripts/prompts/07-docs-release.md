@@ -20,3 +20,4 @@
   - `node test/core.test.js` (코어)
   - `cd web && npm run build` (프론트엔드)
   - `cd ucm-desktop && bun run build` (데스크톱)
+- 작업이 끝나면 반드시 변경사항을 커밋한다 (conventional commit 형식, 한국어 설명)

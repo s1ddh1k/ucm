@@ -22,3 +22,4 @@
 
 - 수정 전후 동작이 동일한지 확인한다
 - 수정 후 `node test/core.test.js` 와 해당 파일의 require 검증을 통과시킨다
+- 작업이 끝나면 반드시 변경사항을 커밋한다 (conventional commit 형식, 한국어 설명)

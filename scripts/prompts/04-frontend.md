@@ -17,3 +17,4 @@ web/ 디렉토리에서 코드 품질 또는 UX 개선을 수행한다.
 
 - 기존 기능의 동작을 유지한 채 개선만 수행한다
 - 수정 후 `cd web && npx tsc --noEmit` 과 `cd web && npm run build` 를 통과시킨다
+- 작업이 끝나면 반드시 변경사항을 커밋한다 (conventional commit 형식, 한국어 설명)

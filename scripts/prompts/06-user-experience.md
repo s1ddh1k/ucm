@@ -17,3 +17,4 @@
 - 수정 후 `node test/core.test.js` 와 해당 파일의 검증을 통과시킨다
 - web/ 변경 시 `cd web && npx tsc --noEmit` 도 통과시킨다
 - ucm-desktop/ 변경 시 `cd ucm-desktop && bun run build` 도 통과시킨다
+- 작업이 끝나면 반드시 변경사항을 커밋한다 (conventional commit 형식, 한국어 설명)
