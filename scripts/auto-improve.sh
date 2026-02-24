@@ -47,6 +47,7 @@ Options:
       --max-rate-retries <N> Max rate-limit retries before stopping (default: 20)
       --backoff-initial <s>  Initial rate-limit backoff in seconds (default: 60)
       --backoff-max <s>      Maximum rate-limit backoff in seconds (default: 1800)
+      --idle-timeout <s>     Kill agent if no output for this many seconds (default: 120)
   -h, --help                 Show this help
 
 Examples:
@@ -251,6 +252,8 @@ parse_codex_line() {
 wait_and_stream() {
   local file="$1" donefile="$2" mode="${3:-raw}"
   local last=0 total line
+  local idle_start
+  idle_start=$(date +%s)
 
   while [[ ! -f "$donefile" ]]; do
     total=$(wc -l < "$file" 2>/dev/null | tr -d ' ') || total=0
@@ -263,6 +266,15 @@ wait_and_stream() {
         fi
       done < <(awk -v s="$((last + 1))" -v e="$total" 'NR>=s && NR<=e' "$file")
       last=$total
+      idle_start=$(date +%s)
+    else
+      local now
+      now=$(date +%s)
+      if [[ $((now - idle_start)) -ge "$IDLE_TIMEOUT" ]]; then
+        echo "[timeout] no output for ${IDLE_TIMEOUT}s, killing agent" | tee -a "$RUN_LOG"
+        [[ -n "$CHILD_PID" ]] && kill "$CHILD_PID" 2>/dev/null
+        return 1
+      fi
     fi
     sleep 0.2
   done
@@ -320,6 +332,7 @@ MAX_CONSECUTIVE_FAILURES=5
 MAX_RATE_RETRIES=20
 BACKOFF_INITIAL=60
 BACKOFF_MAX=1800
+IDLE_TIMEOUT=120
 PROMPT=""
 PROMPT_FILE=""
 PROMPT_NUMBER=""
@@ -372,6 +385,9 @@ while [[ $# -gt 0 ]]; do
     --backoff-max)
       require_arg "$1" "${2:-}" "$#"
       BACKOFF_MAX="$2"; shift 2 ;;
+    --idle-timeout)
+      require_arg "$1" "${2:-}" "$#"
+      IDLE_TIMEOUT="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -462,7 +478,7 @@ RUN_LOG="$LOG_DIR/run-$START_TS.log"
 
 echo "[start] backend=$BACKEND cwd=$CWD" | tee -a "$RUN_LOG"
 echo "[start] max_iterations=$MAX_ITERATIONS sleep=${SLEEP_SECONDS}s model=${MODEL:-default}" | tee -a "$RUN_LOG"
-echo "[start] max_failures=$MAX_CONSECUTIVE_FAILURES max_rate_retries=$MAX_RATE_RETRIES" | tee -a "$RUN_LOG"
+echo "[start] max_failures=$MAX_CONSECUTIVE_FAILURES max_rate_retries=$MAX_RATE_RETRIES idle_timeout=${IDLE_TIMEOUT}s" | tee -a "$RUN_LOG"
 echo "[start] prompt: ${PROMPT:0:120}..." | tee -a "$RUN_LOG"
 
 # ── backend-specific runner functions ──
@@ -488,7 +504,13 @@ run_codex() {
   CHILD_PID=$!
 
   # Stream output in foreground — poll-based, no pipes
-  wait_and_stream "$out_file" "$donefile" jsonl
+  if ! wait_and_stream "$out_file" "$donefile" jsonl; then
+    wait "$CHILD_PID" 2>/dev/null
+    rm -f "$donefile"
+    CHILD_PID=""
+    cat "$out_file" >> "$RUN_LOG"
+    return 1
+  fi
 
   wait "$CHILD_PID" 2>/dev/null
   local ec=0
@@ -519,7 +541,13 @@ run_claude() {
   CHILD_PID=$!
 
   # Stream output in foreground — poll-based, no pipes
-  wait_and_stream "$out_file" "$donefile" raw
+  if ! wait_and_stream "$out_file" "$donefile" raw; then
+    wait "$CHILD_PID" 2>/dev/null
+    rm -f "$donefile"
+    CHILD_PID=""
+    cat "$out_file" >> "$RUN_LOG"
+    return 1
+  fi
 
   wait "$CHILD_PID" 2>/dev/null
   local ec=0
