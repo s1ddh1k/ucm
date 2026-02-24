@@ -3579,6 +3579,73 @@ function testUiServerResolveHomePath() {
   );
 }
 
+function testUiServerSessionIdValidation() {
+  const { isSafeSessionId } = require("../lib/ucm-ui-server.js");
+  assert(
+    isSafeSessionId("123e4567-e89b-12d3-a456-426614174000"),
+    "uiServer sessionId guard: allows UUID-like session id",
+  );
+  assert(
+    isSafeSessionId("session_abc-123"),
+    "uiServer sessionId guard: allows alnum/underscore/hyphen",
+  );
+  assert(
+    !isSafeSessionId(""),
+    "uiServer sessionId guard: rejects empty session id",
+  );
+  assert(
+    !isSafeSessionId("../escape"),
+    "uiServer sessionId guard: rejects path traversal pattern",
+  );
+  assert(
+    !isSafeSessionId("space id"),
+    "uiServer sessionId guard: rejects whitespace",
+  );
+}
+
+function testUiServerSessionWatcherUsesAsyncFsAndValidation() {
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "lib", "ucm-ui-server.js"),
+    "utf-8",
+  );
+  const discoverStart = src.indexOf("async function discoverClaudeProjectDir");
+  const watcherStart = src.indexOf("async function startSessionWatcher");
+  const providersStart = src.indexOf("// PTY provider configurations");
+  const discoverSection =
+    discoverStart >= 0 && watcherStart > discoverStart
+      ? src.slice(discoverStart, watcherStart)
+      : "";
+  const watcherSection =
+    watcherStart >= 0 && providersStart > watcherStart
+      ? src.slice(watcherStart, providersStart)
+      : "";
+
+  assert(
+    discoverSection.includes("if (!isSafeSessionId(knownSessionId)) return null;"),
+    "uiServer watcher: validates known session id before file path use",
+  );
+  assert(
+    discoverSection.includes("await stat("),
+    "uiServer watcher: uses async stat in session discovery path",
+  );
+  assert(
+    !discoverSection.includes("statSync("),
+    "uiServer watcher: avoids statSync in session discovery path",
+  );
+  assert(
+    watcherSection.includes("await readdir(projectDir)"),
+    "uiServer watcher: uses async readdir for initial known sessions",
+  );
+  assert(
+    !watcherSection.includes("readdirSync("),
+    "uiServer watcher: avoids readdirSync for initial known sessions",
+  );
+  assert(
+    watcherSection.includes("if (!isSafeSessionId(newId)) return;"),
+    "uiServer watcher: validates new session id from filesystem events",
+  );
+}
+
 async function testUiServerResolvePathWithinHome() {
   const { resolvePathWithinHome } = require("../lib/ucm-ui-server.js");
   const home = os.homedir();
@@ -16405,6 +16472,8 @@ async function main() {
   testDashboardCommandUsesCrossPlatformOpen();
   testUiServerTaskIdRoutesAcceptForgeAndLegacyIds();
   testUiServerResolveHomePath();
+  testUiServerSessionIdValidation();
+  testUiServerSessionWatcherUsesAsyncFsAndValidation();
   await testUiServerResolvePathWithinHome();
   await testUiServerResolvePathWithinHomeBlocksSymlinkEscape();
   testUiServerGitInitRouteUsesPathGuardAndAsyncExec();
