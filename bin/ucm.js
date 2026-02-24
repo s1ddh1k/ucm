@@ -1819,13 +1819,48 @@ const ERROR_HINTS = {
     "지원하지 않는 provider입니다. claude 또는 codex를 사용하세요.",
   "concurrent task limit":
     "동시 실행 가능한 태스크 수를 초과했습니다. UCM_MAX_CONCURRENT 환경변수로 조정할 수 있습니다.",
+  "merge queue not available":
+    "머지 큐를 사용할 수 없습니다. 데몬 설정을 확인하고 다시 시도하세요.",
+  "task is not in review state":
+    "현재 상태에서는 머지 큐 재시도를 할 수 없습니다. `ucm status <task-id>`로 상태를 확인한 뒤 review 상태에서 다시 시도하세요.",
+  "task has no project":
+    "태스크에 프로젝트 경로가 없습니다. 태스크 정의의 project 항목을 확인하세요.",
+  "not found in merge queue or currently processing":
+    "대상 태스크가 머지 큐에 없거나 이미 처리 중입니다. `ucm merge-queue`로 현재 큐를 확인하세요.",
+  "can only change priority of pending tasks":
+    "우선순위는 pending 상태에서만 변경할 수 있습니다. `ucm status <task-id>`로 상태를 확인하세요.",
+  "priority must be a number":
+    "우선순위 값이 숫자가 아닙니다. 예: `ucm priority <task-id> 10`",
+  "taskId required":
+    "task-id가 누락되었습니다. 명령 뒤에 task-id를 지정해 다시 시도하세요.",
 };
+
+function resolveErrorHint(message) {
+  const noPendingGate = message.match(/no pending gate for task:\s*([^\s]+)/);
+  if (noPendingGate) {
+    const taskId = noPendingGate[1];
+    return `현재 승인 대기 중인 스테이지가 없습니다. \`ucm status ${taskId}\`로 상태를 확인하세요.`;
+  }
+
+  const noActivePipeline = message.match(
+    /no active pipeline for task:\s*([^\s]+)/,
+  );
+  if (noActivePipeline) {
+    const taskId = noActivePipeline[1];
+    return `실행 중인 파이프라인이 없습니다. 이미 종료되었는지 \`ucm status ${taskId}\`로 확인하세요.`;
+  }
+
+  const staticHint = Object.entries(ERROR_HINTS).find(([key]) =>
+    message.includes(key),
+  );
+  return staticHint ? staticHint[1] : null;
+}
 
 main().catch(async (e) => {
   const msg = e.message || String(e);
-  const hint = Object.entries(ERROR_HINTS).find(([key]) => msg.includes(key));
+  const hint = resolveErrorHint(msg);
   if (hint) {
-    console.error(`error: ${msg}\nhint: ${hint[1]}`);
+    console.error(`error: ${msg}\nhint: ${hint}`);
   } else {
     console.error(`error: ${msg}`);
   }

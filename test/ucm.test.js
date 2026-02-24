@@ -11177,6 +11177,95 @@ async function testCliAnalyzeErrorExitsNonZero() {
   }
 }
 
+async function testCliGateApproveErrorShowsActionableHint() {
+  const tempRoot = path.join(
+    "/tmp",
+    `ucg-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const taskId = "task-gate-1";
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stats") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { daemonStatus: "running" },
+          })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stage_gate_approve") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: false,
+            error: `no pending gate for task: ${taskId}`,
+          })}\n`,
+        );
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(["gate", "approve", taskId], {
+      env: { UCM_DIR: tempRoot },
+      timeoutMs: 3000,
+    });
+
+    assertEqual(result.code, 1, "cli gate approve error: exits with code 1");
+    assert(
+      (result.stderr || "").includes(`error: no pending gate for task: ${taskId}`),
+      "cli gate approve error: surfaces daemon error",
+    );
+    assert(
+      (result.stderr || "").includes(
+        `hint: 현재 승인 대기 중인 스테이지가 없습니다. \`ucm status ${taskId}\`로 상태를 확인하세요.`,
+      ),
+      "cli gate approve error: prints actionable hint",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
 async function testCliDaemonStopReportsShutdownFailure() {
   const tempRoot = path.join(
     "/tmp",
@@ -16351,6 +16440,7 @@ async function main() {
   testCliTaskIdErrorsIncludeActionHint();
   testCliRejectCommandsRequireConfirmation();
   await testCliAnalyzeErrorExitsNonZero();
+  await testCliGateApproveErrorShowsActionableHint();
   await testCliDaemonStopReportsShutdownFailure();
   await testForgeResumeRejectsNonResumableStatus();
   await testForgeResumeAllowsFailedStatus();
