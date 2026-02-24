@@ -1881,7 +1881,7 @@ const ERROR_HINTS = {
   "token budget exceeded":
     "토큰 예산을 초과했습니다. `ucm resume <id> --budget <더큰값>`으로 재시도하세요.",
   "worktree locked":
-    "다른 작업이 진행 중입니다. `ucm list --status in_progress`로 확인하세요.",
+    "다른 작업이 진행 중입니다. `ucm list --status running`으로 확인하세요.",
   "daemon failed to start":
     "데몬 시작에 실패했습니다. 로그를 확인하세요: ~/.ucm/daemon/ucmd.log",
   "missing required artifacts":

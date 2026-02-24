@@ -139,9 +139,7 @@ ucm-dev release
 npm test
 
 # 릴리즈 전 최소 검증
-node test/core.test.js
-cd web && npm run build
-cd ucm-desktop && bun run build
+npm run release:check   # core test + web/desktop 프로덕션 빌드
 
 # 추가 개별 실행
 node test/ucm.test.js          # UCM 종합 테스트
@@ -242,9 +240,7 @@ npm run build    # 프로덕션 빌드 → web/dist/
 
 ```bash
 # 1. 릴리즈 전 최소 검증
-node test/core.test.js
-cd web && npm run build && cd ..
-cd ucm-desktop && bun run build && cd ..
+npm run release:check
 
 # 2. (선택) 전체 테스트 스위트
 npm test

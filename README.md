@@ -65,16 +65,21 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm approve <id>` | 리뷰 승인 (머지) |
 | `ucm reject <id> --feedback "..."` | 반려 (피드백 반영 재작업) |
 | `ucm resume <id>` | 중단된 작업 재개 |
-| `ucm ui` | 웹 대시보드 |
+| `ucm ui` | UI 서버 시작 (`http://localhost:17172`) |
 | `ucm dashboard` | 브라우저에서 대시보드 열기 |
-| `ucm submit/start` | 데몬 큐 제출 및 실행 시작 |
+| `ucm submit <file.md>` / `ucm start <id>` | 큐 제출 / 실행 시작 |
+| `ucm cancel/retry/delete/priority` | 태스크 취소/재시도/삭제/우선순위 조정 |
+| `ucm gate approve/reject <id>` | 스테이지 승인 게이트 제어 |
 | `ucm analyze` | 프로젝트 분석 및 제안 생성 |
 | `ucm research` | 프로젝트 리서치 및 전략 제안 |
+| `ucm proposals` / `ucm proposal ...` | 제안서 조회/처리 |
 | `ucm daemon start/stop` | 데몬 관리 |
 | `ucm pause/resume/stats` | 데몬 일시정지/재개/통계 |
 | `ucm merge-queue` | 머지 큐 상태/재시도/스킵 |
 | `ucm observe [--status]` | 수동 관찰 트리거/상태 확인 |
+| `ucm init` | 초기 설정/환경 점검 |
 | `ucm chat` | 대화형 AI 관리 모드 |
+| `ucm release` | 릴리즈 배포 (`~/.ucm/release/`) |
 
 전체 명령/옵션은 `ucm --help`를 기준으로 한다.
 
@@ -119,9 +124,9 @@ ucm-dev daemon stop && ucm-dev daemon start   # 개발 데몬
 릴리즈 전 최소 검증:
 
 ```bash
-node test/core.test.js
-cd web && npm run build
-cd ucm-desktop && bun run build
+npm run release:check
+# (선택) 전체 회귀
+npm test
 ```
 
 ## 문서

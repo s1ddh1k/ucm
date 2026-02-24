@@ -24,7 +24,8 @@
     "templates/",
     "skill/",
     "scripts/",
-    "docs/"
+    "docs/",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node test/core.test.js && node test/ucm.test.js && node test/hivemind.test.js && node test/integration.js && node test/browser.js",
