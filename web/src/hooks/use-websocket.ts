@@ -35,6 +35,7 @@ export function useWebSocket() {
   const queryClient = useQueryClient();
   const setStatus = useDaemonStore((s) => s.setStatus);
   const setConnected = useDaemonStore((s) => s.setConnected);
+  const setStatsLastUpdatedAt = useDaemonStore((s) => s.setStatsLastUpdatedAt);
   const addActivity = useEventsStore((s) => s.addActivity);
   const addTaskLog = useEventsStore((s) => s.addTaskLog);
   const clearTaskLogs = useEventsStore((s) => s.clearTaskLogs);
@@ -174,6 +175,7 @@ export function useWebSocket() {
       wsManager.on("ws:disconnected", () => {
         setConnected(false);
         setStatus("offline");
+        setStatsLastUpdatedAt(null);
       }),
 
       // Daemon status
@@ -279,6 +281,7 @@ export function useWebSocket() {
           data.resources
         ) {
           queryClient.setQueryData(["stats"], data);
+          setStatsLastUpdatedAt(Date.now());
           const daemonStatus = data.daemonStatus as string;
           if (
             daemonStatus === "running" ||
@@ -463,6 +466,7 @@ export function useWebSocket() {
     queryClient,
     setStatus,
     setConnected,
+    setStatsLastUpdatedAt,
     addActivity,
     addTaskLog,
     clearTaskLogs,

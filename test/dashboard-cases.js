@@ -67,6 +67,12 @@ const apiTestGroups = [
           const res = await env.httpRequest("GET", `/api/status/${ctx.taskId}`);
           if (res.status !== 200)
             return { pass: false, reason: `status ${res.status}` };
+          if (!res.body?.id) return { pass: false, reason: "no id returned" };
+          if (!res.body?.title)
+            return { pass: false, reason: "no title returned" };
+          if (!res.body?.state && !res.body?.status) {
+            return { pass: false, reason: "no state/status returned" };
+          }
           return { pass: true };
         },
       },
@@ -252,6 +258,12 @@ const apiTestGroups = [
           const res = await env.httpRequest("GET", "/api/stats");
           if (res.status !== 200)
             return { pass: false, reason: `status ${res.status}` };
+          if (res.body?.daemonStatus !== "paused") {
+            return {
+              pass: false,
+              reason: `expected paused, got ${String(res.body?.daemonStatus)}`,
+            };
+          }
           return { pass: true };
         },
       },
@@ -268,6 +280,12 @@ const apiTestGroups = [
           const res = await env.httpRequest("GET", "/api/stats");
           if (res.status !== 200)
             return { pass: false, reason: `status ${res.status}` };
+          if (res.body?.daemonStatus !== "running") {
+            return {
+              pass: false,
+              reason: `expected running, got ${String(res.body?.daemonStatus)}`,
+            };
+          }
           return { pass: true };
         },
       },

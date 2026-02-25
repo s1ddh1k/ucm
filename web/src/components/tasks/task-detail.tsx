@@ -723,8 +723,22 @@ function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
   }
 
   if (isError && !logs && wsLogs.length === 0) {
-    const description =
+    const statusCode =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      typeof (error as { status: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : null;
+    const baseMessage =
       error instanceof Error ? error.message : "Failed to load logs.";
+    const recoveryHint =
+      statusCode === 404
+        ? "This task may have been deleted. Refresh the task list and retry."
+        : statusCode && statusCode >= 500
+          ? "Daemon may be restarting. Check daemon status and retry."
+          : `Check daemon status, then retry. You can also run "ucm logs ${taskId}" in CLI.`;
+    const description = `${baseMessage}${statusCode ? ` (HTTP ${statusCode})` : ""}. ${recoveryHint}`;
     return (
       <EmptyState
         icon={Ban}

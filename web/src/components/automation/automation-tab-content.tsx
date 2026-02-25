@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RotateCw } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { buildActionErrorMessage } from "@/lib/error";
 import { cn } from "@/lib/utils";
 import { api, type AutomationConfig } from "@/api/client";
 import { useProjectCatalogQuery } from "@/queries/projects";
@@ -21,6 +25,7 @@ const TOGGLE_META: Record<ToggleKey, { label: string; description: string }> = {
 
 export function AutomationTabContent() {
   const queryClient = useQueryClient();
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const { data: automationConfig, isLoading } = useQuery({
     queryKey: ["automation"],
     queryFn: () => api.automation.get(),
@@ -35,6 +40,16 @@ export function AutomationTabContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["automation"] });
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      setLastSavedAt(Date.now());
+    },
+    onError: (error) => {
+      toast.error(
+        buildActionErrorMessage(
+          "Failed to update automation settings",
+          error,
+          "Verify daemon status, then retry.",
+        ),
+      );
     },
   });
 
@@ -78,6 +93,16 @@ export function AutomationTabContent() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">Global Automation</CardTitle>
+          <div className="text-xs text-muted-foreground min-h-4">
+            {mutation.isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <RotateCw className="h-3 w-3 animate-spin" />
+                Saving automation settings...
+              </span>
+            ) : lastSavedAt ? (
+              <span>Saved at {new Date(lastSavedAt).toLocaleTimeString()}</span>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {TOGGLE_KEYS.map((key) => (

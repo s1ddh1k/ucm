@@ -521,10 +521,16 @@ async function cmdSubmit(opts) {
   // inline submit
   if (!opts.title) {
     console.error("--title 필수 (또는 태스크 파일 지정)");
+    console.error(
+      'hint: `ucm submit <task-file>` 또는 `ucm submit --title "..." --project /path/to/repo` 형식으로 실행하세요.',
+    );
     process.exit(1);
   }
   if (!opts.project) {
     console.error("--project 필수");
+    console.error(
+      "hint: `ucm projects`로 프로젝트를 확인하거나 `--project /path/to/repo`를 지정하세요.",
+    );
     process.exit(1);
   }
 
@@ -602,6 +608,8 @@ async function cmdStatus(opts) {
   if (!taskId) {
     // daemon status
     const status = await socketRequest({ method: "status", params: {} });
+    const refreshedAt = new Date().toISOString();
+    console.log(`last refreshed: ${refreshedAt}`);
     console.log(`pid:          ${status.pid}`);
     console.log(`uptime:       ${formatUptime(status.uptime)}`);
     console.log(`status:       ${status.daemonStatus}`);
@@ -612,6 +620,13 @@ async function cmdStatus(opts) {
     console.log(`completed:    ${status.tasksCompleted}`);
     console.log(`failed:       ${status.tasksFailed}`);
     console.log(`total spawns: ${status.totalSpawns}`);
+    if (status.daemonStatus === "paused") {
+      console.log("hint: 데몬이 일시정지 상태입니다. `ucm resume`로 재개하세요.");
+    } else if (status.daemonStatus === "offline") {
+      console.log(
+        "hint: 데몬이 오프라인입니다. `ucm daemon start`로 시작한 뒤 다시 확인하세요.",
+      );
+    }
     return;
   }
 
@@ -1902,7 +1917,9 @@ async function cmdAuto(opts) {
 
   if (!sub) {
     // ucm auto — show current automation config
-    const result = await socketRequest({ method: "get_automation" });
+    const result = await socketRequestWithProgress("automation 설정 조회", {
+      method: "get_automation",
+    });
     for (const key of KEYS) {
       const val = result[key] ? "on" : "off";
       console.log(`${key}: ${val}`);
@@ -1913,7 +1930,10 @@ async function cmdAuto(opts) {
   if (sub === "on") {
     const patch = {};
     for (const key of KEYS) patch[key] = true;
-    await socketRequest({ method: "set_automation", params: patch });
+    await socketRequestWithProgress("automation 설정 변경", {
+      method: "set_automation",
+      params: patch,
+    });
     console.error("all automation toggles enabled");
     return;
   }
@@ -1921,7 +1941,10 @@ async function cmdAuto(opts) {
   if (sub === "off") {
     const patch = {};
     for (const key of KEYS) patch[key] = false;
-    await socketRequest({ method: "set_automation", params: patch });
+    await socketRequestWithProgress("automation 설정 변경", {
+      method: "set_automation",
+      params: patch,
+    });
     console.error("all automation toggles disabled");
     return;
   }
@@ -1937,7 +1960,10 @@ async function cmdAuto(opts) {
       console.error("값은 on 또는 off 중 하나여야 합니다.");
       process.exit(1);
     }
-    await socketRequest({ method: "set_automation", params: { [key]: val === "on" } });
+    await socketRequestWithProgress("automation 설정 변경", {
+      method: "set_automation",
+      params: { [key]: val === "on" },
+    });
     console.error(`${key}: ${val}`);
     return;
   }
@@ -1956,7 +1982,7 @@ async function cmdMergeQueue(opts) {
     if (!taskId) {
       failMissingTaskId("ucm merge-queue retry <task-id>");
     }
-    const result = await socketRequest({
+    const result = await socketRequestWithProgress("merge queue 재시도", {
       method: "merge_queue_retry",
       params: { taskId },
     });
@@ -1969,7 +1995,7 @@ async function cmdMergeQueue(opts) {
     if (!taskId) {
       failMissingTaskId("ucm merge-queue skip <task-id>");
     }
-    const result = await socketRequest({
+    const result = await socketRequestWithProgress("merge queue 건너뛰기", {
       method: "merge_queue_skip",
       params: { taskId },
     });
@@ -1980,7 +2006,10 @@ async function cmdMergeQueue(opts) {
   // default: status
   const params = {};
   if (opts.project) params.project = path.resolve(opts.project);
-  const status = await socketRequest({ method: "merge_queue_status", params });
+  const status = await socketRequestWithProgress("merge queue 상태 조회", {
+    method: "merge_queue_status",
+    params,
+  });
 
   if (typeof status === "object" && !Array.isArray(status)) {
     const projects = Object.keys(status);

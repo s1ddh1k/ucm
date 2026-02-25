@@ -10284,6 +10284,109 @@ async function testCliStartShowsProgressWhenDaemonResponseSlow() {
   }
 }
 
+async function testCliStatusWithoutTaskShowsRefreshAndPausedHint() {
+  const tempRoot = path.join(
+    "/tmp",
+    `ucst-${process.pid}-${crypto.randomBytes(2).toString("hex")}`,
+  );
+  const daemonDir = path.join(tempRoot, "daemon");
+  const sockPath = path.join(daemonDir, "ucm.sock");
+  await mkdir(daemonDir, { recursive: true });
+
+  const server = net.createServer((conn) => {
+    let buffer = "";
+    conn.on("data", (chunk) => {
+      buffer += chunk.toString("utf-8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+
+      let request;
+      try {
+        request = JSON.parse(buffer.slice(0, newlineIndex));
+      } catch {
+        conn.end(
+          `${JSON.stringify({ id: null, ok: false, error: "invalid request" })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "stats") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: { daemonStatus: "running" },
+          })}\n`,
+        );
+        return;
+      }
+
+      if (request.method === "status") {
+        conn.end(
+          `${JSON.stringify({
+            id: request.id || null,
+            ok: true,
+            data: {
+              pid: 4242,
+              uptime: 125,
+              daemonStatus: "paused",
+              pausedAt: "2026-02-25T10:00:00.000Z",
+              pauseReason: "manual pause",
+              activeTasks: ["task-1"],
+              queueLength: 3,
+              tasksCompleted: 11,
+              tasksFailed: 2,
+              totalSpawns: 19,
+            },
+          })}\n`,
+        );
+        return;
+      }
+
+      conn.end(
+        `${JSON.stringify({
+          id: request.id || null,
+          ok: false,
+          error: `unknown method: ${request.method}`,
+        })}\n`,
+      );
+    });
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(sockPath, resolve);
+    });
+
+    const result = await runCliCommand(["status"], {
+      env: { UCM_DIR: tempRoot },
+      timeoutMs: 3000,
+    });
+
+    assertEqual(result.code, 0, "cli status summary: exits with code 0");
+    assert(
+      (result.stdout || "").includes("last refreshed:"),
+      "cli status summary: prints refresh timestamp",
+    );
+    assert(
+      (result.stdout || "").includes("status:       paused"),
+      "cli status summary: prints paused daemon status",
+    );
+    assert(
+      (result.stdout || "").includes(
+        "hint: 데몬이 일시정지 상태입니다. `ucm resume`로 재개하세요.",
+      ),
+      "cli status summary: prints actionable paused hint",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    try {
+      await rm(tempRoot, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
 async function testCliAnalyzeAbortStatusErrorShowsActionableHint() {
   const tempRoot = path.join(
     "/tmp",
@@ -14898,6 +15001,7 @@ async function main() {
   testCliRejectCommandsRequireConfirmation();
   await testCliAnalyzeErrorExitsNonZero();
   await testCliStartShowsProgressWhenDaemonResponseSlow();
+  await testCliStatusWithoutTaskShowsRefreshAndPausedHint();
   await testCliAnalyzeAbortStatusErrorShowsActionableHint();
   await testCliGateApproveErrorShowsActionableHint();
   await testCliDaemonStopReportsShutdownFailure();

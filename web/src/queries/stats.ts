@@ -1,11 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
+import { useDaemonStore } from "@/stores/daemon";
 
 export function useStatsQuery() {
   return useQuery({
     queryKey: ["stats"],
-    queryFn: api.stats.get,
+    queryFn: async () => {
+      const data = await api.stats.get();
+      useDaemonStore.getState().setStatsLastUpdatedAt(Date.now());
+      return data;
+    },
     refetchInterval: useSmartInterval(30000),
   });
 }
