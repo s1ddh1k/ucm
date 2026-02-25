@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 const path = require("node:path");
 const os = require("node:os");
-const { mkdtemp, mkdir, writeFile, rm, utimes } = require("node:fs/promises");
+const {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  utimes,
+  symlink,
+} = require("node:fs/promises");
 const {
   startSuiteTimer,
   stopSuiteTimer,
@@ -110,6 +117,39 @@ async function main() {
         const chunks = await documentAdapter.read(scanned[0]);
         assert(chunks.length >= 1, "read returns chunk(s)");
         assertEqual(chunks[0].metadata.adapter, "document", "adapter metadata");
+      } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    },
+    "scan ignores symlinked markdown files": async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ucm-doc-adapter-"));
+      try {
+        const safeMarkdown = path.join(tempRoot, "safe.md");
+        const sensitiveTarget = path.join(tempRoot, "sensitive.txt");
+        const linkedMarkdown = path.join(tempRoot, "leak.md");
+
+        await writeFile(safeMarkdown, "## Safe\\n\\n" + "S".repeat(120));
+        await writeFile(sensitiveTarget, "TOP SECRET\\n" + "X".repeat(180));
+
+        try {
+          await symlink(sensitiveTarget, linkedMarkdown);
+        } catch (e) {
+          // Some environments can block symlink creation; skip this case there.
+          if (e?.code === "EPERM" || e?.code === "EACCES") return;
+          throw e;
+        }
+
+        const scanned = await documentAdapter.scan(
+          { processed: {} },
+          { dirs: [tempRoot] },
+        );
+        const refs = scanned.map((item) => item.ref).sort();
+        assertEqual(refs.includes("safe.md"), true, "regular markdown is scanned");
+        assertEqual(
+          refs.includes("leak.md"),
+          false,
+          "symlinked markdown is excluded",
+        );
       } finally {
         await rm(tempRoot, { recursive: true, force: true });
       }
