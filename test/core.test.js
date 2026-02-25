@@ -63,6 +63,7 @@ const {
 // ── parseTaskFile / serializeTaskFile tests ──
 
 const {
+  parseArgs,
   parseTaskFile,
   serializeTaskFile,
   expandHome,
@@ -310,6 +311,88 @@ async function main() {
   });
 
   // ── parseTaskFile / serializeTaskFile ──
+  await runGroup("parseArgs", {
+    "returns foreground/dev flags and positional command": () => {
+      const opts = parseArgs([
+        "node",
+        "ucmd",
+        "--foreground",
+        "--dev",
+        "daemon",
+      ]);
+      assertEqual(opts.foreground, true, "foreground flag set");
+      assertEqual(opts.dev, true, "dev flag set");
+      assertEqual(opts.command, "daemon", "positional command parsed");
+    },
+
+    "exits with status 0 for --help": () => {
+      const originalExit = process.exit;
+      const originalLog = console.log;
+      let exitCode = null;
+      let logCalled = false;
+
+      process.exit = (code) => {
+        exitCode = code;
+        throw new Error("PARSE_ARGS_EXIT");
+      };
+      console.log = () => {
+        logCalled = true;
+      };
+
+      let threw = false;
+      try {
+        parseArgs(["node", "ucmd", "--help"]);
+      } catch (e) {
+        threw = true;
+        assertEqual(e.message, "PARSE_ARGS_EXIT", "help triggers exit path");
+      } finally {
+        process.exit = originalExit;
+        console.log = originalLog;
+      }
+
+      assert(threw, "parseArgs help exits");
+      assertEqual(exitCode, 0, "help exits with code 0");
+      assert(logCalled, "help logs usage");
+    },
+
+    "exits with status 1 for unknown option": () => {
+      const originalExit = process.exit;
+      const originalError = console.error;
+      let exitCode = null;
+      const errors = [];
+
+      process.exit = (code) => {
+        exitCode = code;
+        throw new Error("PARSE_ARGS_EXIT");
+      };
+      console.error = (...args) => {
+        errors.push(args.join(" "));
+      };
+
+      let threw = false;
+      try {
+        parseArgs(["node", "ucmd", "--bogus-option"]);
+      } catch (e) {
+        threw = true;
+        assertEqual(e.message, "PARSE_ARGS_EXIT", "unknown option exits");
+      } finally {
+        process.exit = originalExit;
+        console.error = originalError;
+      }
+
+      assert(threw, "parseArgs unknown option exits");
+      assertEqual(exitCode, 1, "unknown option exits with code 1");
+      assert(
+        errors.some((line) => line.includes("알 수 없는 옵션")),
+        "unknown option error message logged",
+      );
+      assert(
+        errors.some((line) => line.includes("도움말: ucmd --help")),
+        "help hint logged",
+      );
+    },
+  });
+
   await runGroup("parseTaskFile", {
     "parses YAML frontmatter": () => {
       const content = `---
@@ -361,12 +444,45 @@ tokenUsage: !!json {"input":100,"output":50}
       );
     },
 
+    "falls back to null for malformed !!json payload": () => {
+      const content = `---
+tokenUsage: !!json {"input":100,
+---`;
+      const { meta } = parseTaskFile(content);
+      assertEqual(meta.tokenUsage, null, "invalid !!json becomes null");
+    },
+
     "handles newline escaping": () => {
       const content = `---
 title: line1\\nline2
 ---`;
       const { meta } = parseTaskFile(content);
       assertEqual(meta.title, "line1\nline2", "escaped newline");
+    },
+
+    "keeps id and dedupHash as strings even when numeric-like": () => {
+      const content = `---
+id: 12345
+dedupHash: 9007199254740993
+priority: 7
+---`;
+      const { meta } = parseTaskFile(content);
+      assertEqual(meta.id, "12345", "id stays string");
+      assertEqual(
+        meta.dedupHash,
+        "9007199254740993",
+        "dedupHash stays string",
+      );
+      assertEqual(meta.priority, 7, "other numeric fields still parse numbers");
+    },
+
+    "returns original body when frontmatter end marker is missing": () => {
+      const content = `---
+id: broken
+title: missing end marker`;
+      const { meta, body } = parseTaskFile(content);
+      assertDeepEqual(meta, {}, "invalid frontmatter yields empty meta");
+      assertEqual(body, content, "original content preserved as body");
     },
   });
 
