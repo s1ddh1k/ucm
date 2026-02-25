@@ -55,6 +55,9 @@ const {
 const {
   sanitizeContent,
   createWorktrees,
+  loadWorkspace,
+  loadWorkspaceSync,
+  getWorktreeDiff,
   acquireLock,
   releaseLock,
   cleanupTask,
@@ -707,6 +710,108 @@ title: missing end marker`;
 
       await cleanupTask(taskId);
       await rm(baseTmp, { recursive: true, force: true });
+    },
+  });
+
+  await runGroup("worktree metadata failure paths", {
+    "loadWorkspace returns null and logs when workspace.json is malformed": async () => {
+      const taskId = `forge-workspace-async-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const taskDir = path.join(WORKTREES_DIR, taskId);
+      const workspacePath = path.join(taskDir, "workspace.json");
+      const originalConsoleError = console.error;
+      const logs = [];
+
+      await mkdir(taskDir, { recursive: true });
+      await writeFile(workspacePath, "{broken json", "utf-8");
+      console.error = (...args) => logs.push(args.join(" "));
+
+      try {
+        const loaded = await loadWorkspace(taskId);
+        assertEqual(loaded, null, "invalid workspace should return null");
+        assert(
+          logs.some((line) =>
+            line.includes(
+              `[loadWorkspace] failed to load workspace for ${taskId}`,
+            ),
+          ),
+          "parse failure should be logged with task id",
+        );
+      } finally {
+        console.error = originalConsoleError;
+        await rm(taskDir, { recursive: true, force: true });
+      }
+    },
+
+    "loadWorkspaceSync returns null and logs when workspace.json is malformed": async () => {
+      const taskId = `forge-workspace-sync-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const taskDir = path.join(WORKTREES_DIR, taskId);
+      const workspacePath = path.join(taskDir, "workspace.json");
+      const originalConsoleError = console.error;
+      const logs = [];
+
+      await mkdir(taskDir, { recursive: true });
+      await writeFile(workspacePath, "{broken json", "utf-8");
+      console.error = (...args) => logs.push(args.join(" "));
+
+      try {
+        const loaded = loadWorkspaceSync(taskId);
+        assertEqual(loaded, null, "invalid workspace should return null");
+        assert(
+          logs.some((line) =>
+            line.includes(
+              `[loadWorkspaceSync] failed to load workspace for ${taskId}`,
+            ),
+          ),
+          "sync parse failure should be logged with task id",
+        );
+      } finally {
+        console.error = originalConsoleError;
+        await rm(taskDir, { recursive: true, force: true });
+      }
+    },
+
+    "getWorktreeDiff returns workspace-unavailable message when workspace metadata is missing": async () => {
+      const taskId = `forge-diff-nospace-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const diffs = await getWorktreeDiff(taskId, [{ name: "app" }]);
+      assertEqual(diffs.length, 1, "single project diff result");
+      assertEqual(diffs[0].project, "app", "project name preserved");
+      assertEqual(
+        diffs[0].diff,
+        "(worktree metadata unavailable: task workspace not found)",
+        "missing workspace message",
+      );
+    },
+
+    "getWorktreeDiff returns worktree-missing message when workspace exists but directory is absent": async () => {
+      const taskId = `forge-diff-missing-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const taskDir = path.join(WORKTREES_DIR, taskId);
+      const workspacePath = path.join(taskDir, "workspace.json");
+
+      await mkdir(taskDir, { recursive: true });
+      await writeFile(
+        workspacePath,
+        `${JSON.stringify(
+          {
+            taskId,
+            projects: [{ name: "app", baseCommit: "abc123" }],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf-8",
+      );
+
+      try {
+        const diffs = await getWorktreeDiff(taskId, [{ name: "app" }]);
+        assertEqual(diffs.length, 1, "single project diff result");
+        assertEqual(
+          diffs[0].diff,
+          "(worktree missing: no diff available for this task)",
+          "missing worktree message",
+        );
+      } finally {
+        await rm(taskDir, { recursive: true, force: true });
+      }
     },
   });
 
@@ -1625,6 +1730,77 @@ echo "late output"
         assert(
           !result.stdout.includes("late output"),
           "late stdout is not emitted after timeout",
+        );
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
+    "idleTimeoutMs 초과 시 timeout 상태와 idle timeoutKind를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-idle-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+cat >/dev/null
+echo "first output"
+sleep 2
+echo "late output"
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "text",
+          idleTimeoutMs: 120,
+        });
+
+        assertEqual(result.status, "timeout", "idle timeout status returned");
+        assertEqual(result.timeoutKind, "idle", "idle timeout kind");
+        assert(
+          !result.stdout.includes("late output"),
+          "late stdout is not emitted after idle timeout",
+        );
+      } finally {
+        process.env.PATH = originalPath;
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+
+    "hardTimeoutMs 초과 시 timeout 상태와 hard timeoutKind를 반환한다": async () => {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ucm-spawn-hard-"));
+      const codexPath = path.join(tempDir, "codex");
+      const originalPath = process.env.PATH || "";
+      try {
+        await writeFile(
+          codexPath,
+          `#!/bin/sh
+cat >/dev/null
+sleep 2
+echo "late output"
+`,
+          "utf-8",
+        );
+        await chmod(codexPath, 0o755);
+        process.env.PATH = `${tempDir}${path.delimiter}${originalPath}`;
+
+        const result = await spawnLlm("test prompt", {
+          provider: "codex",
+          outputFormat: "text",
+          hardTimeoutMs: 120,
+        });
+
+        assertEqual(result.status, "timeout", "hard timeout status returned");
+        assertEqual(result.timeoutKind, "hard", "hard timeout kind");
+        assert(
+          !result.stdout.includes("late output"),
+          "late stdout is not emitted after hard timeout",
         );
       } finally {
         process.env.PATH = originalPath;
