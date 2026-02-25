@@ -125,6 +125,7 @@ Options:
   --port <N>           UI 서버 포트 (기본: ${DEFAULT_CONFIG.uiPort})
   --dev                프론트엔드 개발 모드
   --force              확인 없이 강제 실행 (예: delete, reject)
+  --score <N>          승인 시 리뷰 점수 기록 (approve)
   --reason "..."       사유 (mode set, proposal discard)
   --impact <N>         영향도 점수 (proposal score)
   --urgency <N>        긴급도 점수 (proposal score)

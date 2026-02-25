@@ -62,8 +62,8 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm status [<id>]` | 태스크 상세 상태 (`id` 없으면 데몬 상태) |
 | `ucm diff <id>` | 변경사항 확인 |
 | `ucm logs <id>` | 실행 로그 |
-| `ucm approve <id>` | 리뷰 승인 (머지) |
-| `ucm reject <id> --feedback "..."` | 반려 (피드백 반영 재작업) |
+| `ucm approve <id> [--score N]` | 리뷰 승인 (머지, 선택 점수 기록) |
+| `ucm reject <id> --feedback "..."` | 반려 (피드백 포함 시 implement부터 자동 재작업) |
 | `ucm resume <id>` | 중단된 작업 재개 (`id` 없이 실행하면 데몬 재개) |
 | `ucm abort <id>` / `ucm gc [--days N]` | 실행 중 태스크 중단 / 오래된 태스크 정리 |
 | `ucm ui` | UI 서버 시작 (`http://localhost:17172`) |
