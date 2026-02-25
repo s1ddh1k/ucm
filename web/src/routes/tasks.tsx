@@ -9,6 +9,7 @@ import { useParams } from "react-router";
 import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
+import { TaskViewModeToggle } from "@/components/tasks/task-view-mode-toggle";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
 import { TaskList } from "@/components/tasks/task-list";
@@ -16,7 +17,7 @@ import { TaskTimeline } from "@/components/tasks/task-timeline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
-import { useQueryFeedback } from "@/hooks/use-query-feedback";
+import { useTaskBoardData } from "@/hooks/use-task-board-data";
 import { useTaskViewMode } from "@/hooks/use-task-view-mode";
 import {
   decodeProjectKeyFromRoute,
@@ -27,7 +28,6 @@ import {
   UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
 import { useProposalsQuery } from "@/queries/proposals";
-import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 
 const TASK_CREATE_CLEAR_PARAMS = ["template"] as const;
@@ -43,20 +43,22 @@ export default function TasksPage() {
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
   const { viewMode, setViewMode, viewOptions } = useTaskViewMode();
-  const {
-    data: tasks,
-    isLoading,
-    isError,
-    error,
-    isRefetching,
-    refetch,
-  } = useTasksQuery();
-  const { data: proposals } = useProposalsQuery();
-
   const projectKey = useMemo(
     () => decodeProjectKeyFromRoute(params.projectKey),
     [params.projectKey],
   );
+  const effectiveBoardFilter = routeScoped ? projectKey : taskProjectFilter;
+  const {
+    tasks,
+    boardTasks,
+    isLoading,
+    isError,
+    boardError,
+    isRetrying,
+    retryLabel,
+    retry,
+  } = useTaskBoardData({ projectFilter: effectiveBoardFilter });
+  const { data: proposals } = useProposalsQuery();
   const projectLabel =
     projectKey === UNKNOWN_PROJECT_KEY
       ? "Unknown Project"
@@ -103,36 +105,11 @@ export default function TasksPage() {
   const defaultProjectPath =
     routeScoped && projectKey !== UNKNOWN_PROJECT_KEY ? projectKey : undefined;
 
-  const boardTasks = useMemo(() => {
-    if (!tasks) return [];
-    let result = [...tasks];
-    const projectFilter = routeScoped ? projectKey : taskProjectFilter;
-    if (projectFilter) {
-      result = result.filter(
-        (t) => getProjectKey(getTaskProjectPath(t)) === projectFilter,
-      );
-    }
-    return result;
-  }, [tasks, routeScoped, projectKey, taskProjectFilter]);
-
   useOpenFromSearchParam({
     param: "new",
     clearParams: TASK_CREATE_CLEAR_PARAMS,
     onOpen: () => setCreateOpen(true),
   });
-
-  const {
-    errorMessage: boardError,
-    isRetrying,
-    retryLabel,
-    retry,
-  } = useQueryFeedback(
-    { error, isRefetching, refetch },
-    {
-      fallbackDetail: "Task request failed",
-      nextStep: "Check daemon connection, then retry.",
-    },
-  );
 
   return (
     <div className="h-full flex flex-col p-6 gap-4">
@@ -165,26 +142,11 @@ export default function TasksPage() {
             </Card>
           )}
         </div>
-        <nav
-          aria-label="Task view mode"
-          className="flex items-center border rounded-md shrink-0"
-        >
-          {viewOptions.map(({ value, title, Icon }) => (
-            <button
-              type="button"
-              key={value}
-              className={`p-1.5 transition-colors ${
-                viewMode === value ? "bg-accent" : "hover:bg-accent/50"
-              }`}
-              onClick={() => setViewMode(value)}
-              title={title}
-              aria-label={title}
-              aria-pressed={viewMode === value}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </button>
-          ))}
-        </nav>
+        <TaskViewModeToggle
+          viewMode={viewMode}
+          viewOptions={viewOptions}
+          onChange={setViewMode}
+        />
       </div>
 
       {viewMode === "timeline" ? (

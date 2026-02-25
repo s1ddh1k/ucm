@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
 import { TaskTimeline } from "@/components/tasks/task-timeline";
 import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
+import { TaskViewModeToggle } from "@/components/tasks/task-view-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/stores/ui";
 import {
@@ -13,10 +14,8 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
-import { useQueryFeedback } from "@/hooks/use-query-feedback";
+import { useTaskBoardData } from "@/hooks/use-task-board-data";
 import { useTaskViewMode } from "@/hooks/use-task-view-mode";
-import { useTasksQuery } from "@/queries/tasks";
-import { getProjectKey, getTaskProjectPath } from "@/lib/project";
 
 const TASK_CREATE_CLEAR_PARAMS = ["template"] as const;
 
@@ -29,43 +28,23 @@ export function TaskInboxContent() {
   const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
   const { viewMode, setViewMode, viewOptions } = useTaskViewMode();
   const {
-    data: tasks,
+    boardTasks,
     isLoading,
     isError,
-    error,
-    isRefetching,
-    refetch,
-  } = useTasksQuery(undefined, createOpen);
+    boardError,
+    isRetrying,
+    retryLabel,
+    retry,
+  } = useTaskBoardData({
+    paused: createOpen,
+    projectFilter: taskProjectFilter,
+  });
 
   useEffect(() => {
     setSelectedTaskId(null);
     clearActiveProject();
     setTaskProjectFilter("");
   }, [clearActiveProject, setSelectedTaskId, setTaskProjectFilter]);
-
-  const boardTasks = useMemo(() => {
-    if (!tasks) return [];
-    const result = [...tasks];
-    if (taskProjectFilter) {
-      return result.filter(
-        (t) => getProjectKey(getTaskProjectPath(t)) === taskProjectFilter
-      );
-    }
-    return result;
-  }, [tasks, taskProjectFilter]);
-
-  const {
-    errorMessage: boardError,
-    isRetrying,
-    retryLabel,
-    retry,
-  } = useQueryFeedback(
-    { error, isRefetching, refetch },
-    {
-      fallbackDetail: "Task request failed",
-      nextStep: "Check daemon connection, then retry.",
-    },
-  );
 
   useOpenFromSearchParam({
     param: "new",
@@ -77,26 +56,11 @@ export function TaskInboxContent() {
     <div className="h-full flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0" />
-        <nav
-          aria-label="Task view mode"
-          className="flex items-center border rounded-md shrink-0"
-        >
-          {viewOptions.map(({ value, title, Icon }) => (
-            <button
-              type="button"
-              key={value}
-              className={`p-1.5 transition-colors ${
-                viewMode === value ? "bg-accent" : "hover:bg-accent/50"
-              }`}
-              onClick={() => setViewMode(value)}
-              title={title}
-              aria-label={title}
-              aria-pressed={viewMode === value}
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </button>
-          ))}
-        </nav>
+        <TaskViewModeToggle
+          viewMode={viewMode}
+          viewOptions={viewOptions}
+          onChange={setViewMode}
+        />
       </div>
 
       {viewMode === "timeline" ? (

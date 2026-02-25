@@ -1,12 +1,17 @@
-import { GanttChart, LayoutGrid, List } from "lucide-react";
+import {
+  GanttChart,
+  LayoutGrid,
+  List,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 export type TaskViewMode = "list" | "board" | "timeline";
 
-interface TaskViewOption {
+export interface TaskViewOption {
   value: TaskViewMode;
   title: string;
-  Icon: typeof List;
+  Icon: LucideIcon;
 }
 
 const TASK_VIEW_OPTIONS: readonly TaskViewOption[] = [

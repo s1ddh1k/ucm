@@ -38,6 +38,7 @@ import {
   parseVerifyReport,
 } from "@/lib/artifact-parsers";
 import { PIPELINES, type PipelineName } from "@/lib/constants";
+import { getHttpStatusCode } from "@/lib/error";
 import { formatDate } from "@/lib/format";
 import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
 import {
@@ -764,6 +765,7 @@ function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
     isLoading,
     isError,
     error,
+    isRefetching,
     refetch,
   } = useTaskLogsQuery(
     taskId,
@@ -784,13 +786,7 @@ function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
   }
 
   if (isError && !logs && wsLogs.length === 0) {
-    const statusCode =
-      typeof error === "object" &&
-      error !== null &&
-      "status" in error &&
-      typeof (error as { status: unknown }).status === "number"
-        ? (error as { status: number }).status
-        : null;
+    const statusCode = getHttpStatusCode(error);
     const baseMessage =
       error instanceof Error ? error.message : "Failed to load logs.";
     const recoveryHint =
@@ -806,8 +802,19 @@ function LogsTab({ taskId, taskState }: { taskId: string; taskState: string }) {
         title="Unable to load logs"
         description={description}
         action={
-          <Button size="sm" variant="outline" onClick={() => refetch()}>
-            <RotateCw className="h-4 w-4" /> Retry
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => refetch()}
+            disabled={isRefetching}
+            aria-busy={isRefetching}
+          >
+            {isRefetching ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCw className="h-4 w-4" />
+            )}{" "}
+            {isRefetching ? "Retrying..." : "Retry"}
           </Button>
         }
         className="py-8"
