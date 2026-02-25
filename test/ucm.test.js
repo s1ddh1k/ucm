@@ -3939,6 +3939,35 @@ function testUiServerWebSocketOriginGuard() {
   );
 }
 
+function testUiServerHttpOriginGuard() {
+  const { isAllowedApiOrigin } = require("../lib/ucm-ui-server.js");
+  assert(
+    isAllowedApiOrigin("http://localhost:17172"),
+    "uiServer http origin guard: allows localhost origin",
+  );
+  assert(
+    isAllowedApiOrigin("http://127.0.0.1:17172"),
+    "uiServer http origin guard: allows loopback IPv4 origin",
+  );
+  assert(
+    !isAllowedApiOrigin("https://example.com"),
+    "uiServer http origin guard: rejects non-local origin",
+  );
+
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "lib", "ucm-ui-server.js"),
+    "utf-8",
+  );
+  assert(
+    src.includes("if (!isAllowedApiOrigin(origin))"),
+    "uiServer http origin guard: enforces api origin validation",
+  );
+  assert(
+    src.includes('{ error: "origin not allowed" }'),
+    "uiServer http origin guard: returns explicit origin error",
+  );
+}
+
 function testUiServerLoopbackAddressGuard() {
   const { isLoopbackAddress } = require("../lib/ucm-ui-server.js");
   assert(
@@ -15118,6 +15147,7 @@ async function main() {
   await testUiServerResolvePathWithinHomeBlocksSymlinkEscape();
   testUiServerGitInitRouteUsesPathGuardAndAsyncExec();
   testUiServerWebSocketOriginGuard();
+  testUiServerHttpOriginGuard();
   testUiServerLoopbackAddressGuard();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
