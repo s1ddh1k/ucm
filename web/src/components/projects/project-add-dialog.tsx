@@ -1,5 +1,5 @@
 import { FolderOpen, FolderPlus } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useDirectoryPathField } from "@/hooks/use-directory-path-field";
 import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
+import { getErrorDetail } from "@/lib/error";
 import { useUpsertProjectCatalogItem } from "@/queries/projects";
 
 interface ProjectAddDialogProps {
@@ -19,6 +20,26 @@ interface ProjectAddDialogProps {
   onOpenChange: (open: boolean) => void;
   defaultPath?: string;
   onAdded?: (project: { path: string; name?: string }) => void;
+}
+
+interface FolderCreateFeedback {
+  tone: "success" | "error";
+  message: string;
+}
+
+function validateFolderName(rawName: string): string | null {
+  const name = rawName.trim();
+  if (!name) return "Enter a folder name.";
+  if (name === "." || name === "..")
+    return "Use a concrete folder name, not . or ..";
+  if (name.includes("/") || name.includes("\\"))
+    return "Use only a single folder name (no path separators).";
+  return null;
+}
+
+function joinChildPath(basePath: string, folderName: string): string {
+  if (basePath === "/") return `/${folderName}`;
+  return `${basePath.replace(/\/+$/, "")}/${folderName}`;
 }
 
 export function ProjectAddDialog({
@@ -32,8 +53,14 @@ export function ProjectAddDialog({
   const [newFolderName, setNewFolderName] = useState("");
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [folderCreateFeedback, setFolderCreateFeedback] =
+    useState<FolderCreateFeedback | null>(null);
   const pathInputId = useId();
   const nameInputId = useId();
+  const newFolderNameError = useMemo(
+    () => validateFolderName(newFolderName),
+    [newFolderName],
+  );
   const upsertProject = useUpsertProjectCatalogItem();
   const {
     clearError: clearSubmitError,
@@ -63,6 +90,7 @@ export function ProjectAddDialog({
     onDirectorySelected: () => {
       setShowNewFolder(false);
       setNewFolderName("");
+      setFolderCreateFeedback(null);
     },
   });
 
@@ -72,19 +100,40 @@ export function ProjectAddDialog({
       setName("");
       clearSubmitError();
       clearSelectionNotice();
+      setFolderCreateFeedback(null);
     } else {
       closeBrowser();
     }
   }, [open, defaultPath, closeBrowser, clearSelectionNotice, clearSubmitError]);
 
   const createFolder = async () => {
-    if (!newFolderName.trim() || !browseResult) return;
-    const folderPath = browseResult.current + "/" + newFolderName.trim();
+    if (!browseResult) return;
+    const trimmedName = newFolderName.trim();
+    const nameError = validateFolderName(trimmedName);
+    if (nameError) {
+      setFolderCreateFeedback({
+        tone: "error",
+        message: `${nameError} Rename the folder and try again.`,
+      });
+      return;
+    }
+
+    const folderPath = joinChildPath(browseResult.current, trimmedName);
     setCreating(true);
+    setFolderCreateFeedback(null);
     try {
       await api.browse.mkdir(folderPath);
       selectDirectory(folderPath);
-    } catch {
+      setFolderCreateFeedback({
+        tone: "success",
+        message: `Created and selected directory: ${folderPath}`,
+      });
+    } catch (error) {
+      const detail = getErrorDetail(error);
+      setFolderCreateFeedback({
+        tone: "error",
+        message: `Failed to create folder: ${detail}. Check permissions or use a different name, then retry.`,
+      });
       // re-browse to show current state
       await navigateBrowser(browseResult.current);
     } finally {
@@ -129,14 +178,20 @@ export function ProjectAddDialog({
                 id={pathInputId}
                 placeholder="~/git/my-project"
                 value={path}
-                onChange={(e) => handlePathChange(e.target.value)}
+                onChange={(e) => {
+                  setFolderCreateFeedback(null);
+                  handlePathChange(e.target.value);
+                }}
                 className="flex-1"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => void openPathBrowser()}
+                onClick={() => {
+                  setFolderCreateFeedback(null);
+                  void openPathBrowser();
+                }}
                 title="Browse directories"
                 aria-label="Browse directories"
                 disabled={browseLoading}
@@ -176,6 +231,7 @@ export function ProjectAddDialog({
                       className="h-6 text-xs"
                       type="button"
                       onClick={() => {
+                        setFolderCreateFeedback(null);
                         setShowNewFolder(!showNewFolder);
                         setNewFolderName("");
                       }}
@@ -194,18 +250,40 @@ export function ProjectAddDialog({
                   </div>
                 </div>
                 {showNewFolder && (
-                  <div className="px-3 py-1.5 border-b flex items-center gap-1">
-                    <Input
-                      placeholder="folder name"
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") createFolder(); }}
-                      className="h-6 text-xs flex-1"
-                      autoFocus
-                    />
-                    <Button size="sm" variant="default" className="h-6 text-xs px-2" onClick={createFolder} disabled={!newFolderName.trim() || creating}>
-                      {creating ? "..." : "Create"}
-                    </Button>
+                  <div className="px-3 py-1.5 border-b space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        placeholder="folder name"
+                        value={newFolderName}
+                        onChange={(e) => {
+                          setFolderCreateFeedback(null);
+                          setNewFolderName(e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void createFolder();
+                          }
+                        }}
+                        className="h-6 text-xs flex-1"
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-6 text-xs px-2"
+                        onClick={() => void createFolder()}
+                        disabled={Boolean(newFolderNameError) || creating}
+                        aria-label="Create folder in current directory"
+                      >
+                        {creating ? "..." : "Create"}
+                      </Button>
+                    </div>
+                    {newFolderNameError && (
+                      <p className="text-xs text-destructive" role="alert">
+                        {newFolderNameError}
+                      </p>
+                    )}
                   </div>
                 )}
                 {browseResult.parent && (
@@ -230,6 +308,20 @@ export function ProjectAddDialog({
                   </button>
                 ))}
               </div>
+            )}
+            {creating && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                Creating folder...
+              </p>
+            )}
+            {folderCreateFeedback && !creating && (
+              <p
+                className={`mt-2 text-xs ${folderCreateFeedback.tone === "error" ? "text-destructive" : "text-emerald-400"}`}
+                role={folderCreateFeedback.tone === "error" ? "alert" : "status"}
+                aria-live={folderCreateFeedback.tone === "error" ? "assertive" : "polite"}
+              >
+                {folderCreateFeedback.message}
+              </p>
             )}
           </div>
 

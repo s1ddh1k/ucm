@@ -11,7 +11,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { Task, TaskState } from "@/api/types";
+import type {
+  PolishSummary,
+  Task,
+  TaskState,
+  UxReviewReport,
+  VerifyReport,
+} from "@/api/types";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +30,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { type ArtifactKind, useArtifactFiles } from "@/hooks/use-artifact-files";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
+import {
+  parsePolishSummary,
+  parseUxReviewReport,
+  parseVerifyReport,
+} from "@/lib/artifact-parsers";
 import { PIPELINES, type PipelineName } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import { getTaskProjectLabel, getTaskProjectPath } from "@/lib/project";
@@ -1083,8 +1095,7 @@ function PassFailBadge({ passed }: { passed: boolean }) {
   );
 }
 
-function VerifyReportView({ data }: { data: Record<string, unknown> }) {
-  const report = data as unknown as import("@/api/types").VerifyReport;
+function VerifyReportView({ report }: { report: VerifyReport }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -1140,8 +1151,7 @@ function VerifyReportView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function PolishSummaryView({ data }: { data: Record<string, unknown> }) {
-  const summary = data as unknown as import("@/api/types").PolishSummary;
+function PolishSummaryView({ summary }: { summary: PolishSummary }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -1179,8 +1189,7 @@ function PolishSummaryView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function UxReviewView({ data }: { data: Record<string, unknown> }) {
-  const review = data as unknown as import("@/api/types").UxReviewReport;
+function UxReviewView({ review }: { review: UxReviewReport }) {
   const scoreColor =
     review.score >= 8
       ? "text-emerald-400"
@@ -1262,27 +1271,95 @@ function UxReviewView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+function toPrettyJson(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function InvalidArtifactView({
+  filename,
+  data,
+  expected,
+}: {
+  filename: string;
+  data: unknown;
+  expected: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs p-2 rounded bg-amber-500/10 border border-amber-500/20">
+        <p className="font-medium text-amber-400">Unable to parse {expected}</p>
+        <p className="text-muted-foreground mt-1">
+          Artifact format may be outdated. Showing raw JSON so you can inspect
+          it, then retry after syncing daemon/web versions.
+        </p>
+      </div>
+      <h4 className="text-sm font-medium">{filename}</h4>
+      <pre className="text-xs font-mono p-3 rounded bg-muted overflow-auto whitespace-pre-wrap max-h-48">
+        {toPrettyJson(data)}
+      </pre>
+    </div>
+  );
+}
+
 function ArtifactJsonView({
   filename,
   data,
+  kind,
 }: {
   filename: string;
-  data: Record<string, unknown>;
+  data: unknown;
+  kind: ArtifactKind;
 }) {
-  // Route to specialized views
-  if (filename.match(/^verify(-.*)?\.json$/))
-    return <VerifyReportView data={data} />;
-  if (filename.match(/^polish-summary(-.*)?\.json$/))
-    return <PolishSummaryView data={data} />;
-  if (filename.match(/^ux-review(-.*)?\.json$/))
-    return <UxReviewView data={data} />;
+  if (kind === "verify") {
+    const report = parseVerifyReport(data);
+    return report ? (
+      <VerifyReportView report={report} />
+    ) : (
+      <InvalidArtifactView
+        filename={filename}
+        data={data}
+        expected="verify report"
+      />
+    );
+  }
+
+  if (kind === "polish-summary") {
+    const summary = parsePolishSummary(data);
+    return summary ? (
+      <PolishSummaryView summary={summary} />
+    ) : (
+      <InvalidArtifactView
+        filename={filename}
+        data={data}
+        expected="polish summary"
+      />
+    );
+  }
+
+  if (kind === "ux-review") {
+    const review = parseUxReviewReport(data);
+    return review ? (
+      <UxReviewView review={review} />
+    ) : (
+      <InvalidArtifactView
+        filename={filename}
+        data={data}
+        expected="UX review report"
+      />
+    );
+  }
 
   // Generic JSON view for other files
   return (
     <div>
       <h4 className="text-sm font-medium mb-1">{filename}</h4>
       <pre className="text-xs font-mono p-3 rounded bg-muted overflow-auto whitespace-pre-wrap max-h-48">
-        {JSON.stringify(data, null, 2)}
+        {toPrettyJson(data)}
       </pre>
     </div>
   );
@@ -1290,30 +1367,16 @@ function ArtifactJsonView({
 
 function ArtifactsTab({ taskId }: { taskId: string }) {
   const { data: artifacts, isLoading } = useTaskArtifactsQuery(taskId);
+  const { structuredFiles, plainFiles } = useArtifactFiles({
+    files: artifacts?.files ?? [],
+    contents: artifacts?.contents,
+  });
 
   if (isLoading)
     return <div className="text-sm text-muted-foreground">Loading...</div>;
   if (!artifacts || (!artifacts.summary && artifacts.files.length === 0)) {
     return <EmptyState icon={FileText} title="No artifacts" />;
   }
-
-  // Separate structured JSON artifacts from plain files
-  const contents = artifacts.contents || {};
-  const structuredFiles = Object.keys(contents);
-  const plainFiles = artifacts.files.filter(
-    (f) =>
-      !structuredFiles.includes(f) && f !== "summary.md" && f !== "memory.json",
-  );
-
-  // Order: verify, polish-summary, ux-review first, then others
-  const orderedKeys = [
-    ...structuredFiles.filter((f) => f.match(/^verify(-.*)?\.json$/)),
-    ...structuredFiles.filter((f) => f.match(/^polish-summary(-.*)?\.json$/)),
-    ...structuredFiles.filter((f) => f.match(/^ux-review(-.*)?\.json$/)),
-    ...structuredFiles.filter(
-      (f) => !f.match(/^(verify|polish-summary|ux-review)(-.*)?\.json$/),
-    ),
-  ];
 
   return (
     <div className="space-y-4">
@@ -1325,13 +1388,14 @@ function ArtifactsTab({ taskId }: { taskId: string }) {
           </pre>
         </div>
       )}
-      {orderedKeys.length > 0 && (
+      {structuredFiles.length > 0 && (
         <div className="space-y-4">
-          {orderedKeys.map((filename) => (
-            <div key={filename} className="p-3 rounded border border-border">
+          {structuredFiles.map((entry) => (
+            <div key={entry.filename} className="p-3 rounded border border-border">
               <ArtifactJsonView
-                filename={filename}
-                data={contents[filename] as Record<string, unknown>}
+                filename={entry.filename}
+                data={entry.data}
+                kind={entry.kind}
               />
             </div>
           ))}
