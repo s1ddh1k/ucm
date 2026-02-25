@@ -14,7 +14,7 @@
 | 문서 | 설명 |
 |------|------|
 | [HiveMind](hivemind.md) | Zettelkasten 기반 지식 메모리 시스템 아키텍처 |
-| [Verification Scenarios](verification-scenarios.md) | 7단계 검증 시나리오 (QA 매트릭스) |
+| [Verification Scenarios](verification-scenarios.md) | 릴리즈 전 실전 검증 시나리오 (파이프라인/운영/복구) |
 
 ## Concepts
 
