@@ -9,13 +9,12 @@ import { useUiStore } from "@/stores/ui";
 import {
   AlertCircle,
   FileText,
-  GanttChart,
-  LayoutGrid,
-  List,
   Loader2,
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
+import { useQueryFeedback } from "@/hooks/use-query-feedback";
+import { useTaskViewMode } from "@/hooks/use-task-view-mode";
 import { useTasksQuery } from "@/queries/tasks";
 import { getProjectKey, getTaskProjectPath } from "@/lib/project";
 
@@ -28,12 +27,13 @@ export function TaskInboxContent() {
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
   const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
-  const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">("list");
+  const { viewMode, setViewMode, viewOptions } = useTaskViewMode();
   const {
     data: tasks,
     isLoading,
     isError,
     error,
+    isRefetching,
     refetch,
   } = useTasksQuery(undefined, createOpen);
 
@@ -54,10 +54,18 @@ export function TaskInboxContent() {
     return result;
   }, [tasks, taskProjectFilter]);
 
-  const boardError =
-    error instanceof Error
-      ? error.message
-      : "Task request failed. Check daemon connection and retry.";
+  const {
+    errorMessage: boardError,
+    isRetrying,
+    retryLabel,
+    retry,
+  } = useQueryFeedback(
+    { error, isRefetching, refetch },
+    {
+      fallbackDetail: "Task request failed",
+      nextStep: "Check daemon connection, then retry.",
+    },
+  );
 
   useOpenFromSearchParam({
     param: "new",
@@ -73,36 +81,21 @@ export function TaskInboxContent() {
           aria-label="Task view mode"
           className="flex items-center border rounded-md shrink-0"
         >
-          <button
-            type="button"
-            className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-accent" : "hover:bg-accent/50"}`}
-            onClick={() => setViewMode("list")}
-            title="List view"
-            aria-label="Switch to list view"
-            aria-pressed={viewMode === "list"}
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-accent" : "hover:bg-accent/50"}`}
-            onClick={() => setViewMode("board")}
-            title="Board view"
-            aria-label="Switch to board view"
-            aria-pressed={viewMode === "board"}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className={`p-1.5 transition-colors ${viewMode === "timeline" ? "bg-accent" : "hover:bg-accent/50"}`}
-            onClick={() => setViewMode("timeline")}
-            title="Timeline view"
-            aria-label="Switch to timeline view"
-            aria-pressed={viewMode === "timeline"}
-          >
-            <GanttChart className="h-3.5 w-3.5" />
-          </button>
+          {viewOptions.map(({ value, title, Icon }) => (
+            <button
+              type="button"
+              key={value}
+              className={`p-1.5 transition-colors ${
+                viewMode === value ? "bg-accent" : "hover:bg-accent/50"
+              }`}
+              onClick={() => setViewMode(value)}
+              title={title}
+              aria-label={title}
+              aria-pressed={viewMode === value}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
         </nav>
       </div>
 
@@ -120,8 +113,15 @@ export function TaskInboxContent() {
                 title="Failed to load timeline"
                 description={boardError}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => refetch()}>
-                    Retry
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={retry}
+                    disabled={isRetrying}
+                    aria-busy={isRetrying}
+                  >
+                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {retryLabel}
                   </Button>
                 }
                 className="h-full"
@@ -150,8 +150,15 @@ export function TaskInboxContent() {
                 title="Failed to load board"
                 description={boardError}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => refetch()}>
-                    Retry
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={retry}
+                    disabled={isRetrying}
+                    aria-busy={isRetrying}
+                  >
+                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {retryLabel}
                   </Button>
                 }
                 className="h-full"

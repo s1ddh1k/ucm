@@ -1,9 +1,10 @@
-import { AlertCircle, ListTodo, Plus } from "lucide-react";
+import { AlertCircle, ListTodo, Loader2, Plus } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQueryFeedback } from "@/hooks/use-query-feedback";
 import {
   getProjectKey,
   getProjectLabel,
@@ -24,7 +25,14 @@ export function TaskList({
   onNewTask,
   projectScopeLocked = false,
 }: TaskListProps) {
-  const { data: tasks, isLoading, isError, error, refetch } = useTasksQuery();
+  const {
+    data: tasks,
+    isLoading,
+    isError,
+    error,
+    isRefetching,
+    refetch,
+  } = useTasksQuery();
   const selectedTaskId = useUiStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
   const taskFilter = useUiStore((s) => s.taskFilter);
@@ -100,10 +108,18 @@ export function TaskList({
     return result;
   }, [tasks, taskFilter, effectiveProjectFilter, taskSort, taskSearch]);
 
-  const taskListError =
-    error instanceof Error
-      ? error.message
-      : "Task list request failed. Check daemon connection.";
+  const {
+    errorMessage: taskListError,
+    isRetrying,
+    retryLabel,
+    retry,
+  } = useQueryFeedback(
+    { error, isRefetching, refetch },
+    {
+      fallbackDetail: "Task list request failed",
+      nextStep: "Check daemon connection, then retry.",
+    },
+  );
 
   useEffect(() => {
     if (!selectedTaskId || !tasks) return;
@@ -157,8 +173,15 @@ export function TaskList({
             title="Failed to load tasks"
             description={taskListError}
             action={
-              <Button size="sm" variant="outline" onClick={() => refetch()}>
-                Retry
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={retry}
+                disabled={isRetrying}
+                aria-busy={isRetrying}
+              >
+                {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {retryLabel}
               </Button>
             }
           />

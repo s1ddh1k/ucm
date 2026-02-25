@@ -1,9 +1,6 @@
 import {
   AlertCircle,
   FileText,
-  GanttChart,
-  LayoutGrid,
-  List,
   ListTodo,
   Loader2,
 } from "lucide-react";
@@ -19,6 +16,8 @@ import { TaskTimeline } from "@/components/tasks/task-timeline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
+import { useQueryFeedback } from "@/hooks/use-query-feedback";
+import { useTaskViewMode } from "@/hooks/use-task-view-mode";
 import {
   decodeProjectKeyFromRoute,
   getProjectKey,
@@ -31,11 +30,6 @@ import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 
-const TASK_VIEW_OPTIONS = [
-  { value: "list", title: "List view", Icon: List },
-  { value: "board", title: "Board view", Icon: LayoutGrid },
-  { value: "timeline", title: "Timeline view", Icon: GanttChart },
-] as const;
 const TASK_CREATE_CLEAR_PARAMS = ["template"] as const;
 
 export default function TasksPage() {
@@ -48,10 +42,15 @@ export default function TasksPage() {
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
   const setActiveProject = useUiStore((s) => s.setActiveProject);
   const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
-  const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">(
-    "list",
-  );
-  const { data: tasks, isLoading, isError, error, refetch } = useTasksQuery();
+  const { viewMode, setViewMode, viewOptions } = useTaskViewMode();
+  const {
+    data: tasks,
+    isLoading,
+    isError,
+    error,
+    isRefetching,
+    refetch,
+  } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
 
   const projectKey = useMemo(
@@ -122,10 +121,18 @@ export default function TasksPage() {
     onOpen: () => setCreateOpen(true),
   });
 
-  const boardError =
-    error instanceof Error
-      ? error.message
-      : "Task request failed. Check daemon connection and retry.";
+  const {
+    errorMessage: boardError,
+    isRetrying,
+    retryLabel,
+    retry,
+  } = useQueryFeedback(
+    { error, isRefetching, refetch },
+    {
+      fallbackDetail: "Task request failed",
+      nextStep: "Check daemon connection, then retry.",
+    },
+  );
 
   return (
     <div className="h-full flex flex-col p-6 gap-4">
@@ -158,8 +165,11 @@ export default function TasksPage() {
             </Card>
           )}
         </div>
-        <div className="flex items-center border rounded-md shrink-0">
-          {TASK_VIEW_OPTIONS.map(({ value, title, Icon }) => (
+        <nav
+          aria-label="Task view mode"
+          className="flex items-center border rounded-md shrink-0"
+        >
+          {viewOptions.map(({ value, title, Icon }) => (
             <button
               type="button"
               key={value}
@@ -174,7 +184,7 @@ export default function TasksPage() {
               <Icon className="h-3.5 w-3.5" />
             </button>
           ))}
-        </div>
+        </nav>
       </div>
 
       {viewMode === "timeline" ? (
@@ -191,8 +201,15 @@ export default function TasksPage() {
                 title="Failed to load timeline"
                 description={boardError}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => refetch()}>
-                    Retry
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={retry}
+                    disabled={isRetrying}
+                    aria-busy={isRetrying}
+                  >
+                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {retryLabel}
                   </Button>
                 }
                 className="h-full"
@@ -221,8 +238,15 @@ export default function TasksPage() {
                 title="Failed to load board"
                 description={boardError}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => refetch()}>
-                    Retry
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={retry}
+                    disabled={isRetrying}
+                    aria-busy={isRetrying}
+                  >
+                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {retryLabel}
                   </Button>
                 }
                 className="h-full"

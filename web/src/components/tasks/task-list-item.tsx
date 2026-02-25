@@ -30,7 +30,9 @@ export function TaskListItem({ task, selected, onClick }: TaskListItemProps) {
 
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-pressed={selected}
       className={cn(
         "w-full text-left px-3 py-3 border-b border-border transition-colors cursor-pointer",
         "hover:bg-accent/50",
