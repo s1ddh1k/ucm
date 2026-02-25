@@ -15,6 +15,7 @@
 - `docs/hivemind.md`를 현재 코드 구조(`hm/hmd`, `~/.hivemind` 디렉토리, Forge/Observer 연동, hmd auto-spawn 조건) 기준으로 재작성했다.
 - `docs/verification-scenarios.md`를 현행 파이프라인(`trivial/small/medium/large`)과 운영 명령(`gate`, `merge-queue`, `auto`, `observe`) 기준으로 갱신했다.
 - `docs/vision.md`, `docs/README.md`의 구버전 autopilot/시나리오 설명을 현재 아키텍처 표현으로 정리했다.
+- `docs/user-guide.md`의 CLI 레퍼런스에 실제 지원 명령(`submit/cancel/retry/delete/priority/gate`, `analyze/research`, `proposal` 확장, `mode criteria`, `merge-queue`, `observe`)과 `logs --follow/--watch`를 반영하고, 대시보드 필터/정렬 설명을 구현과 맞췄다.
 
 ## [0.2.0] - 2026-02-24
 
