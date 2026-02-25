@@ -66,6 +66,9 @@ export interface DaemonStats {
     model: string;
     envProvider?: string | null;
   };
+  hivemind?: {
+    running: boolean;
+  };
 }
 
 export interface ResourceInfo {

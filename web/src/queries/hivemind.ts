@@ -3,6 +3,15 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
 
+function invalidateHivemindQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  queryClient.invalidateQueries({ queryKey: ["hivemind-list"] });
+  queryClient.invalidateQueries({ queryKey: ["hivemind-search"] });
+  queryClient.invalidateQueries({ queryKey: ["hivemind-stats"] });
+  queryClient.invalidateQueries({ queryKey: ["stats"] });
+}
+
 export function useHivemindSearchQuery(query: string, limit?: number) {
   return useQuery({
     queryKey: ["hivemind-search", query, limit],
@@ -22,7 +31,10 @@ export function useHivemindListQuery(kind?: string, limit?: number) {
 export function useHivemindShowQuery(id: string | null) {
   return useQuery({
     queryKey: ["hivemind-show", id],
-    queryFn: () => api.hivemind.show(id!),
+    queryFn: () => {
+      if (!id) throw new Error("hivemind zettel id is required");
+      return api.hivemind.show(id);
+    },
     enabled: !!id,
   });
 }
@@ -35,19 +47,51 @@ export function useHivemindStatsQuery() {
   });
 }
 
+export function useStartHivemind() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.hivemind.start,
+    onSuccess: () => {
+      invalidateHivemindQueries(queryClient);
+      toast.success("Hivemind daemon started.");
+    },
+    onError: (error) => {
+      toast.error(
+        `Failed to start hivemind: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    },
+  });
+}
+
+export function useStopHivemind() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.hivemind.stop,
+    onSuccess: () => {
+      invalidateHivemindQueries(queryClient);
+      toast.success("Hivemind daemon stopped.");
+    },
+    onError: (error) => {
+      toast.error(
+        `Failed to stop hivemind: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    },
+  });
+}
+
 export function useDeleteZettel() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.hivemind.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hivemind-list"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-search"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-stats"] });
+      invalidateHivemindQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: ["hivemind-show"] });
       toast.success("Zettel deleted.");
     },
     onError: (error) => {
-      toast.error(`Failed to delete: ${error instanceof Error ? error.message : "unknown error"}`);
+      toast.error(
+        `Failed to delete: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
     },
   });
 }
@@ -57,14 +101,14 @@ export function useRestoreZettel() {
   return useMutation({
     mutationFn: (id: string) => api.hivemind.restore(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hivemind-list"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-search"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-stats"] });
+      invalidateHivemindQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: ["hivemind-show"] });
       toast.success("Zettel restored.");
     },
     onError: (error) => {
-      toast.error(`Failed to restore: ${error instanceof Error ? error.message : "unknown error"}`);
+      toast.error(
+        `Failed to restore: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
     },
   });
 }
@@ -74,8 +118,7 @@ export function useGcMutation() {
   return useMutation({
     mutationFn: (dryRun?: boolean) => api.hivemind.gc(dryRun),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["hivemind-list"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-stats"] });
+      invalidateHivemindQueries(queryClient);
       if (data.wouldArchive != null) {
         toast.info(`GC dry run: ${data.wouldArchive} candidates.`);
       } else {
@@ -83,7 +126,9 @@ export function useGcMutation() {
       }
     },
     onError: (error) => {
-      toast.error(`GC failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      toast.error(
+        `GC failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
     },
   });
 }
@@ -93,13 +138,15 @@ export function useReindexMutation() {
   return useMutation({
     mutationFn: () => api.hivemind.reindex(),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["hivemind-list"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-search"] });
-      queryClient.invalidateQueries({ queryKey: ["hivemind-stats"] });
-      toast.success(`Reindex complete: ${data.zettels} zettels, ${data.keywords} keywords.`);
+      invalidateHivemindQueries(queryClient);
+      toast.success(
+        `Reindex complete: ${data.zettels} zettels, ${data.keywords} keywords.`,
+      );
     },
     onError: (error) => {
-      toast.error(`Reindex failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      toast.error(
+        `Reindex failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
     },
   });
 }

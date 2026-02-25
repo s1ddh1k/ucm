@@ -1,15 +1,17 @@
 import {
   BarChart3,
   Brain,
+  Play,
   RefreshCw,
   Search,
+  Square,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import type { Zettel, ZettelSearchResult } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Zettel, ZettelSearchResult } from "@/api/types";
 import {
   useDeleteZettel,
   useGcMutation,
@@ -18,7 +20,10 @@ import {
   useHivemindShowQuery,
   useHivemindStatsQuery,
   useReindexMutation,
+  useStartHivemind,
+  useStopHivemind,
 } from "@/queries/hivemind";
+import { useStatsQuery } from "@/queries/stats";
 
 const TABS = [
   { key: "explore", label: "Explore", icon: Search },
@@ -39,6 +44,10 @@ function getKeywordLabels(
 export default function HivemindPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get("tab") as TabKey) || "explore";
+  const { data: daemonStats } = useStatsQuery();
+  const hivemindRunning = daemonStats?.hivemind?.running ?? false;
+  const startMutation = useStartHivemind();
+  const stopMutation = useStopHivemind();
 
   function switchTab(key: TabKey) {
     const next = new URLSearchParams(searchParams);
@@ -57,6 +66,7 @@ export default function HivemindPage() {
           const isActive = activeTab === key;
           return (
             <button
+              type="button"
               key={key}
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 isActive
@@ -70,6 +80,40 @@ export default function HivemindPage() {
             </button>
           );
         })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                hivemindRunning ? "bg-green-500" : "bg-muted-foreground/40",
+              )}
+            />
+            {hivemindRunning ? "Running" : "Stopped"}
+          </span>
+          {hivemindRunning ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => stopMutation.mutate()}
+              disabled={stopMutation.isPending}
+            >
+              <Square className="h-3 w-3 mr-1" />
+              Stop
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => startMutation.mutate()}
+              disabled={startMutation.isPending}
+            >
+              <Play className="h-3 w-3 mr-1" />
+              Start
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -162,9 +206,7 @@ function ExploreTab() {
               Loading...
             </p>
           ) : isError ? (
-            <p className="text-xs text-muted-foreground text-center py-8">
-              Could not load zettels. Is the hivemind daemon running?
-            </p>
+            <HivemindNotRunning />
           ) : !zettelList?.length ? (
             <p className="text-xs text-muted-foreground text-center py-8">
               {isSearching ? "No results" : "No zettels"}
@@ -185,7 +227,11 @@ function ExploreTab() {
       {/* Right panel: detail */}
       <div className="flex-1 min-h-0 overflow-auto">
         {selectedId ? (
-          <ZettelDetail id={selectedId} onNavigate={setSelectedId} />
+          <ZettelDetail
+            key={selectedId}
+            id={selectedId}
+            onNavigate={setSelectedId}
+          />
         ) : (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             <div className="text-center space-y-2">
@@ -210,6 +256,7 @@ function ZettelListItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "w-full text-left px-3 py-2.5 border-b border-border/50 transition-colors",
@@ -244,7 +291,6 @@ function ZettelDetail({
   const { data: zettel, isLoading, isError } = useHivemindShowQuery(id);
   const deleteMutation = useDeleteZettel();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  useEffect(() => setConfirmDelete(false), [id]);
 
   if (isLoading) {
     return (
@@ -297,7 +343,7 @@ function ZettelDetail({
       {/* Links */}
       {(zettel.links?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {zettel.links!.map((linkId) => (
+          {zettel.links?.map((linkId) => (
             <LinkedZettelButton
               key={linkId}
               linkId={linkId}
@@ -317,8 +363,7 @@ function ZettelDetail({
       {/* Source */}
       {zettel.source && (
         <div className="border-t pt-3 text-xs text-muted-foreground">
-          <span className="font-medium">Source:</span>{" "}
-          {zettel.source.adapter}
+          <span className="font-medium">Source:</span> {zettel.source.adapter}
           {zettel.source.ref && (
             <span className="ml-1 font-mono">{zettel.source.ref}</span>
           )}
@@ -376,18 +421,40 @@ function LinkedZettelButton({
   const label =
     !isLoading && !isError && linked?.title
       ? linked.title.length > 24
-        ? linked.title.slice(0, 24) + "…"
+        ? `${linked.title.slice(0, 24)}…`
         : linked.title
       : linkId.slice(-8);
 
   return (
     <button
+      type="button"
       onClick={onClick}
       title={linked?.title ?? linkId}
       className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors truncate max-w-48"
     >
       {label}
     </button>
+  );
+}
+
+function HivemindNotRunning() {
+  const startMutation = useStartHivemind();
+  return (
+    <div className="text-center py-8 space-y-3">
+      <Brain className="h-8 w-8 mx-auto text-muted-foreground/50" />
+      <p className="text-sm text-muted-foreground">
+        Hivemind daemon is not running.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => startMutation.mutate()}
+        disabled={startMutation.isPending}
+      >
+        <Play className="h-3.5 w-3.5 mr-1.5" />
+        {startMutation.isPending ? "Starting..." : "Start Hivemind"}
+      </Button>
+    </div>
   );
 }
 
@@ -408,8 +475,8 @@ function StatsTab() {
 
   if (isError || !stats) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">
-        Could not load stats. Is the hivemind daemon running?
+      <div className="p-6">
+        <HivemindNotRunning />
       </div>
     );
   }

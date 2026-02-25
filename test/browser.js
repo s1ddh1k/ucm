@@ -520,20 +520,20 @@ async function main() {
   await runGroup(
     "UI Panels",
     {
-      "proposals tab or section exists": async () => {
-        const hasProposals = await cdpEvaluate(
+      "hivemind tab or section exists": async () => {
+        const hasHivemind = await cdpEvaluate(
           wsUrl,
           `
         (function() {
           const links = document.querySelectorAll('aside a');
           for (const el of links) {
-            if ((el.textContent || '').toLowerCase().includes('proposal')) return true;
+            if ((el.textContent || '').toLowerCase().includes('hivemind')) return true;
           }
           return false;
         })()
       `,
         );
-        assert(hasProposals, "proposals section should exist");
+        assert(hasHivemind, "hivemind section should exist");
       },
 
     },

@@ -3249,7 +3249,15 @@ function testDefaultConfigObserver() {
 function testProposalConstants() {
   assertDeepEqual(
     PROPOSAL_STATUSES,
-    ["proposed", "approved", "rejected", "implemented"],
+    [
+      "proposed",
+      "packaging",
+      "packaged",
+      "held",
+      "approved",
+      "rejected",
+      "implemented",
+    ],
     "PROPOSAL_STATUSES",
   );
   assert(VALID_CATEGORIES.has("template"), "VALID_CATEGORIES: template");

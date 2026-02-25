@@ -310,6 +310,8 @@ export const automation = {
 
 // Hivemind
 export const hivemind = {
+  start: () => post<{ ok: boolean; running: boolean }>("/api/hivemind/start"),
+  stop: () => post<{ ok: boolean; running: boolean }>("/api/hivemind/stop"),
   search: (query: string, limit?: number) =>
     request<ZettelSearchResult[]>(
       `/api/hivemind/search?q=${encodeURIComponent(query)}&limit=${limit || 20}`,
