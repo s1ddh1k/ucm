@@ -2081,7 +2081,7 @@ exit 0
       assertEqual(STAGE_MODELS.clarify, "sonnet", "clarify default");
       assertEqual(STAGE_MODELS.design, "opus", "design default");
       assertEqual(STAGE_MODELS.implement, "opus", "implement default");
-      assertEqual(STAGE_MODELS.verify, "sonnet", "verify default");
+      assertDeepEqual(STAGE_MODELS.verify, { test: "sonnet", review: "sonnet" }, "verify default");
       assertEqual(STAGE_MODELS.deliver, "sonnet", "deliver default");
 
       // Restore
