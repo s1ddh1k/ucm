@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useDirectoryFeedback } from "@/hooks/use-directory-feedback";
 import { useDirectoryPathField } from "@/hooks/use-directory-path-field";
 import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { getErrorDetail } from "@/lib/error";
@@ -57,6 +58,7 @@ export function ProjectAddDialog({
     useState<FolderCreateFeedback | null>(null);
   const pathInputId = useId();
   const nameInputId = useId();
+  const directoryFeedbackId = useId();
   const newFolderNameError = useMemo(
     () => validateFolderName(newFolderName),
     [newFolderName],
@@ -92,6 +94,11 @@ export function ProjectAddDialog({
       setNewFolderName("");
       setFolderCreateFeedback(null);
     },
+  });
+  const directoryFeedback = useDirectoryFeedback({
+    loading: browseLoading,
+    browseError,
+    selectionNotice,
   });
 
   useEffect(() => {
@@ -183,6 +190,8 @@ export function ProjectAddDialog({
                   handlePathChange(e.target.value);
                 }}
                 className="flex-1"
+                aria-describedby={directoryFeedback ? directoryFeedbackId : undefined}
+                aria-invalid={directoryFeedback?.tone === "error" || undefined}
               />
               <Button
                 type="button"
@@ -199,28 +208,28 @@ export function ProjectAddDialog({
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
-            {browseLoading && (
-              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                Loading directories...
-              </p>
-            )}
-            {browseError && (
-              <p className="mt-2 text-xs text-destructive" role="alert">
-                {browseError}
-              </p>
-            )}
-            {selectionNotice && !browseLoading && !browseError && (
-              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                {selectionNotice}
+            {directoryFeedback && (
+              <p
+                id={directoryFeedbackId}
+                className={`mt-2 text-xs ${
+                  directoryFeedback.tone === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}
+                role={directoryFeedback.role}
+                aria-live={directoryFeedback.ariaLive}
+              >
+                {directoryFeedback.message}
               </p>
             )}
             {browsing && browseResult && (
-              <div
+              <section
                 className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40"
+                role="region"
                 aria-label="Directory browser"
                 aria-busy={browseLoading}
               >
-                <div className="px-3 py-1.5 border-b flex items-center justify-between gap-2">
+                <header className="px-3 py-1.5 border-b flex items-center justify-between gap-2">
                   <span className="text-xs font-mono truncate">
                     {browseResult.current}
                   </span>
@@ -248,7 +257,7 @@ export function ProjectAddDialog({
                       Select
                     </Button>
                   </div>
-                </div>
+                </header>
                 {showNewFolder && (
                   <div className="px-3 py-1.5 border-b space-y-1.5">
                     <div className="flex items-center gap-1">
@@ -286,28 +295,40 @@ export function ProjectAddDialog({
                     )}
                   </div>
                 )}
-                {browseResult.parent && (
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
-                    onClick={() => void navigateBrowser(browseResult.parent)}
-                    disabled={browseLoading}
-                  >
-                    ..
-                  </button>
-                )}
-                {browseResult.directories.map((dir) => (
-                  <button
-                    type="button"
-                    key={dir.path}
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
-                    onClick={() => void navigateBrowser(dir.path)}
-                    disabled={browseLoading}
-                  >
-                    {dir.name}/
-                  </button>
-                ))}
-              </div>
+                <ul>
+                  {browseResult.parent && (
+                    <li>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
+                        onClick={() => void navigateBrowser(browseResult.parent)}
+                        disabled={browseLoading}
+                      >
+                        ..
+                      </button>
+                    </li>
+                  )}
+                  {browseResult.directories.length === 0 && (
+                    <li>
+                      <p className="px-3 py-2 text-xs text-muted-foreground">
+                        No subdirectories found.
+                      </p>
+                    </li>
+                  )}
+                  {browseResult.directories.map((dir) => (
+                    <li key={dir.path}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
+                        onClick={() => void navigateBrowser(dir.path)}
+                        disabled={browseLoading}
+                      >
+                        {dir.name}/
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
             {creating && (
               <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">

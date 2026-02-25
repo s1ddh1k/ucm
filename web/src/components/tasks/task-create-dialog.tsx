@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useDirectoryFeedback } from "@/hooks/use-directory-feedback";
 import { useDirectoryPathField } from "@/hooks/use-directory-path-field";
 import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useProjectCatalogQuery } from "@/queries/projects";
@@ -69,6 +70,7 @@ export function TaskCreateDialog({
   const descriptionInputId = useId();
   const projectInputId = useId();
   const priorityInputId = useId();
+  const directoryFeedbackId = useId();
 
   const submitTask = useSubmitTask();
   const {
@@ -98,6 +100,11 @@ export function TaskCreateDialog({
     path: project,
     setPath: setProject,
     clearSubmitError,
+  });
+  const directoryFeedback = useDirectoryFeedback({
+    loading: browseLoading,
+    browseError,
+    selectionNotice,
   });
 
   useEffect(() => {
@@ -238,6 +245,8 @@ export function TaskCreateDialog({
                 value={project}
                 onChange={(e) => handlePathChange(e.target.value)}
                 className="flex-1"
+                aria-describedby={directoryFeedback ? directoryFeedbackId : undefined}
+                aria-invalid={directoryFeedback?.tone === "error" || undefined}
               />
               <Button
                 type="button"
@@ -251,28 +260,28 @@ export function TaskCreateDialog({
                 <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
-            {browseLoading && (
-              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                Loading directories...
-              </p>
-            )}
-            {browseError && (
-              <p className="mt-2 text-xs text-destructive" role="alert">
-                {browseError}
-              </p>
-            )}
-            {selectionNotice && !browseLoading && !browseError && (
-              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                {selectionNotice}
+            {directoryFeedback && (
+              <p
+                id={directoryFeedbackId}
+                className={`mt-2 text-xs ${
+                  directoryFeedback.tone === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}
+                role={directoryFeedback.role}
+                aria-live={directoryFeedback.ariaLive}
+              >
+                {directoryFeedback.message}
               </p>
             )}
             {browsing && browseResult && (
-              <div
+              <section
                 className="mt-2 border rounded-md max-h-48 overflow-auto bg-muted/50"
+                role="region"
                 aria-label="Directory browser"
                 aria-busy={browseLoading}
               >
-                <div className="px-3 py-1.5 border-b flex items-center justify-between">
+                <header className="px-3 py-1.5 border-b flex items-center justify-between">
                   <span className="text-xs font-mono truncate">
                     {browseResult.current}
                   </span>
@@ -285,29 +294,41 @@ export function TaskCreateDialog({
                   >
                     Select
                   </Button>
-                </div>
-                {browseResult.parent && (
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
-                    onClick={() => void navigateBrowser(browseResult.parent)}
-                    disabled={browseLoading}
-                  >
-                    ..
-                  </button>
-                )}
-                {browseResult.directories.map((dir) => (
-                  <button
-                    type="button"
-                    key={dir.path}
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
-                    onClick={() => void navigateBrowser(dir.path)}
-                    disabled={browseLoading}
-                  >
-                    {dir.name}/
-                  </button>
-                ))}
-              </div>
+                </header>
+                <ul>
+                  {browseResult.parent && (
+                    <li>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 text-muted-foreground"
+                        onClick={() => void navigateBrowser(browseResult.parent)}
+                        disabled={browseLoading}
+                      >
+                        ..
+                      </button>
+                    </li>
+                  )}
+                  {browseResult.directories.length === 0 && (
+                    <li>
+                      <p className="px-3 py-2 text-xs text-muted-foreground">
+                        No subdirectories found.
+                      </p>
+                    </li>
+                  )}
+                  {browseResult.directories.map((dir) => (
+                    <li key={dir.path}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/50 font-mono"
+                        onClick={() => void navigateBrowser(dir.path)}
+                        disabled={browseLoading}
+                      >
+                        {dir.name}/
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
           </div>
 
