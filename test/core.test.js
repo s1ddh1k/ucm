@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 const path = require("node:path");
 const os = require("node:os");
+const { execFileSync } = require("node:child_process");
 const {
+  access,
   readFile,
   writeFile,
   chmod,
@@ -50,7 +52,13 @@ const {
 
 // ── sanitizeContent tests ──
 
-const { sanitizeContent } = require("../lib/core/worktree");
+const {
+  sanitizeContent,
+  createWorktrees,
+  acquireLock,
+  releaseLock,
+  cleanupTask,
+} = require("../lib/core/worktree");
 
 // ── parseTaskFile / serializeTaskFile tests ──
 
@@ -82,7 +90,35 @@ const {
   STAGE_ARTIFACTS,
   STAGE_MODELS,
   FORGE_DIR,
+  WORKTREES_DIR,
 } = require("../lib/core/constants");
+
+function gitExec(args, cwd) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf-8",
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim();
+}
+
+async function initGitRepo(repoPath) {
+  await mkdir(repoPath, { recursive: true });
+  gitExec(["init"], repoPath);
+  await writeFile(path.join(repoPath, "README.md"), "# test\n", "utf-8");
+  gitExec(["add", "README.md"], repoPath);
+  gitExec(
+    [
+      "-c",
+      "user.email=ucm-test@example.com",
+      "-c",
+      "user.name=UCM Test",
+      "commit",
+      "-m",
+      "init",
+    ],
+    repoPath,
+  );
+}
 
 async function main() {
   // ── extractJson ──
@@ -485,6 +521,76 @@ title: line1\\nline2
       const result = sanitizeContent(input);
       const redactedCount = (result.match(/\[REDACTED\]/g) || []).length;
       assertEqual(redactedCount, 2, "case-insensitive matching");
+    },
+  });
+
+  // ── worktree lock & rollback ──
+  await runGroup("worktree reliability", {
+    "acquireLock returns retryable ELOCKED with context": async () => {
+      const taskId = `forge-lock-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const first = await acquireLock(taskId);
+      let err = null;
+      try {
+        await acquireLock(taskId);
+      } catch (e) {
+        err = e;
+      } finally {
+        await releaseLock(first);
+      }
+
+      assert(!!err, "second lock acquire should fail");
+      assertEqual(err.code, "ELOCKED", "lock contention code");
+      assertEqual(err.retryable, true, "lock contention should be retryable");
+      assertEqual(err.taskId, taskId, "taskId context");
+      assertEqual(err.stage, "worktree-lock", "stage context");
+      assert(
+        String(err.filePath || "").endsWith(`${taskId}.lock`),
+        "filePath context",
+      );
+    },
+
+    "createWorktrees rolls back partial setup when a later project fails": async () => {
+      const uniq = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const taskId = `forge-wt-${uniq}`;
+      const baseTmp = await mkdtemp(path.join(os.tmpdir(), "ucm-worktree-"));
+      const repoOk = path.join(baseTmp, "repo-ok");
+      const repoBad = path.join(baseTmp, "repo-bad-missing");
+      const worktreeTaskDir = path.join(WORKTREES_DIR, taskId);
+      const branchName = `ucm/${taskId}`;
+
+      await initGitRepo(repoOk);
+
+      let err = null;
+      try {
+        await createWorktrees(taskId, [
+          { name: "ok", path: repoOk, role: "primary" },
+          { name: "bad", path: repoBad, role: "secondary" },
+        ]);
+      } catch (e) {
+        err = e;
+      }
+
+      assert(!!err, "createWorktrees should fail");
+      assertEqual(err.taskId, taskId, "taskId context");
+      assertEqual(err.stage, "worktree-setup", "stage context");
+      assert(
+        String(err.filePath || "").endsWith(path.join(taskId, "workspace.json")),
+        "filePath context",
+      );
+
+      let worktreeDirExists = true;
+      try {
+        await access(worktreeTaskDir);
+      } catch (e) {
+        if (e.code === "ENOENT") worktreeDirExists = false;
+      }
+      assert(!worktreeDirExists, "partial worktree directory rolled back");
+
+      const branchOutput = gitExec(["branch", "--list", branchName], repoOk);
+      assertEqual(branchOutput, "", "rollback removed temporary branch");
+
+      await cleanupTask(taskId);
+      await rm(baseTmp, { recursive: true, force: true });
     },
   });
 
@@ -2415,6 +2521,14 @@ exit 0
       assertEqual(result.length, 1, "one project");
       assertEqual(result[0].name, "myname", "custom name");
       assertEqual(result[0].role, "primary", "explicit role");
+    },
+
+    "sanitizes custom name to block path traversal": () => {
+      const result = normalizeProjects({
+        projects: [{ path: "/tmp/a", name: "../../escape-dir" }],
+      });
+      assertEqual(result.length, 1, "one project");
+      assertEqual(result[0].name, "escape-dir", "uses safe basename only");
     },
 
     "deduplicates projects by resolved path": () => {
