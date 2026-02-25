@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AutomationConfig } from "@/api/client";
 import {
   Bot,
   Loader2,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import type { AutomationConfig } from "@/api/client";
 import { api } from "@/api/client";
 import type { StageApprovalConfig } from "@/api/types";
 import { StatusDot } from "@/components/shared/status-dot";
@@ -23,6 +23,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -30,13 +37,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { buildActionErrorMessage } from "@/lib/error";
 import { formatDuration } from "@/lib/format";
 import {
@@ -513,9 +513,9 @@ function ProviderCard() {
           <>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium" id="provider-label">
+                <p className="text-sm font-medium" id="provider-label">
                   Provider
-                </label>
+                </p>
                 <Select
                   value={activeProvider}
                   onValueChange={changeProvider}
@@ -534,9 +534,9 @@ function ProviderCard() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium" id="model-label">
+                <p className="text-sm font-medium" id="model-label">
                   Model
-                </label>
+                </p>
                 <Select
                   value={displayedModel}
                   onValueChange={changeModel}
@@ -680,11 +680,36 @@ function StageApprovalCard() {
 }
 
 const AUTOMATION_TOGGLES = [
-  { key: "autoExecute" as const, label: "Auto Execute", description: "Automatically run forge when a task is created" },
-  { key: "autoApprove" as const, label: "Auto Approve", description: "Automatically approve tasks after forge completes" },
-  { key: "autoPropose" as const, label: "Auto Propose", description: "Observer automatically generates proposals" },
-  { key: "autoConvert" as const, label: "Auto Convert", description: "Automatically promote proposals to tasks" },
+  {
+    key: "autoExecute" as const,
+    label: "Auto Execute",
+    description: "Automatically run forge when a task is created",
+  },
+  {
+    key: "autoApprove" as const,
+    label: "Auto Approve",
+    description: "Automatically approve tasks after forge completes",
+  },
+  {
+    key: "autoPropose" as const,
+    label: "Auto Propose",
+    description: "Observer automatically generates proposals",
+  },
+  {
+    key: "autoConvert" as const,
+    label: "Auto Convert",
+    description: "Automatically promote proposals to tasks",
+  },
 ];
+
+type AutomationToggleKey = (typeof AUTOMATION_TOGGLES)[number]["key"];
+
+const DEFAULT_AUTOMATION_TOGGLE_CONFIG: Record<AutomationToggleKey, boolean> = {
+  autoExecute: false,
+  autoApprove: false,
+  autoPropose: false,
+  autoConvert: false,
+};
 
 function AutomationDefaultsCard() {
   const qc = useQueryClient();
@@ -694,7 +719,8 @@ function AutomationDefaultsCard() {
   });
 
   const mutation = useMutation({
-    mutationFn: (params: Partial<AutomationConfig>) => api.automation.set(params),
+    mutationFn: (params: Partial<AutomationConfig>) =>
+      api.automation.set(params),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["automation"] });
       qc.invalidateQueries({ queryKey: ["config"] });
@@ -710,14 +736,22 @@ function AutomationDefaultsCard() {
     },
   });
 
-  const config = automationConfig || { autoExecute: false, autoApprove: false, autoPropose: false, autoConvert: false };
+  const config = automationConfig
+    ? {
+        autoExecute: automationConfig.autoExecute,
+        autoApprove: automationConfig.autoApprove,
+        autoPropose: automationConfig.autoPropose,
+        autoConvert: automationConfig.autoConvert,
+      }
+    : DEFAULT_AUTOMATION_TOGGLE_CONFIG;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Automation Defaults</CardTitle>
         <CardDescription>
-          Global automation toggles. Per-project overrides can be set from each project's overview page.
+          Global automation toggles. Per-project overrides can be set from each
+          project's overview page.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -732,7 +766,7 @@ function AutomationDefaultsCard() {
                   <p className="text-xs text-muted-foreground">{description}</p>
                 </div>
                 <Switch
-                  checked={!!config[key as keyof typeof config]}
+                  checked={config[key]}
                   onCheckedChange={(checked) =>
                     mutation.mutate({ [key]: checked })
                   }

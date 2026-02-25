@@ -15,5 +15,6 @@ export const useDaemonStore = create<DaemonState>((set) => ({
   statsLastUpdatedAt: null,
   setStatus: (status) => set({ status }),
   setConnected: (connected) => set({ connected }),
-  setStatsLastUpdatedAt: (timestampMs) => set({ statsLastUpdatedAt: timestampMs }),
+  setStatsLastUpdatedAt: (timestampMs) =>
+    set({ statsLastUpdatedAt: timestampMs }),
 }));

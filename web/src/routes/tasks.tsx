@@ -21,6 +21,12 @@ import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 
+const TASK_VIEW_OPTIONS = [
+  { value: "list", title: "List view", Icon: List },
+  { value: "board", title: "Board view", Icon: LayoutGrid },
+  { value: "timeline", title: "Timeline view", Icon: GanttChart },
+] as const;
+
 export default function TasksPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const params = useParams();
@@ -142,33 +148,21 @@ export default function TasksPage() {
           )}
         </div>
         <div className="flex items-center border rounded-md shrink-0">
-          <button
-            className={`p-1.5 transition-colors ${
-              viewMode === "list" ? "bg-accent" : "hover:bg-accent/50"
-            }`}
-            onClick={() => setViewMode("list")}
-            title="List view"
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className={`p-1.5 transition-colors ${
-              viewMode === "board" ? "bg-accent" : "hover:bg-accent/50"
-            }`}
-            onClick={() => setViewMode("board")}
-            title="Board view"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className={`p-1.5 transition-colors ${
-              viewMode === "timeline" ? "bg-accent" : "hover:bg-accent/50"
-            }`}
-            onClick={() => setViewMode("timeline")}
-            title="Timeline view"
-          >
-            <GanttChart className="h-3.5 w-3.5" />
-          </button>
+          {TASK_VIEW_OPTIONS.map(({ value, title, Icon }) => (
+            <button
+              type="button"
+              key={value}
+              className={`p-1.5 transition-colors ${
+                viewMode === value ? "bg-accent" : "hover:bg-accent/50"
+              }`}
+              onClick={() => setViewMode(value)}
+              title={title}
+              aria-label={title}
+              aria-pressed={viewMode === value}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
         </div>
       </div>
 

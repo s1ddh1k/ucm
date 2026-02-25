@@ -58,6 +58,19 @@ import {
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
 
+const STATUS_OPTIONS = [
+  { value: "", label: "All" },
+  { value: "proposed", label: "Proposed" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "implemented", label: "Done" },
+] as const;
+
+const PROPOSAL_VIEW_OPTIONS = [
+  { value: "grid", label: "Grid view", Icon: LayoutGrid },
+  { value: "list", label: "List view", Icon: List },
+] as const;
+
 export default function ProposalsPage() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -184,14 +197,6 @@ export default function ProposalsPage() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [proposals]);
 
-  const STATUS_OPTIONS = [
-    { value: "", label: "All" },
-    { value: "proposed", label: "Proposed" },
-    { value: "approved", label: "Approved" },
-    { value: "rejected", label: "Rejected" },
-    { value: "implemented", label: "Done" },
-  ];
-
   const filteredProposals = useMemo(() => {
     if (!proposals) return [];
     let result = [...proposals];
@@ -224,7 +229,14 @@ export default function ProposalsPage() {
         ? "Running project research..."
         : null;
   const observerActionsBusy =
-    runObserver.isPending || analyzeProject.isPending || researchProject.isPending;
+    runObserver.isPending ||
+    analyzeProject.isPending ||
+    researchProject.isPending;
+
+  const openProposalDetail = (proposal: Proposal) => {
+    setDetailProposal(proposal);
+    setDetailOpen(true);
+  };
 
   const handleApprove = (id: string) => {
     approveProposal.mutate(id);
@@ -299,6 +311,7 @@ export default function ProposalsPage() {
         <div className="flex items-center rounded-md border divide-x">
           {STATUS_OPTIONS.map((opt) => (
             <button
+              type="button"
               key={opt.value}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                 proposalFilter === opt.value
@@ -373,20 +386,19 @@ export default function ProposalsPage() {
         )}
 
         <div className="flex items-center border rounded-md">
-          <button
-            className={`p-1.5 ${viewMode === "grid" ? "bg-accent" : "hover:bg-accent/50"}`}
-            onClick={() => setViewMode("grid")}
-            title="Grid view"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className={`p-1.5 ${viewMode === "list" ? "bg-accent" : "hover:bg-accent/50"}`}
-            onClick={() => setViewMode("list")}
-            title="List view"
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
+          {PROPOSAL_VIEW_OPTIONS.map(({ value, label, Icon }) => (
+            <button
+              type="button"
+              key={value}
+              className={`p-1.5 ${viewMode === value ? "bg-accent" : "hover:bg-accent/50"}`}
+              onClick={() => setViewMode(value)}
+              title={label}
+              aria-label={label}
+              aria-pressed={viewMode === value}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
         </div>
       </div>
 
@@ -444,13 +456,12 @@ export default function ProposalsPage() {
           </Button>
         </div>
         {actionStatusMessage && (
-          <p
+          <output
             className="w-full text-xs text-muted-foreground"
-            role="status"
             aria-live="polite"
           >
             {actionStatusMessage}
-          </p>
+          </output>
         )}
       </div>
 
@@ -466,42 +477,43 @@ export default function ProposalsPage() {
           {filteredProposals.map((proposal) => (
             <div
               key={proposal.id}
-              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 cursor-pointer transition-colors"
-              onClick={() => {
-                setDetailProposal(proposal);
-                setDetailOpen(true);
-              }}
+              className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 transition-colors"
             >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{proposal.title}</p>
-              </div>
-              <Badge variant="outline" className="text-[10px] shrink-0">
-                {proposal.category}
-              </Badge>
-              <span
-                className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
-                  proposal.risk === "high"
-                    ? "bg-red-500/20 text-red-400"
-                    : proposal.risk === "medium"
-                      ? "bg-yellow-500/20 text-yellow-400"
-                      : "bg-emerald-500/20 text-emerald-400"
-                }`}
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-3 min-w-0 text-left"
+                onClick={() => openProposalDetail(proposal)}
               >
-                {proposal.risk}
-              </span>
-              <span className="text-xs text-muted-foreground w-8 text-center shrink-0">
-                {proposal.priority || 0}
-              </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {proposal.title}
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {proposal.category}
+                </Badge>
+                <span
+                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+                    proposal.risk === "high"
+                      ? "bg-red-500/20 text-red-400"
+                      : proposal.risk === "medium"
+                        ? "bg-yellow-500/20 text-yellow-400"
+                        : "bg-emerald-500/20 text-emerald-400"
+                  }`}
+                >
+                  {proposal.risk}
+                </span>
+                <span className="text-xs text-muted-foreground w-8 text-center shrink-0">
+                  {proposal.priority || 0}
+                </span>
+              </button>
               {proposal.status === "proposed" && (
                 <div className="flex items-center gap-1 shrink-0">
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleApprove(proposal.id);
-                    }}
+                    onClick={() => handleApprove(proposal.id)}
                   >
                     <Check className="h-3.5 w-3.5" />
                   </Button>
@@ -509,10 +521,7 @@ export default function ProposalsPage() {
                     size="sm"
                     variant="ghost"
                     className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleReject(proposal.id);
-                    }}
+                    onClick={() => handleReject(proposal.id)}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
@@ -539,10 +548,7 @@ export default function ProposalsPage() {
               onPriorityDown={() =>
                 setPriority.mutate({ proposalId: proposal.id, delta: -1 })
               }
-              onClick={() => {
-                setDetailProposal(proposal);
-                setDetailOpen(true);
-              }}
+              onClick={() => openProposalDetail(proposal)}
             />
           ))}
         </div>
