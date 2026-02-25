@@ -225,7 +225,6 @@ export function ProjectAddDialog({
             {browsing && browseResult && (
               <section
                 className="mt-2 border rounded-md max-h-52 overflow-auto bg-muted/40"
-                role="region"
                 aria-label="Directory browser"
                 aria-busy={browseLoading}
               >

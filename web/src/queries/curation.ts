@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { buildActionErrorMessage } from "@/lib/error";
+import { requireQueryValue } from "./required-value";
 
 export function useCurationModeQuery() {
   return useQuery({
@@ -54,7 +55,7 @@ export function useSetCurationWeights() {
 export function useProposalScoreQuery(proposalId: string | null) {
   return useQuery({
     queryKey: ["proposal-score", proposalId],
-    queryFn: () => api.proposals.score(proposalId!),
+    queryFn: () => api.proposals.score(requireQueryValue(proposalId, "proposalId")),
     enabled: !!proposalId,
   });
 }
@@ -115,7 +116,8 @@ export function useSplitCluster() {
 export function useProposalConflictsQuery(proposalId: string | null) {
   return useQuery({
     queryKey: ["proposal-conflicts", proposalId],
-    queryFn: () => api.proposals.conflicts(proposalId!),
+    queryFn: () =>
+      api.proposals.conflicts(requireQueryValue(proposalId, "proposalId")),
     enabled: !!proposalId,
   });
 }
@@ -146,7 +148,8 @@ export function useDiscardHistoryQuery(limit?: number) {
 export function useBigBetChecklistQuery(proposalId: string | null) {
   return useQuery({
     queryKey: ["bigbet-checklist", proposalId],
-    queryFn: () => api.proposals.readiness(proposalId!),
+    queryFn: () =>
+      api.proposals.readiness(requireQueryValue(proposalId, "proposalId")),
     enabled: !!proposalId,
   });
 }

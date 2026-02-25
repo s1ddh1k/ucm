@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import type { Proposal } from "@/api/types";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { buildActionErrorMessage } from "@/lib/error";
+import { requireQueryValue } from "./required-value";
 
 interface PendingToastContext {
   toastId: string | number;
@@ -21,7 +22,8 @@ export function useProposalsQuery(status?: string, paused = false) {
 export function useProposalEvaluateQuery(proposalId: string | null) {
   return useQuery({
     queryKey: ["proposal-evaluate", proposalId],
-    queryFn: () => api.proposals.evaluate(proposalId!),
+    queryFn: () =>
+      api.proposals.evaluate(requireQueryValue(proposalId, "proposalId")),
     enabled: !!proposalId,
   });
 }

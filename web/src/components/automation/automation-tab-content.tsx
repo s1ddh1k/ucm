@@ -57,7 +57,6 @@ export function AutomationTabContent() {
 
   const config = automationConfig || { autoExecute: false, autoApprove: false, autoPropose: false, autoConvert: false, projects: {} };
 
-  const reviewCount = tasks?.filter((t) => t.state === "review").length ?? 0;
   const doneCount = tasks?.filter((t) => t.state === "done").length ?? 0;
   const proposedCount = proposals?.filter((p) => p.status === "proposed").length ?? 0;
 
@@ -192,6 +191,7 @@ function TriStateToggle({
     <div className="inline-flex rounded-md border text-xs">
       {options.map((opt) => (
         <button
+          type="button"
           key={opt.key}
           disabled={disabled}
           onClick={() => onChange(opt.key)}

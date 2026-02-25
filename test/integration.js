@@ -9,7 +9,6 @@ const net = require("node:net");
 const http = require("node:http");
 
 const {
-  state,
   assert,
   assertEqual,
   runGroup,

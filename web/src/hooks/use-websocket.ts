@@ -457,7 +457,9 @@ export function useWebSocket() {
     );
 
     return () => {
-      unsubs.forEach((unsub) => unsub());
+      unsubs.forEach((unsub) => {
+        unsub();
+      });
       wsManager.disconnect();
       initialized.current = false;
       resetPendingBadge();

@@ -79,12 +79,12 @@ async function main() {
 
         await mkdir(nestedDir, { recursive: true });
         await mkdir(hiddenDir, { recursive: true });
-        await writeFile(topMarkdown, "## Top\\n\\n" + "A".repeat(120));
+        await writeFile(topMarkdown, `## Top\\n\\n${"A".repeat(120)}`);
         await writeFile(
           nestedMarkdown,
-          "## First\\n\\n" + "B".repeat(120) + "\\n\\n## Second\\n\\n" + "C".repeat(120),
+          `## First\\n\\n${"B".repeat(120)}\\n\\n## Second\\n\\n${"C".repeat(120)}`,
         );
-        await writeFile(hiddenMarkdown, "## Hidden\\n\\n" + "D".repeat(120));
+        await writeFile(hiddenMarkdown, `## Hidden\\n\\n${"D".repeat(120)}`);
         await writeFile(textFile, "not markdown");
 
         const older = new Date(Date.now() - 5_000);
@@ -128,8 +128,8 @@ async function main() {
         const sensitiveTarget = path.join(tempRoot, "sensitive.txt");
         const linkedMarkdown = path.join(tempRoot, "leak.md");
 
-        await writeFile(safeMarkdown, "## Safe\\n\\n" + "S".repeat(120));
-        await writeFile(sensitiveTarget, "TOP SECRET\\n" + "X".repeat(180));
+        await writeFile(safeMarkdown, `## Safe\\n\\n${"S".repeat(120)}`);
+        await writeFile(sensitiveTarget, `TOP SECRET\\n${"X".repeat(180)}`);
 
         try {
           await symlink(sensitiveTarget, linkedMarkdown);

@@ -92,6 +92,7 @@ function TriStateToggle({
     <div className="inline-flex rounded-md border text-xs">
       {options.map((opt) => (
         <button
+          type="button"
           key={opt.key}
           disabled={disabled}
           onClick={() => onChange(opt.key)}

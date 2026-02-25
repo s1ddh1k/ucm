@@ -6,8 +6,8 @@ import { wsManager } from "@/api/websocket";
 import { StatusDot } from "@/components/shared/status-dot";
 import { Button } from "@/components/ui/button";
 import {
-  TerminalSessionStatus,
   useTerminalSessionFeedback,
+  type TerminalSessionStatus,
 } from "@/hooks/use-terminal-session-feedback";
 import { getArrayBufferField, getStringField } from "@/lib/ws-event";
 import { useDaemonStore } from "@/stores/daemon";
