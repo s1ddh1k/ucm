@@ -5,6 +5,10 @@ import type { Proposal } from "@/api/types";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { buildActionErrorMessage } from "@/lib/error";
 
+interface PendingToastContext {
+  toastId: string | number;
+}
+
 export function useProposalsQuery(status?: string, paused = false) {
   const interval = useSmartInterval(60000, paused);
   return useQuery({
@@ -138,12 +142,20 @@ export function useRunObserver() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.observer.run,
-    onSuccess: () => {
+    onMutate: () =>
+      ({
+        toastId: toast.loading("Running observer cycle..."),
+      }) satisfies PendingToastContext,
+    onSuccess: (data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       qc.invalidateQueries({ queryKey: ["observer-status"] });
       qc.invalidateQueries({ queryKey: ["proposals"] });
-      toast.success("Observer run completed.");
+      toast.success(
+        `Observer cycle ${data.cycle} completed. ${data.proposalCount} proposal(s) created.`,
+      );
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       toast.error(
         buildActionErrorMessage(
           "Observer run failed",
@@ -158,10 +170,18 @@ export function useRunObserver() {
 export function useAnalyzeProject() {
   return useMutation({
     mutationFn: (project: string) => api.observer.analyze(project),
-    onSuccess: () => {
-      toast.success("Project analysis started.");
+    onMutate: () =>
+      ({
+        toastId: toast.loading("Analyzing project..."),
+      }) satisfies PendingToastContext,
+    onSuccess: (data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
+      toast.success(
+        `Project analysis completed. ${data.proposalCount} proposal(s) created for ${data.project}.`,
+      );
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       toast.error(
         buildActionErrorMessage(
           "Failed to analyze project",
@@ -176,13 +196,21 @@ export function useAnalyzeProject() {
 export function useResearchProject() {
   return useMutation({
     mutationFn: (project: string) => api.observer.research(project),
-    onSuccess: () => {
-      toast.success("Project research started.");
+    onMutate: () =>
+      ({
+        toastId: toast.loading("Running project research..."),
+      }) satisfies PendingToastContext,
+    onSuccess: (data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
+      toast.success(
+        `Project research completed. ${data.proposalCount} proposal(s) created.`,
+      );
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       toast.error(
         buildActionErrorMessage(
-          "Failed to start research",
+          "Failed to run research",
           error,
           "Check project path and daemon status, then retry.",
         ),

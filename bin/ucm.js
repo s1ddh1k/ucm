@@ -928,12 +928,15 @@ async function cmdObserve(opts) {
     return;
   }
 
-  console.log("running observer...");
-  const result = await socketRequest({ method: "observe", params: {} });
-  console.log(
-    `cycle ${result.cycle}: ${result.proposalCount} proposal(s) created`,
+  const result = await runWithProgress("observer 실행", () =>
+    socketRequest({ method: "observe", params: {} }),
   );
-  if (result.error) console.log(`error: ${result.error}`);
+  if (result.error) {
+    throw new Error(`observer cycle ${result.cycle} failed: ${result.error}`);
+  }
+  console.log(
+    `observer cycle ${result.cycle} completed: ${result.proposalCount} proposal(s) created`,
+  );
 }
 
 async function cmdProposals(opts) {
@@ -2408,6 +2411,9 @@ const ERROR_HINTS = {
     "해당 상태에서는 재개할 수 없습니다. 실패/리뷰 상태인지 확인하고 `ucm status <task-id>`로 현재 상태를 점검하세요.",
 };
 
+const DEFAULT_ERROR_HINT =
+  "문제가 계속되면 `ucm status`로 상태를 확인하고 `~/.ucm/daemon/ucmd.log` 로그를 확인한 뒤 다시 시도하세요.";
+
 function resolveErrorHint(message) {
   const cannotAbort = message.match(/cannot abort task in status:\s*([^\s]+)/i);
   if (cannotAbort) {
@@ -2446,11 +2452,7 @@ function resolveErrorHint(message) {
 main().catch(async (e) => {
   const msg = e.message || String(e);
   const hint = resolveErrorHint(msg);
-  if (hint) {
-    console.error(`error: ${msg}\nhint: ${hint}`);
-  } else {
-    console.error(`error: ${msg}`);
-  }
+  console.error(`error: ${msg}\nhint: ${hint || DEFAULT_ERROR_HINT}`);
 
   // 실패 시 복구 안내 — taskId를 추출하여 next action 제안
   const taskIdMatch = msg.match(/forge-\d{8}-[a-f0-9]+/);

@@ -272,6 +272,29 @@ export interface ObserverStatus {
   } | null;
 }
 
+export interface ObserverRunResult {
+  cycle: number;
+  proposalCount: number;
+  error?: string;
+}
+
+export interface AnalyzeProjectResult {
+  project: string;
+  proposalCount: number;
+  proposals?: Array<{
+    id: string;
+    title: string;
+    category: string;
+    risk: string;
+  }>;
+  error?: string;
+}
+
+export interface ResearchProjectResult {
+  proposalCount: number;
+  error?: string;
+}
+
 // Browse
 export interface BrowseResult {
   current: string;

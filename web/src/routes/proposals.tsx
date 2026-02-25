@@ -216,6 +216,16 @@ export default function ProposalsPage() {
     riskFilter,
   ]);
 
+  const actionStatusMessage = runObserver.isPending
+    ? "Observer cycle is running..."
+    : analyzeProject.isPending
+      ? "Analyzing project..."
+      : researchProject.isPending
+        ? "Running project research..."
+        : null;
+  const observerActionsBusy =
+    runObserver.isPending || analyzeProject.isPending || researchProject.isPending;
+
   const handleApprove = (id: string) => {
     approveProposal.mutate(id);
     setDetailOpen(false);
@@ -397,27 +407,51 @@ export default function ProposalsPage() {
             size="sm"
             variant="outline"
             onClick={() => runObserver.mutate()}
-            disabled={runObserver.isPending}
+            disabled={observerActionsBusy}
           >
-            <Eye className="h-4 w-4" /> Run Observer
+            {runObserver.isPending ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}{" "}
+            {runObserver.isPending ? "Running..." : "Run Observer"}
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => analyzeProject.mutate(projectPathForActions)}
-            disabled={analyzeProject.isPending}
+            disabled={observerActionsBusy}
           >
-            <SearchIcon className="h-4 w-4" /> Analyze
+            {analyzeProject.isPending ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <SearchIcon className="h-4 w-4" />
+            )}{" "}
+            {analyzeProject.isPending ? "Analyzing..." : "Analyze"}
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => researchProject.mutate(projectPathForActions)}
-            disabled={researchProject.isPending}
+            disabled={observerActionsBusy}
           >
-            <FlaskConical className="h-4 w-4" /> Research
+            {researchProject.isPending ? (
+              <RotateCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <FlaskConical className="h-4 w-4" />
+            )}{" "}
+            {researchProject.isPending ? "Researching..." : "Research"}
           </Button>
         </div>
+        {actionStatusMessage && (
+          <p
+            className="w-full text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            {actionStatusMessage}
+          </p>
+        )}
       </div>
 
       {/* Proposals */}

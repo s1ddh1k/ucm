@@ -1,4 +1,5 @@
 import type {
+  AnalyzeProjectResult,
   Artifacts,
   BrowseResult,
   ClusterData,
@@ -11,9 +12,11 @@ import type {
   GcResult,
   HivemindStats,
   ObserverStatus,
+  ObserverRunResult,
   Proposal,
   ProposalScores,
   ReadinessChecklist,
+  ResearchProjectResult,
   ReindexResult,
   Task,
   UcmConfig,
@@ -89,6 +92,19 @@ function post<T>(url: string, body?: unknown): Promise<T> {
     method: "POST",
     body: body ? JSON.stringify(body) : undefined,
   });
+}
+
+function throwIfServiceError<T extends { error?: unknown }>(
+  action: string,
+  result: T,
+  nextStep: string,
+): T {
+  const detail =
+    typeof result?.error === "string" ? result.error.trim() : "";
+  if (detail) {
+    throw new ApiError(500, `${action}: ${detail}. ${nextStep}`);
+  }
+  return result;
 }
 
 // Daemon
@@ -232,9 +248,24 @@ export const curation = {
 // Observer
 export const observer = {
   status: () => request<ObserverStatus>("/api/observe/status"),
-  run: () => post<{ ok: boolean }>("/api/observe"),
-  analyze: (project: string) => post<unknown>("/api/analyze", { project }),
-  research: (project: string) => post<unknown>("/api/research", { project }),
+  run: async () =>
+    throwIfServiceError(
+      "Observer run failed",
+      await post<ObserverRunResult>("/api/observe"),
+      "Check daemon status and retry.",
+    ),
+  analyze: async (project: string) =>
+    throwIfServiceError(
+      "Project analysis failed",
+      await post<AnalyzeProjectResult>("/api/analyze", { project }),
+      "Check project path and daemon status, then retry.",
+    ),
+  research: async (project: string) =>
+    throwIfServiceError(
+      "Project research failed",
+      await post<ResearchProjectResult>("/api/research", { project }),
+      "Check project path and daemon status, then retry.",
+    ),
 };
 
 // Browse
