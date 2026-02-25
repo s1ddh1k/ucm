@@ -2,11 +2,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import type { Proposal, Task } from "@/api/types";
 import { wsManager } from "@/api/websocket";
+import {
+  getStringField,
+  parseDaemonStatus,
+  parseProposalStatus,
+  parseTaskState,
+} from "@/lib/ws-event";
 import { useDaemonStore } from "@/stores/daemon";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
 
 const BASE_TITLE = "UCM Dashboard";
+const PENDING_TYPES = ["failed", "review", "gate", "pipelineError"] as const;
+type PendingType = (typeof PENDING_TYPES)[number];
 
 /**
  * Send a browser notification if the tab is not visible.
@@ -41,13 +49,12 @@ export function useWebSocket() {
   const clearTaskLogs = useEventsStore((s) => s.clearTaskLogs);
   const initialized = useRef(false);
   const pendingCount = useRef(0);
-  const pendingByType = useRef({
+  const pendingByType = useRef<Record<PendingType, Set<string>>>({
     failed: new Set<string>(),
     review: new Set<string>(),
     gate: new Set<string>(),
     pipelineError: new Set<string>(),
   });
-  type PendingType = keyof typeof pendingByType.current;
 
   // ---------- Tab title badge ----------
   const updateTitleBadge = useCallback((delta: number) => {
@@ -92,7 +99,7 @@ export function useWebSocket() {
     (taskId: string | null) => {
       if (!taskId) return;
       let removed = 0;
-      for (const type of Object.keys(pendingByType.current) as PendingType[]) {
+      for (const type of PENDING_TYPES) {
         if (pendingByType.current[type].delete(taskId)) {
           removed++;
         }
@@ -180,12 +187,8 @@ export function useWebSocket() {
 
       // Daemon status
       wsManager.on("daemon:status", (data) => {
-        const status = data.status as string;
-        if (
-          status === "running" ||
-          status === "paused" ||
-          status === "offline"
-        ) {
+        const status = parseDaemonStatus(data.status);
+        if (status) {
           setStatus(status);
         }
       }),
@@ -196,14 +199,14 @@ export function useWebSocket() {
         addActivity("task:created", data);
       }),
       wsManager.on("task:updated", (data) => {
-        const taskId = typeof data.taskId === "string" ? data.taskId : null;
-        const nextState = typeof data.state === "string" ? data.state : null;
-        const nextStatus = typeof data.status === "string" ? data.status : null;
+        const taskId = getStringField(data, "taskId");
+        const nextState = parseTaskState(data.state);
+        const nextStatus = parseTaskState(data.status);
 
         if (taskId && nextState) {
           patchTaskCaches(taskId, (task) => {
             const updates: Partial<Task> = {
-              state: nextState as Task["state"],
+              state: nextState,
             };
             if (nextState === "running" && !task.startedAt) {
               updates.startedAt = nowIso();
@@ -227,7 +230,7 @@ export function useWebSocket() {
 
         const failedEvent = nextState === "failed" || nextStatus === "failed";
         if (failedEvent && markPending("failed", taskId)) {
-          const taskLabel = (data.taskId as string) || "unknown";
+          const taskLabel = taskId || "unknown";
           notify("Task failed", `Task ${taskLabel} has failed.`);
         } else if (taskId && nextState && nextState !== "failed") {
           clearPending("failed", taskId);
@@ -235,7 +238,7 @@ export function useWebSocket() {
 
         const reviewEvent = nextState === "review" || nextStatus === "review";
         if (reviewEvent && markPending("review", taskId)) {
-          const taskLabel = (data.taskId as string) || "unknown";
+          const taskLabel = taskId || "unknown";
           notify(
             "Task ready for review",
             `Task ${taskLabel} is ready for review.`,
@@ -274,22 +277,17 @@ export function useWebSocket() {
 
       // Stats events — validate shape before overwriting cache
       wsManager.on("stats:updated", (data) => {
+        const daemonStatus = parseDaemonStatus(data.daemonStatus);
         if (
           data &&
           typeof data.pid === "number" &&
           typeof data.uptime === "number" &&
-          data.resources
+          data.resources &&
+          daemonStatus
         ) {
           queryClient.setQueryData(["stats"], data);
           setStatsLastUpdatedAt(Date.now());
-          const daemonStatus = data.daemonStatus as string;
-          if (
-            daemonStatus === "running" ||
-            daemonStatus === "paused" ||
-            daemonStatus === "offline"
-          ) {
-            setStatus(daemonStatus);
-          }
+          setStatus(daemonStatus);
         }
       }),
 
@@ -299,9 +297,8 @@ export function useWebSocket() {
         addActivity("proposal:created", data);
       }),
       wsManager.on("proposal:updated", (data) => {
-        const proposalId =
-          typeof data.proposalId === "string" ? data.proposalId : null;
-        const status = typeof data.status === "string" ? data.status : null;
+        const proposalId = getStringField(data, "proposalId");
+        const status = parseProposalStatus(data.status);
         if (proposalId && status) {
           queryClient.setQueriesData<Proposal[]>(
             { queryKey: ["proposals"] },
@@ -309,7 +306,7 @@ export function useWebSocket() {
               Array.isArray(old)
                 ? old.map((proposal) =>
                     proposal.id === proposalId
-                      ? { ...proposal, status: status as Proposal["status"] }
+                      ? { ...proposal, status }
                       : proposal,
                   )
                 : old,
@@ -407,9 +404,11 @@ export function useWebSocket() {
 
       // Stage gate events
       wsManager.on("stage:gate", (data) => {
-        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        const taskId = getStringField(data, "taskId");
         const stageName =
-          (data.stage as string) || (data.stageName as string) || "unknown";
+          getStringField(data, "stage") ||
+          getStringField(data, "stageName") ||
+          "unknown";
         if (taskId) {
           patchTaskCaches(taskId, (task) => ({
             ...task,
@@ -444,8 +443,8 @@ export function useWebSocket() {
 
       // Pipeline error events
       wsManager.on("pipeline:error", (data) => {
-        const taskLabel = (data.taskId as string) || "unknown";
-        const taskId = typeof data.taskId === "string" ? data.taskId : null;
+        const taskId = getStringField(data, "taskId");
+        const taskLabel = taskId || "unknown";
         if (markPending("pipelineError", taskId)) {
           notify(
             "Task failed",

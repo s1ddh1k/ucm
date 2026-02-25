@@ -1,10 +1,15 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerminal } from "@xterm/xterm";
-import { Plus, Square } from "lucide-react";
+import { Plus, RotateCw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { wsManager } from "@/api/websocket";
 import { StatusDot } from "@/components/shared/status-dot";
 import { Button } from "@/components/ui/button";
+import {
+  TerminalSessionStatus,
+  useTerminalSessionFeedback,
+} from "@/hooks/use-terminal-session-feedback";
+import { getArrayBufferField, getStringField } from "@/lib/ws-event";
 import { useDaemonStore } from "@/stores/daemon";
 import { useTerminalStore } from "@/stores/terminal";
 import { useUiStore } from "@/stores/ui";
@@ -73,9 +78,15 @@ export default function TerminalPage() {
   const spawned = useTerminalStore((s) => s.spawned);
   const connected = useDaemonStore((s) => s.connected);
   const theme = useUiStore((s) => s.theme);
-  const [sessionStatus, setSessionStatus] = useState<
-    "idle" | "connecting" | "connected"
-  >(() => (useTerminalStore.getState().spawned ? "connected" : "idle"));
+  const [sessionStatus, setSessionStatus] = useState<TerminalSessionStatus>(
+    () => (useTerminalStore.getState().spawned ? "connected" : "idle"),
+  );
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const sessionFeedback = useTerminalSessionFeedback({
+    connected,
+    spawned,
+    sessionStatus,
+  });
 
   // Initialize xterm and wire up event handlers.
   // PTY is NOT killed on unmount — it stays alive across page navigations.
@@ -121,22 +132,29 @@ export default function TerminalPage() {
 
     // Write incoming PTY data to xterm (scrollback is captured by the store listener)
     const unsubData = wsManager.on("pty:data", (eventData) => {
-      const buf = eventData.data as ArrayBuffer;
+      const buf = getArrayBufferField(eventData, "data");
+      if (!buf) return;
       xterm.write(new Uint8Array(buf));
     });
 
     const unsubSpawned = wsManager.on("pty:spawned", () => {
       setSessionStatus("connected");
+      setSessionError(null);
     });
 
     const unsubExit = wsManager.on("pty:exit", () => {
       xterm.writeln("\r\n\x1b[33m[Session ended]\x1b[0m");
       setSessionStatus("idle");
+      setSessionError(null);
     });
 
     const unsubError = wsManager.on("pty:error", (data) => {
-      xterm.writeln(`\r\n\x1b[31m[Error: ${data.message}]\x1b[0m`);
+      const message =
+        getStringField(data, "message") ||
+        "Unable to start terminal session. Verify daemon status and try again.";
+      xterm.writeln(`\r\n\x1b[31m[Error: ${message}]\x1b[0m`);
       setSessionStatus("idle");
+      setSessionError(`${message} Start a new session to retry.`);
     });
 
     // WebSocket reconnect: server killed the PTY, so update UI
@@ -144,6 +162,7 @@ export default function TerminalPage() {
       if (useTerminalStore.getState().spawned) {
         xterm.writeln("\r\n\x1b[33m[Connection lost — session ended]\x1b[0m");
         setSessionStatus("idle");
+        setSessionError("Connection lost. Start a new session to reconnect.");
       }
     });
 
@@ -167,8 +186,9 @@ export default function TerminalPage() {
   }, [spawned]);
 
   const spawnSession = (newSession = false) => {
-    if (!connected) return;
+    if (!connected || sessionFeedback.isConnecting) return;
     setSessionStatus("connecting");
+    setSessionError(null);
     useTerminalStore.getState().clearScrollback();
     const dims = fitAddonRef.current?.proposeDimensions();
     wsManager.send("pty:spawn", {
@@ -183,6 +203,7 @@ export default function TerminalPage() {
     useTerminalStore.getState().reset();
     useTerminalStore.getState().clearScrollback();
     setSessionStatus("idle");
+    setSessionError(null);
   };
 
   // Sync xterm theme when app theme changes
@@ -214,12 +235,8 @@ export default function TerminalPage() {
             <StatusDot
               status={sessionStatus === "connected" ? "running" : "offline"}
             />
-            <span className="text-xs text-muted-foreground">
-              {sessionStatus === "connected"
-                ? "Connected"
-                : sessionStatus === "connecting"
-                  ? "Connecting..."
-                  : "Idle"}
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              {sessionFeedback.statusText}
             </span>
           </div>
         </div>
@@ -228,9 +245,13 @@ export default function TerminalPage() {
             <Button
               size="sm"
               onClick={() => spawnSession()}
-              disabled={!connected}
+              disabled={!sessionFeedback.canStartSession}
+              aria-busy={sessionFeedback.isConnecting}
             >
-              Start Session
+              {sessionFeedback.isConnecting && (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              )}
+              {sessionFeedback.startLabel}
             </Button>
           ) : (
             <>
@@ -238,15 +259,23 @@ export default function TerminalPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => spawnSession(true)}
-                disabled={!connected}
+                disabled={!sessionFeedback.canStartNewSession}
+                aria-busy={sessionFeedback.isConnecting}
               >
-                <Plus className="h-4 w-4" /> New Session
+                {sessionFeedback.isConnecting ? (
+                  <RotateCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}{" "}
+                {sessionFeedback.newSessionLabel}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={endSession}
                 title="End Session"
+                aria-label="End Session"
+                disabled={!sessionFeedback.canEndSession}
               >
                 <Square className="h-4 w-4" />
               </Button>
@@ -254,6 +283,14 @@ export default function TerminalPage() {
           )}
         </div>
       </div>
+      {sessionError && (
+        <p
+          className="px-4 py-2 text-xs text-destructive border-b bg-destructive/10"
+          role="alert"
+        >
+          {sessionError}
+        </p>
+      )}
 
       {/* Terminal */}
       <div ref={termRef} className="flex-1 bg-background p-1" />

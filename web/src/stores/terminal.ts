@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { wsManager } from "@/api/websocket";
+import {
+  getArrayBufferField,
+  getNumberField,
+  getStringField,
+} from "@/lib/ws-event";
 
 const MAX_SCROLLBACK_BYTES = 256 * 1024; // 256KB ring buffer
 
@@ -57,19 +62,18 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 // These run at module load time, before any component mounts.
 
 wsManager.on("pty:data", (eventData) => {
-  const buf = eventData.data as ArrayBuffer;
+  const buf = getArrayBufferField(eventData, "data");
+  if (!buf) return;
   useTerminalStore.getState().appendScrollback(new Uint8Array(buf));
 });
 
 wsManager.on("pty:spawned", (data) => {
+  const sessionId = getNumberField(data, "id") ?? undefined;
+  const cwd = getStringField(data, "cwd") ?? undefined;
+  const provider = getStringField(data, "provider") ?? undefined;
   useTerminalStore
     .getState()
-    .setSpawned(
-      true,
-      data.id as number,
-      data.cwd as string,
-      data.provider as string | undefined,
-    );
+    .setSpawned(true, sessionId, cwd, provider);
 });
 
 wsManager.on("pty:exit", () => {
