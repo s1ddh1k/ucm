@@ -2531,6 +2531,44 @@ exit 0
       assertEqual(result[0].name, "escape-dir", "uses safe basename only");
     },
 
+    "falls back to path basename when custom name is dot segment": () => {
+      const result = normalizeProjects({
+        projects: [{ path: "/tmp/fallback-name", name: ".." }],
+      });
+      assertEqual(result.length, 1, "one project");
+      assertEqual(
+        result[0].name,
+        "fallback-name",
+        "dot segment falls back to path basename",
+      );
+    },
+
+    "sanitizes windows-style traversal in custom name": () => {
+      const result = normalizeProjects({
+        projects: [{ path: "/tmp/a", name: "..\\..\\escape-win" }],
+      });
+      assertEqual(result.length, 1, "one project");
+      assertEqual(result[0].name, "escape-win", "windows separators sanitized");
+    },
+
+    "strips control characters from custom name and falls back when empty": () => {
+      const cleaned = normalizeProjects({
+        projects: [{ path: "/tmp/control-clean", name: "\u0000safe\u001f" }],
+      });
+      assertEqual(cleaned.length, 1, "cleaned one project");
+      assertEqual(cleaned[0].name, "safe", "control chars stripped");
+
+      const fallback = normalizeProjects({
+        projects: [{ path: "/tmp/control-fallback", name: "\u0000\u001f" }],
+      });
+      assertEqual(fallback.length, 1, "fallback one project");
+      assertEqual(
+        fallback[0].name,
+        "control-fallback",
+        "empty sanitized name falls back to basename",
+      );
+    },
+
     "deduplicates projects by resolved path": () => {
       const result = normalizeProjects({
         projects: ["/tmp/proj", "/tmp/proj"],
