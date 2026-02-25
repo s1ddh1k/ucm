@@ -66,8 +66,14 @@ export default function ProjectsPage() {
     null,
   );
   const navigate = useNavigate();
-  const { data: tasks, isLoading: tasksLoading } = useTasksQuery(undefined, addOpen);
-  const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery(undefined, addOpen);
+  const { data: tasks, isLoading: tasksLoading } = useTasksQuery(
+    undefined,
+    addOpen,
+  );
+  const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery(
+    undefined,
+    addOpen,
+  );
   const { data: catalog, isLoading: catalogLoading } = useProjectCatalogQuery();
   const removeCatalogItem = useRemoveProjectCatalogItem();
   const activeProjectKey = useUiStore((s) => s.activeProjectKey);
@@ -77,6 +83,16 @@ export default function ProjectsPage() {
   const setProposalProjectFilter = useUiStore(
     (s) => s.setProposalProjectFilter,
   );
+
+  const applyProjectScope = (project: {
+    key: string;
+    label: string;
+    path: string | null;
+  }) => {
+    setActiveProject(project);
+    setTaskProjectFilter(project.key);
+    setProposalProjectFilter(project.key);
+  };
 
   const confirmRemoveProject = () => {
     if (!removeCandidate) return;
@@ -95,21 +111,23 @@ export default function ProjectsPage() {
   const projectSummaries = useMemo(() => {
     const map = new Map<string, ProjectSummary>();
 
-    const ensure = (projectPath: string | null) => {
+    const ensure = (projectPath: string | null): ProjectSummary => {
       const key = getProjectKey(projectPath);
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: getProjectLabel(projectPath),
-          path: projectPath || "",
-          taskCount: 0,
-          proposalCount: 0,
-          runningCount: 0,
-          reviewCount: 0,
-          registered: false,
-        });
-      }
-      return map.get(key)!;
+      const existing = map.get(key);
+      if (existing) return existing;
+
+      const created: ProjectSummary = {
+        key,
+        label: getProjectLabel(projectPath),
+        path: projectPath || "",
+        taskCount: 0,
+        proposalCount: 0,
+        runningCount: 0,
+        reviewCount: 0,
+        registered: false,
+      };
+      map.set(key, created);
+      return created;
     };
 
     for (const entry of catalog || []) {
@@ -153,35 +171,29 @@ export default function ProjectsPage() {
   }, [tasks, proposals, catalog, search]);
 
   const openWorkspace = (project: ProjectSummary) => {
-    setActiveProject({
+    applyProjectScope({
       key: project.key,
       label: project.label,
       path: project.path || null,
     });
-    setTaskProjectFilter(project.key);
-    setProposalProjectFilter(project.key);
     navigate(`/projects/${encodeProjectKeyForRoute(project.key)}`);
   };
 
   const openProjectTasks = (project: ProjectSummary) => {
-    setActiveProject({
+    applyProjectScope({
       key: project.key,
       label: project.label,
       path: project.path || null,
     });
-    setTaskProjectFilter(project.key);
-    setProposalProjectFilter(project.key);
     navigate(`/projects/${encodeProjectKeyForRoute(project.key)}/tasks`);
   };
 
   const openProjectProposals = (project: ProjectSummary) => {
-    setActiveProject({
+    applyProjectScope({
       key: project.key,
       label: project.label,
       path: project.path || null,
     });
-    setTaskProjectFilter(project.key);
-    setProposalProjectFilter(project.key);
     navigate(`/projects/${encodeProjectKeyForRoute(project.key)}/proposals`);
   };
 
@@ -369,13 +381,11 @@ export default function ProjectsPage() {
         onOpenChange={setAddOpen}
         onAdded={({ path, name }) => {
           const key = getProjectKey(path);
-          setActiveProject({
+          applyProjectScope({
             key,
             label: name || getProjectLabel(path),
             path,
           });
-          setTaskProjectFilter(key);
-          setProposalProjectFilter(key);
           navigate(`/projects/${encodeProjectKeyForRoute(key)}`);
         }}
       />
