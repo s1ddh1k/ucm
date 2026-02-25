@@ -1,6 +1,9 @@
 import { create } from "zustand";
+import type { ProposalStatus, TaskState } from "@/api/types";
 
 export type Theme = "light" | "dark" | "system";
+export type TaskFilter = "" | TaskState;
+export type ProposalFilter = "" | ProposalStatus;
 
 function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme === "system") {
@@ -26,11 +29,11 @@ interface UiState {
   activeProjectKey: string;
   activeProjectLabel: string;
   activeProjectPath: string;
-  taskFilter: string;
+  taskFilter: TaskFilter;
   taskProjectFilter: string;
   taskSort: "created" | "priority" | "title";
   taskSearch: string;
-  proposalFilter: string;
+  proposalFilter: ProposalFilter;
   proposalProjectFilter: string;
   proposalCategoryFilter: string;
   proposalRiskFilter: string;
@@ -43,11 +46,11 @@ interface UiState {
     project: { key: string; label: string; path?: string | null } | null,
   ) => void;
   clearActiveProject: () => void;
-  setTaskFilter: (filter: string) => void;
+  setTaskFilter: (filter: TaskFilter) => void;
   setTaskProjectFilter: (filter: string) => void;
   setTaskSort: (sort: UiState["taskSort"]) => void;
   setTaskSearch: (search: string) => void;
-  setProposalFilter: (filter: string) => void;
+  setProposalFilter: (filter: ProposalFilter) => void;
   setProposalProjectFilter: (filter: string) => void;
   setProposalCategoryFilter: (filter: string) => void;
   setProposalRiskFilter: (filter: string) => void;

@@ -1,6 +1,14 @@
-import { FileText, GanttChart, LayoutGrid, List, ListTodo } from "lucide-react";
+import {
+  AlertCircle,
+  FileText,
+  GanttChart,
+  LayoutGrid,
+  List,
+  ListTodo,
+  Loader2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { useParams } from "react-router";
 import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
@@ -8,7 +16,9 @@ import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskTimeline } from "@/components/tasks/task-timeline";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
 import {
   decodeProjectKeyFromRoute,
   getProjectKey,
@@ -26,21 +36,22 @@ const TASK_VIEW_OPTIONS = [
   { value: "board", title: "Board view", Icon: LayoutGrid },
   { value: "timeline", title: "Timeline view", Icon: GanttChart },
 ] as const;
+const TASK_CREATE_CLEAR_PARAMS = ["template"] as const;
 
 export default function TasksPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const params = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
   const routeScoped = Boolean(params.projectKey);
   const selectedTaskId = useUiStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
   const setActiveProject = useUiStore((s) => s.setActiveProject);
+  const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
   const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">(
     "list",
   );
-  const { data: tasks } = useTasksQuery();
+  const { data: tasks, isLoading, isError, error, refetch } = useTasksQuery();
   const { data: proposals } = useProposalsQuery();
 
   const projectKey = useMemo(
@@ -96,25 +107,25 @@ export default function TasksPage() {
   const boardTasks = useMemo(() => {
     if (!tasks) return [];
     let result = [...tasks];
-    const projectFilter = routeScoped
-      ? projectKey
-      : useUiStore.getState().taskProjectFilter;
+    const projectFilter = routeScoped ? projectKey : taskProjectFilter;
     if (projectFilter) {
       result = result.filter(
         (t) => getProjectKey(getTaskProjectPath(t)) === projectFilter,
       );
     }
     return result;
-  }, [tasks, routeScoped, projectKey]);
+  }, [tasks, routeScoped, projectKey, taskProjectFilter]);
 
-  useEffect(() => {
-    if (searchParams.get("new") !== "1") return;
-    setCreateOpen(true);
-    const next = new URLSearchParams(searchParams);
-    next.delete("new");
-    next.delete("template");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  useOpenFromSearchParam({
+    param: "new",
+    clearParams: TASK_CREATE_CLEAR_PARAMS,
+    onOpen: () => setCreateOpen(true),
+  });
+
+  const boardError =
+    error instanceof Error
+      ? error.message
+      : "Task request failed. Check daemon connection and retry.";
 
   return (
     <div className="h-full flex flex-col p-6 gap-4">
@@ -169,7 +180,26 @@ export default function TasksPage() {
       {viewMode === "timeline" ? (
         <div className="flex flex-1 min-h-0 border rounded-md overflow-hidden">
           <div className="flex-1 min-w-0">
-            <TaskTimeline tasks={boardTasks} />
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading tasks…</span>
+              </div>
+            ) : isError ? (
+              <EmptyState
+                icon={AlertCircle}
+                title="Failed to load timeline"
+                description={boardError}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => refetch()}>
+                    Retry
+                  </Button>
+                }
+                className="h-full"
+              />
+            ) : (
+              <TaskTimeline tasks={boardTasks} />
+            )}
           </div>
           {selectedTaskId && (
             <div className="w-[480px] shrink-0 border-l">
@@ -180,7 +210,26 @@ export default function TasksPage() {
       ) : viewMode === "board" ? (
         <div className="flex flex-1 min-h-0 border rounded-md overflow-hidden">
           <div className="flex-1 min-w-0">
-            <TaskKanban tasks={boardTasks} />
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading tasks…</span>
+              </div>
+            ) : isError ? (
+              <EmptyState
+                icon={AlertCircle}
+                title="Failed to load board"
+                description={boardError}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => refetch()}>
+                    Retry
+                  </Button>
+                }
+                className="h-full"
+              />
+            ) : (
+              <TaskKanban tasks={boardTasks} />
+            )}
           </div>
           {selectedTaskId && (
             <div className="w-[480px] shrink-0 border-l">

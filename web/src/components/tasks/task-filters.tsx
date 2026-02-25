@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import type { TaskState } from "@/api/types";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -9,6 +10,27 @@ import {
 } from "@/components/ui/select";
 import { UNKNOWN_PROJECT_KEY } from "@/lib/project";
 import { useUiStore } from "@/stores/ui";
+
+const TASK_FILTER_VALUES = [
+  "pending",
+  "running",
+  "review",
+  "done",
+  "failed",
+] as const satisfies readonly TaskState[];
+const TASK_SORT_VALUES = ["created", "priority", "title"] as const;
+
+function isTaskState(value: string): value is TaskState {
+  return TASK_FILTER_VALUES.includes(value as TaskState);
+}
+
+function isTaskSort(
+  value: string,
+): value is (typeof TASK_SORT_VALUES)[number] {
+  return TASK_SORT_VALUES.includes(
+    value as (typeof TASK_SORT_VALUES)[number],
+  );
+}
 
 interface TaskProjectOption {
   key: string;
@@ -38,7 +60,13 @@ export function TaskFilters({
     <div className="flex flex-wrap items-center gap-2 p-3 border-b">
       <Select
         value={taskFilter || "all"}
-        onValueChange={(v) => setTaskFilter(v === "all" ? "" : v)}
+        onValueChange={(v) => {
+          if (v === "all") {
+            setTaskFilter("");
+            return;
+          }
+          if (isTaskState(v)) setTaskFilter(v);
+        }}
       >
         <SelectTrigger className="w-24 h-8">
           <SelectValue />
@@ -76,9 +104,9 @@ export function TaskFilters({
 
       <Select
         value={taskSort}
-        onValueChange={(v) =>
-          setTaskSort(v as "created" | "priority" | "title")
-        }
+        onValueChange={(v) => {
+          if (isTaskSort(v)) setTaskSort(v);
+        }}
       >
         <SelectTrigger className="w-24 h-8">
           <SelectValue />

@@ -20,6 +20,7 @@ import {
 import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
+import type { TaskFilter } from "@/stores/ui";
 import { TimeAgo } from "./time-ago";
 
 interface InboxDrawerProps {
@@ -62,7 +63,7 @@ export function InboxDrawer({ open, onOpenChange }: InboxDrawerProps) {
     onOpenChange(false);
   }
 
-  function goToTasks(filter: string) {
+  function goToTasks(filter: TaskFilter) {
     setTaskFilter(filter);
     navigate("/?tab=tasks");
     onOpenChange(false);

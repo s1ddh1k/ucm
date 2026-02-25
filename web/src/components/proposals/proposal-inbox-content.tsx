@@ -36,6 +36,7 @@ import type { Proposal } from "@/api/types";
 import {
   getProjectKey, getProjectLabel, getProposalProjectPath, UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
+import type { ProposalFilter } from "@/stores/ui";
 
 interface ConfirmProposalAction {
   type: "reject" | "delete";
@@ -108,7 +109,10 @@ export function ProposalInboxContent() {
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
     { value: "implemented", label: "Done" },
-  ];
+  ] as const satisfies ReadonlyArray<{
+    value: ProposalFilter;
+    label: string;
+  }>;
 
   const filteredProposals = useMemo(() => {
     if (!proposals) return [];

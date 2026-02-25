@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
@@ -16,16 +15,19 @@ import {
   Loader2,
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
 import { useTasksQuery } from "@/queries/tasks";
 import { getProjectKey, getTaskProjectPath } from "@/lib/project";
 
+const TASK_CREATE_CLEAR_PARAMS = ["template"] as const;
+
 export function TaskInboxContent() {
   const [createOpen, setCreateOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
   const selectedTaskId = useUiStore((s) => s.selectedTaskId);
   const setSelectedTaskId = useUiStore((s) => s.setSelectedTaskId);
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
+  const taskProjectFilter = useUiStore((s) => s.taskProjectFilter);
   const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">("list");
   const {
     data: tasks,
@@ -44,28 +46,24 @@ export function TaskInboxContent() {
   const boardTasks = useMemo(() => {
     if (!tasks) return [];
     const result = [...tasks];
-    const projectFilter = useUiStore.getState().taskProjectFilter;
-    if (projectFilter) {
+    if (taskProjectFilter) {
       return result.filter(
-        (t) => getProjectKey(getTaskProjectPath(t)) === projectFilter
+        (t) => getProjectKey(getTaskProjectPath(t)) === taskProjectFilter
       );
     }
     return result;
-  }, [tasks]);
+  }, [tasks, taskProjectFilter]);
 
   const boardError =
     error instanceof Error
       ? error.message
       : "Task request failed. Check daemon connection and retry.";
 
-  useEffect(() => {
-    if (searchParams.get("new") !== "1") return;
-    setCreateOpen(true);
-    const next = new URLSearchParams(searchParams);
-    next.delete("new");
-    next.delete("template");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  useOpenFromSearchParam({
+    param: "new",
+    clearParams: TASK_CREATE_CLEAR_PARAMS,
+    onOpen: () => setCreateOpen(true),
+  });
 
   return (
     <div className="h-full flex flex-col gap-4">

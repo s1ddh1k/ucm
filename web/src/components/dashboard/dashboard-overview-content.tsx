@@ -11,6 +11,7 @@ import { useProposalsQuery } from "@/queries/proposals";
 import { useProjectCatalogQuery } from "@/queries/projects";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
+import type { TaskFilter } from "@/stores/ui";
 import { formatDuration } from "@/lib/format";
 import { StatusDot } from "@/components/shared/status-dot";
 import { TimeAgo } from "@/components/shared/time-ago";
@@ -50,7 +51,7 @@ export function DashboardOverviewContent() {
     && (tasks?.length || 0) === 0
     && (proposals?.length || 0) === 0;
 
-  function goToTasks(filter: string) {
+  function goToTasks(filter: TaskFilter | "all") {
     setTaskFilter(filter === "all" ? "" : filter);
     setSearchParams({ tab: "tasks" });
   }
