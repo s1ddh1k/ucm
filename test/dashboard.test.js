@@ -391,16 +391,22 @@ async function main() {
 
   if (raw.listGroups) {
     console.log("API groups:");
-    apiGroupNames.forEach((x) => console.log(`- ${x}`));
+    apiGroupNames.forEach((x) => {
+      console.log(`- ${x}`);
+    });
     console.log("\nBrowser groups:");
-    browserGroupNames.forEach((x) => console.log(`- ${x}`));
+    browserGroupNames.forEach((x) => {
+      console.log(`- ${x}`);
+    });
     return;
   }
 
   const initial = resolvePlan(raw, apiGroupNames, browserGroupNames);
   const { errors } = initial;
   if (errors.length > 0) {
-    errors.forEach((x) => console.error(`Error: ${x}`));
+    errors.forEach((x) => {
+      console.error(`Error: ${x}`);
+    });
     printUsage(apiGroupNames, browserGroupNames);
     process.exit(1);
   }

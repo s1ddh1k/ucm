@@ -1,19 +1,14 @@
-import {
-  AlertCircle,
-  FileText,
-  ListTodo,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, FileText, ListTodo, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TaskCreateDialog } from "@/components/tasks/task-create-dialog";
-import { TaskViewModeToggle } from "@/components/tasks/task-view-mode-toggle";
 import { TaskDetail } from "@/components/tasks/task-detail";
 import { TaskKanban } from "@/components/tasks/task-kanban";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskTimeline } from "@/components/tasks/task-timeline";
+import { TaskViewModeToggle } from "@/components/tasks/task-view-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOpenFromSearchParam } from "@/hooks/use-open-from-search-param";
@@ -105,6 +100,46 @@ export default function TasksPage() {
   const defaultProjectPath =
     routeScoped && projectKey !== UNKNOWN_PROJECT_KEY ? projectKey : undefined;
 
+  const renderBoardContent = (kind: "timeline" | "board") => {
+    if (isLoading) {
+      return (
+        <div className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading tasks…</span>
+        </div>
+      );
+    }
+
+    if (isError) {
+      return (
+        <EmptyState
+          icon={AlertCircle}
+          title={`Failed to load ${kind}`}
+          description={boardError}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={retry}
+              disabled={isRetrying}
+              aria-busy={isRetrying}
+            >
+              {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {retryLabel}
+            </Button>
+          }
+          className="h-full"
+        />
+      );
+    }
+
+    return kind === "timeline" ? (
+      <TaskTimeline tasks={boardTasks} />
+    ) : (
+      <TaskKanban tasks={boardTasks} />
+    );
+  };
+
   useOpenFromSearchParam({
     param: "new",
     clearParams: TASK_CREATE_CLEAR_PARAMS,
@@ -151,35 +186,7 @@ export default function TasksPage() {
 
       {viewMode === "timeline" ? (
         <div className="flex flex-1 min-h-0 border rounded-md overflow-hidden">
-          <div className="flex-1 min-w-0">
-            {isLoading ? (
-              <div className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading tasks…</span>
-              </div>
-            ) : isError ? (
-              <EmptyState
-                icon={AlertCircle}
-                title="Failed to load timeline"
-                description={boardError}
-                action={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={retry}
-                    disabled={isRetrying}
-                    aria-busy={isRetrying}
-                  >
-                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    {retryLabel}
-                  </Button>
-                }
-                className="h-full"
-              />
-            ) : (
-              <TaskTimeline tasks={boardTasks} />
-            )}
-          </div>
+          <div className="flex-1 min-w-0">{renderBoardContent("timeline")}</div>
           {selectedTaskId && (
             <div className="w-[480px] shrink-0 border-l">
               <TaskDetail taskId={selectedTaskId} />
@@ -188,35 +195,7 @@ export default function TasksPage() {
         </div>
       ) : viewMode === "board" ? (
         <div className="flex flex-1 min-h-0 border rounded-md overflow-hidden">
-          <div className="flex-1 min-w-0">
-            {isLoading ? (
-              <div className="h-full flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading tasks…</span>
-              </div>
-            ) : isError ? (
-              <EmptyState
-                icon={AlertCircle}
-                title="Failed to load board"
-                description={boardError}
-                action={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={retry}
-                    disabled={isRetrying}
-                    aria-busy={isRetrying}
-                  >
-                    {isRetrying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    {retryLabel}
-                  </Button>
-                }
-                className="h-full"
-              />
-            ) : (
-              <TaskKanban tasks={boardTasks} />
-            )}
-          </div>
+          <div className="flex-1 min-w-0">{renderBoardContent("board")}</div>
           {selectedTaskId && (
             <div className="w-[480px] shrink-0 border-l">
               <TaskDetail taskId={selectedTaskId} />
