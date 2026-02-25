@@ -14,6 +14,7 @@ const extract = require("../lib/hivemind/extract");
 const lifecycle = require("../lib/hivemind/lifecycle");
 const document = require("../lib/hivemind/adapters/document");
 const { extractJson, buildLlmCallOptions } = require("../lib/hivemind/llm");
+const daemon = require("../lib/hivemind/daemon");
 
 // --- Test infrastructure ---
 
@@ -789,6 +790,80 @@ function testExtractJson() {
   assert(threw, "extractJson invalid: throws");
 }
 
+function testDaemonQueueRefIndex() {
+  daemon._test.resetQueueForTests();
+
+  const first = { ref: "doc/a.md", mtime: 100 };
+  const duplicate = { ref: "doc/a.md", mtime: 101 };
+  const second = { ref: "doc/b.md", mtime: 200 };
+
+  assertEqual(
+    daemon._test.enqueueUniqueItem("document", first),
+    true,
+    "daemon queue index: first enqueue accepted",
+  );
+  assertEqual(
+    daemon._test.enqueueUniqueItem("document", duplicate),
+    false,
+    "daemon queue index: duplicate ref rejected",
+  );
+  assertEqual(
+    daemon._test.enqueueUniqueItem("document", second),
+    true,
+    "daemon queue index: second unique enqueue accepted",
+  );
+  assertEqual(
+    daemon._test.getQueueLength(),
+    2,
+    "daemon queue index: queue length tracks unique refs",
+  );
+  assertEqual(
+    daemon._test.getQueueRefCount(),
+    2,
+    "daemon queue index: ref set tracks queue entries",
+  );
+
+  const firstBatch = daemon._test.dequeueBatch(1);
+  assertEqual(
+    firstBatch.length,
+    1,
+    "daemon queue index: dequeue returns requested batch size",
+  );
+  assertEqual(
+    firstBatch[0].ref,
+    "doc/a.md",
+    "daemon queue index: dequeue preserves queue order",
+  );
+  assertEqual(
+    daemon._test.getQueueLength(),
+    1,
+    "daemon queue index: queue length decremented after dequeue",
+  );
+  assertEqual(
+    daemon._test.getQueueRefCount(),
+    1,
+    "daemon queue index: ref set decremented after dequeue",
+  );
+
+  assertEqual(
+    daemon._test.enqueueUniqueItem("document", duplicate),
+    true,
+    "daemon queue index: ref can be re-enqueued after dequeue",
+  );
+  assertEqual(
+    daemon._test.getQueueLength(),
+    2,
+    "daemon queue index: queue length updated after re-enqueue",
+  );
+  assertEqual(
+    daemon._test.getQueueRefCount(),
+    2,
+    "daemon queue index: ref set updated after re-enqueue",
+  );
+
+  daemon._test.resetQueueForTests();
+}
+
 // --- Main ---
 
 async function main() {
@@ -842,6 +917,7 @@ async function main() {
   console.log("LLM Utility Tests:");
   testBuildLlmCallOptions();
   testExtractJson();
+  testDaemonQueueRefIndex();
   console.log();
 
   // Cleanup
