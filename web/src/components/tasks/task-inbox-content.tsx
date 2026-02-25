@@ -19,7 +19,7 @@ export function TaskInboxContent() {
   const clearActiveProject = useUiStore((s) => s.clearActiveProject);
   const setTaskProjectFilter = useUiStore((s) => s.setTaskProjectFilter);
   const [viewMode, setViewMode] = useState<"list" | "board" | "timeline">("list");
-  const { data: tasks } = useTasksQuery();
+  const { data: tasks } = useTasksQuery(undefined, createOpen);
 
   useEffect(() => {
     setSelectedTaskId(null);

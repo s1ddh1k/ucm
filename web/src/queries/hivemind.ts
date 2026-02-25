@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { useSmartInterval } from "@/hooks/use-smart-interval";
 
 export function useHivemindSearchQuery(query: string, limit?: number) {
   return useQuery({
@@ -14,7 +15,7 @@ export function useHivemindListQuery(kind?: string, limit?: number) {
   return useQuery({
     queryKey: ["hivemind-list", kind, limit],
     queryFn: () => api.hivemind.list(kind, limit),
-    refetchInterval: 30000,
+    refetchInterval: useSmartInterval(30000),
   });
 }
 
@@ -30,7 +31,7 @@ export function useHivemindStatsQuery() {
   return useQuery({
     queryKey: ["hivemind-stats"],
     queryFn: () => api.hivemind.stats(),
-    refetchInterval: 30000,
+    refetchInterval: useSmartInterval(30000),
   });
 }
 

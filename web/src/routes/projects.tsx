@@ -66,8 +66,8 @@ export default function ProjectsPage() {
     null,
   );
   const navigate = useNavigate();
-  const { data: tasks, isLoading: tasksLoading } = useTasksQuery();
-  const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery();
+  const { data: tasks, isLoading: tasksLoading } = useTasksQuery(undefined, addOpen);
+  const { data: proposals, isLoading: proposalsLoading } = useProposalsQuery(undefined, addOpen);
   const { data: catalog, isLoading: catalogLoading } = useProjectCatalogQuery();
   const removeCatalogItem = useRemoveProjectCatalogItem();
   const activeProjectKey = useUiStore((s) => s.activeProjectKey);

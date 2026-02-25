@@ -2,15 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Task } from "@/api/types";
+import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { buildActionErrorMessage } from "@/lib/error";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
 
-export function useTasksQuery(status?: string) {
+export function useTasksQuery(status?: string, paused = false) {
+  const interval = useSmartInterval(30000, paused);
   return useQuery({
     queryKey: ["tasks", status],
     queryFn: () => api.tasks.list(status),
-    refetchInterval: 30000,
+    refetchInterval: interval,
   });
 }
 
@@ -19,7 +21,7 @@ export function useTaskQuery(taskId: string | null) {
     queryKey: ["task", taskId],
     queryFn: () => api.tasks.status(taskId!),
     enabled: !!taskId,
-    refetchInterval: 20000,
+    refetchInterval: useSmartInterval(20000),
   });
 }
 
@@ -36,11 +38,12 @@ export function useTaskLogsQuery(
   lines?: number,
   live = true,
 ) {
+  const smartInterval = useSmartInterval(8000);
   return useQuery({
     queryKey: ["task-logs", taskId, lines],
     queryFn: () => api.tasks.logs(taskId!, lines),
     enabled: !!taskId,
-    refetchInterval: live ? 8000 : false,
+    refetchInterval: live ? smartInterval : false,
   });
 }
 

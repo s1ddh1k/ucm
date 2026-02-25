@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { Lightbulb, Eye, Search as SearchIcon, FlaskConical, LayoutGrid, List, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,7 +34,7 @@ export function ProposalInboxContent() {
   const setCategoryFilter = useUiStore((s) => s.setProposalCategoryFilter);
   const setRiskFilter = useUiStore((s) => s.setProposalRiskFilter);
 
-  const { data: proposals, isLoading } = useProposalsQuery();
+  const { data: proposals, isLoading } = useProposalsQuery(undefined, detailOpen);
   const { data: observerStatus } = useObserverStatusQuery();
   const runObserver = useRunObserver();
   const approveProposal = useApproveProposal();
@@ -104,15 +104,6 @@ export function ProposalInboxContent() {
     deleteProposal.mutate(id);
     if (detailProposal?.id === id) setDetailOpen(false);
   };
-
-  useEffect(() => {
-    if (!detailProposal || !proposals) return;
-    const exists = proposals.some((proposal) => proposal.id === detailProposal.id);
-    if (!exists) {
-      setDetailOpen(false);
-      setDetailProposal(null);
-    }
-  }, [detailProposal, proposals]);
 
   if (isLoading) return <LoadingSkeleton />;
 

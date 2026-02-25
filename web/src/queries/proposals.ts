@@ -2,13 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Proposal } from "@/api/types";
+import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { buildActionErrorMessage } from "@/lib/error";
 
-export function useProposalsQuery(status?: string) {
+export function useProposalsQuery(status?: string, paused = false) {
+  const interval = useSmartInterval(60000, paused);
   return useQuery({
     queryKey: ["proposals", status],
     queryFn: () => api.proposals.list(status),
-    refetchInterval: 60000,
+    refetchInterval: interval,
   });
 }
 
@@ -128,7 +130,7 @@ export function useObserverStatusQuery() {
   return useQuery({
     queryKey: ["observer-status"],
     queryFn: api.observer.status,
-    refetchInterval: 30000,
+    refetchInterval: useSmartInterval(30000),
   });
 }
 
