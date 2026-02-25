@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
+import { useDirectoryPathField } from "@/hooks/use-directory-path-field";
 import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useUpsertProjectCatalogItem } from "@/queries/projects";
 
@@ -49,29 +49,33 @@ export function ProjectAddDialog({
     loading: browseLoading,
     browseResult,
     browseError,
-    openBrowser,
+    openPathBrowser,
     navigateBrowser,
     closeBrowser,
-    clearBrowseError,
-  } = useDirectoryBrowser();
+    handlePathChange,
+    selectDirectory,
+    selectionNotice,
+    clearSelectionNotice,
+  } = useDirectoryPathField({
+    path,
+    setPath,
+    clearSubmitError,
+    onDirectorySelected: () => {
+      setShowNewFolder(false);
+      setNewFolderName("");
+    },
+  });
 
   useEffect(() => {
     if (open) {
       setPath(defaultPath || "");
       setName("");
       clearSubmitError();
+      clearSelectionNotice();
     } else {
       closeBrowser();
     }
-  }, [open, defaultPath, closeBrowser, clearSubmitError]);
-
-  const selectDirectory = (dirPath: string) => {
-    clearSubmitError();
-    setPath(dirPath);
-    closeBrowser();
-    setShowNewFolder(false);
-    setNewFolderName("");
-  };
+  }, [open, defaultPath, closeBrowser, clearSelectionNotice, clearSubmitError]);
 
   const createFolder = async () => {
     if (!newFolderName.trim() || !browseResult) return;
@@ -125,18 +129,14 @@ export function ProjectAddDialog({
                 id={pathInputId}
                 placeholder="~/git/my-project"
                 value={path}
-                onChange={(e) => {
-                  clearSubmitError();
-                  clearBrowseError();
-                  setPath(e.target.value);
-                }}
+                onChange={(e) => handlePathChange(e.target.value)}
                 className="flex-1"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => void openBrowser(path || undefined)}
+                onClick={() => void openPathBrowser()}
                 title="Browse directories"
                 aria-label="Browse directories"
                 disabled={browseLoading}
@@ -152,6 +152,11 @@ export function ProjectAddDialog({
             {browseError && (
               <p className="mt-2 text-xs text-destructive" role="alert">
                 {browseError}
+              </p>
+            )}
+            {selectionNotice && !browseLoading && !browseError && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                {selectionNotice}
               </p>
             )}
             {browsing && browseResult && (

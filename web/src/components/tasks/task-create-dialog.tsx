@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useDirectoryBrowser } from "@/hooks/use-directory-browser";
+import { useDirectoryPathField } from "@/hooks/use-directory-path-field";
 import { useMutationFeedback } from "@/hooks/use-mutation-feedback";
 import { useProjectCatalogQuery } from "@/queries/projects";
 import { useSubmitTask } from "@/queries/tasks";
@@ -87,11 +87,18 @@ export function TaskCreateDialog({
     loading: browseLoading,
     browseResult,
     browseError,
-    openBrowser,
+    openPathBrowser,
     navigateBrowser,
     closeBrowser,
-    clearBrowseError,
-  } = useDirectoryBrowser();
+    handlePathChange,
+    selectDirectory,
+    selectionNotice,
+    clearSelectionNotice,
+  } = useDirectoryPathField({
+    path: project,
+    setPath: setProject,
+    clearSubmitError,
+  });
 
   useEffect(() => {
     if (open && defaultProjectPath) {
@@ -138,14 +145,9 @@ export function TaskCreateDialog({
     if (!nextOpen) {
       closeBrowser();
       clearSubmitError();
+      clearSelectionNotice();
     }
     onOpenChange(nextOpen);
-  };
-
-  const selectDirectory = (dirPath: string) => {
-    clearSubmitError();
-    setProject(dirPath);
-    closeBrowser();
   };
 
   const info = PIPELINE_INFO[pipeline];
@@ -234,18 +236,14 @@ export function TaskCreateDialog({
                 id={projectInputId}
                 placeholder="~/my-project (optional)"
                 value={project}
-                onChange={(e) => {
-                  clearSubmitError();
-                  clearBrowseError();
-                  setProject(e.target.value);
-                }}
+                onChange={(e) => handlePathChange(e.target.value)}
                 className="flex-1"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => void openBrowser(project || undefined)}
+                onClick={() => void openPathBrowser()}
                 title="Browse directories"
                 aria-label="Browse directories"
                 disabled={browseLoading}
@@ -261,6 +259,11 @@ export function TaskCreateDialog({
             {browseError && (
               <p className="mt-2 text-xs text-destructive" role="alert">
                 {browseError}
+              </p>
+            )}
+            {selectionNotice && !browseLoading && !browseError && (
+              <p className="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                {selectionNotice}
               </p>
             )}
             {browsing && browseResult && (
