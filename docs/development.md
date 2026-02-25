@@ -57,8 +57,7 @@ ucm/
 │   ├── ucmd-server.js      #   Unix Socket 서버
 │   ├── ucmd-task.js        #   태스크 파싱, git 유틸
 │   ├── ucmd-observer.js    #   자동 프로젝트 분석
-│   ├── ucmd-autopilot.js   #   자율 실행 세션
-│   ├── ucmd-refinement.js  #   대화형 Q&A 정제
+│   ├── ucmd-refinement.js  #   대화형 Q&A 정제 + refinement autopilot
 │   ├── ucmd-proposal.js    #   제안서 관리
 │   ├── ucmd-sandbox.js     #   Self-modification 안전장치
 │   ├── ucmd-prompt.js      #   템플릿 로딩
@@ -69,9 +68,9 @@ ucm/
 ├── web/                    # React 대시보드
 │   ├── src/
 │   │   ├── api/             #   HTTP/WS 클라이언트, TypeScript 타입
-│   │   ├── components/      #   UI 컴포넌트 (tasks, proposals, autopilot, ...)
+│   │   ├── components/      #   UI 컴포넌트 (tasks, proposals, automation, ...)
 │   │   ├── hooks/           #   커스텀 훅 (useWebSocket, useAutoScroll, ...)
-│   │   ├── queries/         #   React Query (tasks, stats, proposals, autopilot)
+│   │   ├── queries/         #   React Query (tasks, stats, proposals, automation)
 │   │   ├── routes/          #   페이지 (dashboard, tasks, proposals, settings, ...)
 │   │   ├── stores/          #   Zustand 상태 (daemon, events, ui, terminal)
 │   │   └── lib/             #   유틸, 상수, 포맷터
@@ -139,7 +138,7 @@ ucm-dev release
 npm test
 
 # 릴리즈 전 최소 검증
-npm run release:check   # core test + web/desktop 프로덕션 빌드
+npm run release:check   # core test + web/desktop 빌드 + npm pack --dry-run
 
 # 추가 개별 실행
 node test/ucm.test.js          # UCM 종합 테스트
@@ -200,7 +199,7 @@ npm run build    # 프로덕션 빌드 → web/dist/
 | 디렉토리 | 규칙 |
 |----------|------|
 | `components/ui/` | Radix 래퍼 (shadcn/ui 스타일) — 범용 |
-| `components/{domain}/` | 도메인별 컴포넌트 (tasks, proposals, autopilot) |
+| `components/{domain}/` | 도메인별 컴포넌트 (tasks, proposals, automation) |
 | `components/shared/` | 공유 컴포넌트 (EmptyState, StatusDot, TimeAgo) |
 | `routes/` | 페이지 컴포넌트 (라우터 진입점) |
 | `queries/` | React Query 훅 (useTasksQuery, useStageGateApprove, ...) |
@@ -271,6 +270,6 @@ ucm list
 | `resources` | `{cpuThreshold, memoryMinFreeMb, ...}` | 리소스 압력 임계값 |
 | `quota` | `{source, mode, ...}` | API 쿼타 관리 |
 | `observer` | `{enabled, intervalMs, ...}` | Observer 설정 |
-| `autopilot` | `{releaseEvery, maxItems, ...}` | Autopilot 설정 |
+| `automation` | `{autoExecute, autoApprove, ...}` | 자동 실행/승인/제안/전환 설정 |
 | `selfImprove` | `{enabled, maxRisk, ...}` | Self-improvement 설정 |
 | `regulator` | `{enabled, maxRiskForAutoApprove, ...}` | Regulator 설정 |

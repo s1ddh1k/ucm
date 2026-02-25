@@ -74,6 +74,8 @@ ForgePipeline ──→ Git Worktree (격리 실행)
 | `ucm analyze` | 프로젝트 분석 및 제안 생성 |
 | `ucm research` | 프로젝트 리서치 및 전략 제안 |
 | `ucm proposals` / `ucm proposal ...` | 제안서 조회/처리 |
+| `ucm mode` / `ucm mode set ...` | 큐레이션 모드 조회/전환 |
+| `ucm auto` / `ucm auto set ...` | 자동화 토글 조회/설정 |
 | `ucm daemon start/stop` | 데몬 관리 |
 | `ucm pause` / `ucm resume` / `ucm stats` | 데몬 일시정지/재개/통계 |
 | `ucm merge-queue` | 머지 큐 상태/재시도/스킵 |
@@ -126,6 +128,7 @@ ucm-dev daemon stop && ucm-dev daemon start   # 개발 데몬
 
 ```bash
 npm run release:check
+# (내부: core test + web/desktop 빌드 + npm pack --dry-run)
 # (선택) 전체 회귀
 npm test
 ```

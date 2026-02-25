@@ -75,7 +75,7 @@ const typeToKind = {
 
 1. **`ucm init` → hivemind 초기화**: `ucm init`에 hivemind 언급 없음, `hm init`을 별도 실행해야 함
 2. **UCM 데몬 → hmd 자동 스폰**: `ucmd.js`에 hivemind 참조 0건
-3. **오토파일럿 → 제텔 생성**: `lib/ucmd-autopilot.js`에 hivemind write 0건 (아이템 완료/실패/릴리스 모두)
+3. **오토파일럿 → 제텔 생성**: `lib/ucmd-refinement.js`의 autopilot 흐름에는 hivemind write가 연결되어 있지 않음
 4. **태스크 실패 학습**: Forge 실패 시 제텔 생성 없음, 실패 패턴 유실
 5. **Observer 쓰기**: 읽기만 하고 관찰/메트릭/교훈을 hivemind에 쓰지 않음
 
