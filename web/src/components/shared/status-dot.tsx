@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const dotColors: Record<string, string> = {
+const dotColors = {
   running: "bg-blue-400",
   pending: "bg-yellow-400",
   review: "bg-purple-400",
@@ -14,7 +14,23 @@ const dotColors: Record<string, string> = {
   releasing: "bg-indigo-400",
   stopped: "bg-zinc-500",
   completed: "bg-emerald-400",
-};
+  unknown: "bg-zinc-500",
+} as const;
+
+type DotStatus = keyof typeof dotColors;
+
+function getDotColor(status: string): string {
+  if (status in dotColors) {
+    return dotColors[status as DotStatus];
+  }
+  return "bg-zinc-500";
+}
+
+function formatStatusLabel(status: string): string {
+  const normalized = status.trim();
+  if (!normalized) return "unknown";
+  return normalized.replace(/_/g, " ");
+}
 
 interface StatusDotProps {
   status: string;
@@ -23,21 +39,28 @@ interface StatusDotProps {
 }
 
 export function StatusDot({ status, pulse, className }: StatusDotProps) {
-  const color = dotColors[status] || "bg-zinc-500";
+  const color = getDotColor(status);
   const shouldPulse = pulse ?? (status === "running" || status === "planning");
+  const label = formatStatusLabel(status);
 
   return (
-    <span className={cn("relative inline-flex h-2 w-2", className)}>
+    <span
+      className={cn("relative inline-flex h-2 w-2", className)}
+      role="img"
+      aria-label={`Status: ${label}`}
+    >
       {shouldPulse && (
         <span
           className={cn(
             "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
             color,
           )}
+          aria-hidden="true"
         />
       )}
       <span
         className={cn("relative inline-flex h-2 w-2 rounded-full", color)}
+        aria-hidden="true"
       />
     </span>
   );

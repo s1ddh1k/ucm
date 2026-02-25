@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Task } from "@/api/types";
+import { useMutationToast } from "@/hooks/use-mutation-toast";
 import { useSmartInterval } from "@/hooks/use-smart-interval";
-import { buildActionErrorMessage } from "@/lib/error";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
 
@@ -84,26 +83,30 @@ function updateTaskInTaskCaches(
 
 export function useSubmitTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task created.",
+    errorAction: "Failed to create task",
+    errorNextStep: "Check required fields and daemon status, then try again.",
+  });
+
   return useMutation({
     mutationFn: api.tasks.submit,
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       invalidateTaskQueries(qc);
-      toast.success("Task created.");
+      notifySuccess(data, variables);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to create task",
-          error,
-          "Check required fields and daemon status, then try again.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useStartTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task started.",
+    errorAction: "Failed to start task",
+    errorNextStep: "Check daemon status and retry.",
+  });
+
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.start(taskId),
     onMutate: async (taskId) => {
@@ -126,7 +129,7 @@ export function useStartTask() {
 
       return { previousTask, previousTaskLists };
     },
-    onError: (_error, taskId, context) => {
+    onError: (error, taskId, context) => {
       if (context?.previousTask) {
         qc.setQueryData(["task", taskId], context.previousTask);
       }
@@ -135,108 +138,106 @@ export function useStartTask() {
           qc.setQueryData(queryKey, snapshot);
         }
       }
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to start task",
-          _error,
-          "Check daemon status and retry.",
-        ),
-      );
+      notifyError(error);
     },
-    onSuccess: (_data, taskId) => {
+    onSuccess: (data, taskId) => {
       invalidateTaskQueries(qc, taskId);
-      toast.success("Task started.");
+      notifySuccess(data, taskId);
     },
   });
 }
 
 export function useApproveTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task approved. Merge is in progress.",
+    errorAction: "Failed to approve task",
+    errorNextStep: "Review task logs and diff, then retry.",
+  });
+
   return useMutation({
     mutationFn: ({ taskId, score }: { taskId: string; score?: number }) =>
       api.tasks.approve(taskId, score),
-    onSuccess: (_data, { taskId }) => {
+    onSuccess: (data, variables) => {
+      const { taskId } = variables;
       invalidateTaskQueries(qc, taskId);
-      toast.success("Task approved. Merge is in progress.");
+      notifySuccess(data, variables);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to approve task",
-          error,
-          "Review task logs and diff, then retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useRejectTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast<
+    unknown,
+    { taskId: string; feedback?: string }
+  >({
+    success: (_data, { feedback }) =>
+      feedback ? "Task sent back with feedback." : "Task rejected.",
+    errorAction: "Failed to reject task",
+    errorNextStep: "Check task status and retry.",
+  });
+
   return useMutation({
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback?: string }) =>
       api.tasks.reject(taskId, feedback),
-    onSuccess: (_data, { taskId, feedback }) => {
+    onSuccess: (data, variables) => {
+      const { taskId } = variables;
       invalidateTaskQueries(qc, taskId);
-      toast.success(feedback ? "Task sent back with feedback." : "Task rejected.");
+      notifySuccess(data, variables);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to reject task",
-          error,
-          "Check task status and retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useCancelTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task cancelled.",
+    errorAction: "Failed to cancel task",
+    errorNextStep: "Check task status and retry.",
+  });
+
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.cancel(taskId),
-    onSuccess: (_data, taskId) => {
+    onSuccess: (data, taskId) => {
       invalidateTaskQueries(qc, taskId);
-      toast.success("Task cancelled.");
+      notifySuccess(data, taskId);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to cancel task",
-          error,
-          "Check task status and retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useRetryTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task retry started.",
+    errorAction: "Failed to retry task",
+    errorNextStep: "Review feedback and logs, then retry.",
+  });
+
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.retry(taskId),
-    onSuccess: (_data, taskId) => {
+    onSuccess: (data, taskId) => {
       invalidateTaskQueries(qc, taskId);
-      toast.success("Task retry started.");
+      notifySuccess(data, taskId);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to retry task",
-          error,
-          "Review feedback and logs, then retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useDeleteTask() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Task deleted.",
+    errorAction: "Failed to delete task",
+    errorNextStep: "Try again after checking daemon status.",
+  });
+
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.delete(taskId),
-    onSuccess: (_data, taskId) => {
+    onSuccess: (data, taskId) => {
       invalidateTaskQueries(qc, taskId);
       qc.removeQueries({ queryKey: ["task", taskId], exact: true });
       qc.removeQueries({ queryKey: ["task-diff", taskId], exact: true });
@@ -246,75 +247,61 @@ export function useDeleteTask() {
       if (useUiStore.getState().selectedTaskId === taskId) {
         useUiStore.getState().setSelectedTaskId(null);
       }
-      toast.success("Task deleted.");
+      notifySuccess(data, taskId);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to delete task",
-          error,
-          "Try again after checking daemon status.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useUpdatePriority() {
+  const { notifyError } = useMutationToast({
+    errorAction: "Failed to update task priority",
+    errorNextStep: "Check task status and try again.",
+  });
+
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ taskId, priority }: { taskId: string; priority: number }) =>
       api.tasks.updatePriority(taskId, priority),
     onSuccess: (_data, { taskId }) => invalidateTaskQueries(qc, taskId),
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to update task priority",
-          error,
-          "Check task status and try again.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useStageGateApprove() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Stage approved. Task resumed.",
+    errorAction: "Failed to approve stage",
+    errorNextStep: "Refresh task status and retry.",
+  });
+
   return useMutation({
     mutationFn: (taskId: string) => api.tasks.stageGateApprove(taskId),
-    onSuccess: (_data, taskId) => {
+    onSuccess: (data, taskId) => {
       invalidateTaskQueries(qc, taskId);
-      toast.success("Stage approved. Task resumed.");
+      notifySuccess(data, taskId);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to approve stage",
-          error,
-          "Refresh task status and retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
 
 export function useStageGateReject() {
   const qc = useQueryClient();
+  const { notifySuccess, notifyError } = useMutationToast({
+    success: "Stage rejected. Task moved to failed state.",
+    errorAction: "Failed to reject stage",
+    errorNextStep: "Refresh task status and retry.",
+  });
+
   return useMutation({
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback?: string }) =>
       api.tasks.stageGateReject(taskId, feedback),
-    onSuccess: (_data, { taskId }) => {
+    onSuccess: (data, variables) => {
+      const { taskId } = variables;
       invalidateTaskQueries(qc, taskId);
-      toast.success("Stage rejected. Task moved to failed state.");
+      notifySuccess(data, variables);
     },
-    onError: (error) => {
-      toast.error(
-        buildActionErrorMessage(
-          "Failed to reject stage",
-          error,
-          "Refresh task status and retry.",
-        ),
-      );
-    },
+    onError: notifyError,
   });
 }
