@@ -39,7 +39,13 @@ import {
 } from "@/components/ui/dialog";
 import { buildActionErrorMessage } from "@/lib/error";
 import { formatDuration } from "@/lib/format";
-import { useStartDaemon, useStatsQuery, useStopDaemon } from "@/queries/stats";
+import {
+  usePauseDaemon,
+  useResumeDaemon,
+  useStartDaemon,
+  useStatsQuery,
+  useStopDaemon,
+} from "@/queries/stats";
 import { useDaemonStore } from "@/stores/daemon";
 
 const GATE_STAGES = [
@@ -56,11 +62,14 @@ const GATE_STAGES = [
 
 export default function SettingsPage() {
   const [confirmCleanup, setConfirmCleanup] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const { data: stats } = useStatsQuery();
   const daemonStatus = useDaemonStore((s) => s.status);
   const setStatus = useDaemonStore((s) => s.setStatus);
   const startDaemon = useStartDaemon();
   const stopDaemon = useStopDaemon();
+  const pauseDaemon = usePauseDaemon();
+  const resumeDaemon = useResumeDaemon();
   const qc = useQueryClient();
 
   // Sync daemon status from stats query on load
@@ -69,18 +78,6 @@ export default function SettingsPage() {
       setStatus(stats.daemonStatus);
     }
   }, [stats?.daemonStatus, setStatus]);
-
-  const pauseDaemon = useMutation({
-    mutationFn: () =>
-      fetch("/api/pause", { method: "POST" }).then((r) => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["stats"] }),
-  });
-
-  const resumeDaemon = useMutation({
-    mutationFn: () =>
-      fetch("/api/resume", { method: "POST" }).then((r) => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["stats"] }),
-  });
 
   const runCleanup = useMutation({
     mutationFn: () => api.cleanup.run(),
@@ -99,6 +96,83 @@ export default function SettingsPage() {
       );
     },
   });
+
+  const daemonActionPending =
+    startDaemon.isPending ||
+    pauseDaemon.isPending ||
+    resumeDaemon.isPending ||
+    stopDaemon.isPending;
+
+  function startDaemonWithFeedback() {
+    startDaemon.mutate(undefined, {
+      onSuccess: (data) => {
+        const pid =
+          data && typeof data.pid === "number" ? ` (PID: ${data.pid})` : "";
+        toast.success(`Daemon started${pid}.`);
+      },
+      onError: (error) => {
+        toast.error(
+          buildActionErrorMessage(
+            "Failed to start daemon",
+            error,
+            "Check daemon logs, then retry.",
+          ),
+        );
+      },
+    });
+  }
+
+  function pauseDaemonWithFeedback() {
+    pauseDaemon.mutate(undefined, {
+      onSuccess: () => {
+        toast.success("Daemon paused.");
+      },
+      onError: (error) => {
+        toast.error(
+          buildActionErrorMessage(
+            "Failed to pause daemon",
+            error,
+            "Verify daemon is running, then retry.",
+          ),
+        );
+      },
+    });
+  }
+
+  function resumeDaemonWithFeedback() {
+    resumeDaemon.mutate(undefined, {
+      onSuccess: () => {
+        toast.success("Daemon resumed.");
+      },
+      onError: (error) => {
+        toast.error(
+          buildActionErrorMessage(
+            "Failed to resume daemon",
+            error,
+            "Verify daemon is paused, then retry.",
+          ),
+        );
+      },
+    });
+  }
+
+  function stopDaemonWithFeedback() {
+    stopDaemon.mutate(undefined, {
+      onSuccess: () => {
+        setConfirmStop(false);
+        toast.success("Daemon stopped.");
+      },
+      onError: (error) => {
+        toast.error(
+          buildActionErrorMessage(
+            "Failed to stop daemon",
+            error,
+            "Check daemon logs and task status, then retry.",
+          ),
+        );
+      },
+    });
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
@@ -124,10 +198,15 @@ export default function SettingsPage() {
             {daemonStatus === "offline" || daemonStatus === "unknown" ? (
               <Button
                 size="sm"
-                onClick={() => startDaemon.mutate()}
-                disabled={startDaemon.isPending}
+                onClick={startDaemonWithFeedback}
+                disabled={daemonActionPending}
               >
-                <Play className="h-4 w-4" /> Start Daemon
+                {startDaemon.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}{" "}
+                {startDaemon.isPending ? "Starting..." : "Start Daemon"}
               </Button>
             ) : (
               <>
@@ -135,29 +214,44 @@ export default function SettingsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => pauseDaemon.mutate()}
-                    disabled={pauseDaemon.isPending}
+                    onClick={pauseDaemonWithFeedback}
+                    disabled={daemonActionPending}
                   >
-                    <Pause className="h-4 w-4" /> Pause
+                    {pauseDaemon.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Pause className="h-4 w-4" />
+                    )}{" "}
+                    {pauseDaemon.isPending ? "Pausing..." : "Pause"}
                   </Button>
                 )}
                 {daemonStatus === "paused" && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => resumeDaemon.mutate()}
-                    disabled={resumeDaemon.isPending}
+                    onClick={resumeDaemonWithFeedback}
+                    disabled={daemonActionPending}
                   >
-                    <RotateCw className="h-4 w-4" /> Resume
+                    {resumeDaemon.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RotateCw className="h-4 w-4" />
+                    )}{" "}
+                    {resumeDaemon.isPending ? "Resuming..." : "Resume"}
                   </Button>
                 )}
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => stopDaemon.mutate()}
-                  disabled={stopDaemon.isPending}
+                  onClick={() => setConfirmStop(true)}
+                  disabled={daemonActionPending}
                 >
-                  <Square className="h-4 w-4" /> Stop Daemon
+                  {stopDaemon.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}{" "}
+                  {stopDaemon.isPending ? "Stopping..." : "Stop Daemon"}
                 </Button>
               </>
             )}
@@ -239,6 +333,44 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={confirmStop}
+        onOpenChange={(open) => {
+          if (!stopDaemon.isPending) setConfirmStop(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stop Daemon?</DialogTitle>
+            <DialogDescription>
+              Running work will pause until the daemon is started again. Stop
+              now?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmStop(false)}
+              disabled={stopDaemon.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={stopDaemonWithFeedback}
+              disabled={stopDaemon.isPending}
+            >
+              {stopDaemon.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Square className="h-4 w-4" />
+              )}{" "}
+              {stopDaemon.isPending ? "Stopping..." : "Stop Daemon"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={confirmCleanup}
@@ -451,6 +583,15 @@ function StageApprovalCard() {
     mutationFn: (stageApproval: StageApprovalConfig) =>
       api.config.set({ stageApproval }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["config"] }),
+    onError: (error) => {
+      toast.error(
+        buildActionErrorMessage(
+          "Failed to update stage approval",
+          error,
+          "Check daemon/config status, then retry.",
+        ),
+      );
+    },
   });
 
   const stageApproval = ucmConfig?.stageApproval;
@@ -521,6 +662,12 @@ function StageApprovalCard() {
             <p className="text-xs text-muted-foreground">
               intake and deliver stages are always automatic.
             </p>
+            {updateConfig.isPending && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving stage approval...
+              </p>
+            )}
           </>
         ) : (
           <div className="text-sm text-muted-foreground">
@@ -552,6 +699,15 @@ function AutomationDefaultsCard() {
       qc.invalidateQueries({ queryKey: ["automation"] });
       qc.invalidateQueries({ queryKey: ["config"] });
     },
+    onError: (error) => {
+      toast.error(
+        buildActionErrorMessage(
+          "Failed to update automation defaults",
+          error,
+          "Check daemon/config status, then retry.",
+        ),
+      );
+    },
   });
 
   const config = automationConfig || { autoExecute: false, autoApprove: false, autoPropose: false, autoConvert: false };
@@ -568,19 +724,29 @@ function AutomationDefaultsCard() {
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading config...</div>
         ) : (
-          AUTOMATION_TOGGLES.map(({ key, label, description }) => (
-            <div key={key} className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">{label}</p>
-                <p className="text-xs text-muted-foreground">{description}</p>
+          <>
+            {AUTOMATION_TOGGLES.map(({ key, label, description }) => (
+              <div key={key} className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+                <Switch
+                  checked={!!config[key as keyof typeof config]}
+                  onCheckedChange={(checked) =>
+                    mutation.mutate({ [key]: checked })
+                  }
+                  disabled={mutation.isPending}
+                />
               </div>
-              <Switch
-                checked={!!config[key as keyof typeof config]}
-                onCheckedChange={(checked) => mutation.mutate({ [key]: checked })}
-                disabled={mutation.isPending}
-              />
-            </div>
-          ))
+            ))}
+            {mutation.isPending && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving automation defaults...
+              </p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
