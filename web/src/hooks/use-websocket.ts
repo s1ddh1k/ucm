@@ -230,8 +230,10 @@ export function useWebSocket() {
 
         const failedEvent = nextState === "failed" || nextStatus === "failed";
         if (failedEvent && markPending("failed", taskId)) {
-          const taskLabel = taskId || "unknown";
-          notify("Task failed", `Task ${taskLabel} has failed.`);
+          const detail = taskId
+            ? `Task ${taskId} failed. Open logs, then retry with feedback when ready.`
+            : "A task failed. Refresh the task list, open logs, and retry when ready.";
+          notify("Task failed", detail);
         } else if (taskId && nextState && nextState !== "failed") {
           clearPending("failed", taskId);
         }
@@ -444,12 +446,11 @@ export function useWebSocket() {
       // Pipeline error events
       wsManager.on("pipeline:error", (data) => {
         const taskId = getStringField(data, "taskId");
-        const taskLabel = taskId || "unknown";
         if (markPending("pipelineError", taskId)) {
-          notify(
-            "Task failed",
-            `Task ${taskLabel} encountered a pipeline error.`,
-          );
+          const detail = taskId
+            ? `Task ${taskId} encountered a pipeline error. Review logs and decide whether to retry.`
+            : "A pipeline error occurred. Refresh tasks, inspect logs, and retry if appropriate.";
+          notify("Task failed", detail);
         }
         addActivity("pipeline:error", data);
       }),
