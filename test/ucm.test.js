@@ -12324,6 +12324,68 @@ async function testSocketRejectsOversizedRequest() {
   }
 }
 
+async function testSocketRejectsInvalidTaskIdBeforeDispatch() {
+  const ucmdServer = require("../lib/ucmd-server.js");
+  let handlerCalls = 0;
+  const logs = [];
+
+  ucmdServer.setDeps({
+    daemonState: () => ({ daemonStatus: "running" }),
+    handlers: () => ({
+      handleLogs: async () => {
+        handlerCalls += 1;
+        return { ok: true };
+      },
+    }),
+    log: (line) => logs.push(line),
+    gracefulShutdown: () => {},
+  });
+
+  try {
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+    await ucmdServer.startSocketServer();
+
+    let caught = null;
+    try {
+      await socketRequest({
+        method: "logs",
+        params: { taskId: "../escape" },
+      });
+    } catch (e) {
+      caught = e;
+    }
+
+    assert(caught !== null, "socket taskId guard: rejects invalid task id");
+    assert(
+      String(caught?.message || "").includes("invalid taskId format"),
+      "socket taskId guard: returns explicit validation error",
+    );
+    assertEqual(
+      handlerCalls,
+      0,
+      "socket taskId guard: rejects before dispatching handler",
+    );
+    assert(
+      logs.some((line) =>
+        line.includes(
+          "[socket] logs (taskId=../escape) fatal error: invalid taskId format: ../escape",
+        ),
+      ),
+      "socket taskId guard: logs method/context for rejected request",
+    );
+  } finally {
+    const server = ucmdServer.socketServer();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    try {
+      fs.unlinkSync(SOCK_PATH);
+    } catch {}
+  }
+}
+
 async function testSocketErrorLogMarksRetryableSeverity() {
   const ucmdServer = require("../lib/ucmd-server.js");
   const logs = [];
@@ -13189,6 +13251,40 @@ function testUcmdServerForgeSafetyChecks() {
   assert(
     serverSource.includes("pipeline:error"),
     "socket: forge errors broadcast to subscribers",
+  );
+}
+
+function testUcmdServerTaskIdValidation() {
+  const serverSource = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "lib", "ucmd-server.js"),
+    "utf-8",
+  );
+  assert(
+    serverSource.includes("TASK_ID_RE"),
+    "socket: has taskId validation regex",
+  );
+  assert(
+    serverSource.includes("validateTaskIdParam"),
+    "socket: has taskId validation helper",
+  );
+  assert(
+    serverSource.includes("invalid taskId format"),
+    "socket: returns explicit taskId validation error",
+  );
+}
+
+function testServerLogsLineLimitIsCapped() {
+  const serverSource = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "lib", "server", "index.js"),
+    "utf-8",
+  );
+  assert(
+    serverSource.includes("MAX_LOG_LINES"),
+    "server: defines max log line cap",
+  );
+  assert(
+    serverSource.includes("Math.min(MAX_LOG_LINES"),
+    "server: clamps requested log line count",
   );
 }
 
@@ -15017,6 +15113,7 @@ async function main() {
   await testSocketResumeRollbackRestoresSuspendedTracking();
   await testSocketRejectsInvalidJsonRequest();
   await testSocketRejectsOversizedRequest();
+  await testSocketRejectsInvalidTaskIdBeforeDispatch();
   await testSocketErrorLogMarksRetryableSeverity();
   await testSocketErrorLogMarksFatalSeverity();
   await testSocketRefinementAnswerAcceptsFlatPayload();
@@ -15035,6 +15132,8 @@ async function main() {
   testServerTaskIdValidation();
   testUcmdHandlersUsesBoundedDagSummaryConcurrency();
   testUcmdServerForgeSafetyChecks();
+  testUcmdServerTaskIdValidation();
+  testServerLogsLineLimitIsCapped();
   testWatchdogRebindsExitHandlerOnRespawn();
   testWebsocketBadgeTracksOutstandingPerTask();
   testWireEventsIncludesAbort();
