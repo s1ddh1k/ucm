@@ -3,9 +3,16 @@ import { join, resolve } from "node:path";
 
 const DESKTOP_UCM_DIR = join(homedir(), ".ucm-desktop");
 const DESKTOP_UI_PORT = 17173;
+const DESKTOP_DAEMON_LOG_PATH = join(DESKTOP_UCM_DIR, "daemon", "ucmd.log");
 
 type DaemonStatus = "stopped" | "starting" | "running";
 type OnCrashCallback = (code: number | null) => void;
+
+function startupError(reason: string): Error {
+  return new Error(
+    `${reason} Check ${DESKTOP_DAEMON_LOG_PATH} for details, then retry.`,
+  );
+}
 
 export class DaemonManager {
   private child: ReturnType<typeof Bun.spawn> | null = null;
@@ -22,7 +29,9 @@ export class DaemonManager {
       return { port: this.port };
     }
     if (this.status === "starting") {
-      throw new Error("daemon is already starting");
+      throw new Error(
+        "Daemon startup is already in progress. Wait a moment and retry.",
+      );
     }
 
     this.status = "starting";
@@ -39,7 +48,9 @@ export class DaemonManager {
           child.kill("SIGTERM");
           this.child = null;
           this.status = "stopped";
-          promiseReject(new Error("daemon startup timed out (15s)"));
+          promiseReject(
+            startupError("Daemon startup timed out after 15 seconds."),
+          );
         }
       }, 15000);
 
@@ -66,7 +77,7 @@ export class DaemonManager {
             this.child = null;
             this.status = "stopped";
             promiseReject(
-              new Error(message.message || "daemon startup failed"),
+              startupError(message.message || "Daemon startup failed."),
             );
           }
         },
@@ -80,7 +91,7 @@ export class DaemonManager {
 
         if (settle()) {
           promiseReject(
-            new Error(`daemon exited during startup with code ${code}`),
+            startupError(`Daemon exited during startup (code ${code}).`),
           );
         } else if (wasRunning && this.onCrash) {
           this.onCrash(code);

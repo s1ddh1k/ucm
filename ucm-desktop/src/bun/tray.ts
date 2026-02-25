@@ -1,6 +1,7 @@
 import type { BrowserWindow } from "electrobun/bun";
 import { Tray, Utils } from "electrobun/bun";
 import type { DaemonManager } from "./daemon-manager";
+import { buildDesktopActionErrorMessage } from "./error-message";
 
 export function setupTray(daemon: DaemonManager, mainWindow: BrowserWindow) {
   const tray = new Tray({
@@ -29,7 +30,7 @@ export function setupTray(daemon: DaemonManager, mainWindow: BrowserWindow) {
       } catch (error) {
         await Utils.showMessageBox({
           title: "Restart Failed",
-          message: String(error),
+          message: buildDesktopActionErrorMessage("Daemon restart", error),
           buttons: ["OK"],
         });
       }

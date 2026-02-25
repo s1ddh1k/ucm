@@ -74,6 +74,7 @@ const PROPOSAL_VIEW_OPTIONS = [
 export default function ProposalsPage() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<Proposal | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Proposal | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const params = useParams();
@@ -238,19 +239,36 @@ export default function ProposalsPage() {
     setDetailOpen(true);
   };
 
+  const findProposalTarget = (id: string): Proposal | null =>
+    (proposals || []).find((proposal) => proposal.id === id) ||
+    (detailProposal?.id === id ? detailProposal : null);
+
   const handleApprove = (id: string) => {
+    if (approveProposal.isPending) return;
     approveProposal.mutate(id);
     setDetailOpen(false);
   };
+
   const handleReject = (id: string) => {
-    rejectProposal.mutate(id);
-    setDetailOpen(false);
+    if (rejectProposal.isPending) return;
+    const target = findProposalTarget(id);
+    if (!target) return;
+    setRejectTarget(target);
   };
+
+  const confirmReject = () => {
+    if (!rejectTarget) return;
+    rejectProposal.mutate(rejectTarget.id, {
+      onSuccess: () => {
+        if (detailProposal?.id === rejectTarget.id) setDetailOpen(false);
+        setRejectTarget(null);
+      },
+    });
+  };
+
   const handleDelete = (id: string) => {
     if (deleteProposal.isPending) return;
-    const target =
-      (proposals || []).find((proposal) => proposal.id === id) ||
-      (detailProposal?.id === id ? detailProposal : null);
+    const target = findProposalTarget(id);
     if (!target) return;
     setDeleteTarget(target);
   };
@@ -514,6 +532,7 @@ export default function ProposalsPage() {
                     variant="ghost"
                     className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300"
                     onClick={() => handleApprove(proposal.id)}
+                    disabled={approveProposal.isPending || rejectProposal.isPending}
                   >
                     <Check className="h-3.5 w-3.5" />
                   </Button>
@@ -522,6 +541,7 @@ export default function ProposalsPage() {
                     variant="ghost"
                     className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
                     onClick={() => handleReject(proposal.id)}
+                    disabled={approveProposal.isPending || rejectProposal.isPending}
                   >
                     <X className="h-3.5 w-3.5" />
                   </Button>
@@ -539,6 +559,7 @@ export default function ProposalsPage() {
               onApprove={() => handleApprove(proposal.id)}
               onReject={() => handleReject(proposal.id)}
               onDelete={() => handleDelete(proposal.id)}
+              actionDisabled={approveProposal.isPending || rejectProposal.isPending}
               deletePending={
                 deleteProposal.isPending && deleteTarget?.id === proposal.id
               }
@@ -561,10 +582,54 @@ export default function ProposalsPage() {
         onApprove={handleApprove}
         onReject={handleReject}
         onDelete={handleDelete}
+        actionDisabled={approveProposal.isPending || rejectProposal.isPending}
         deletePending={
           deleteProposal.isPending && deleteTarget?.id === detailProposal?.id
         }
       />
+
+      <Dialog
+        open={Boolean(rejectTarget)}
+        onOpenChange={(open) => {
+          if (!open && !rejectProposal.isPending) setRejectTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Proposal?</DialogTitle>
+            <DialogDescription>
+              This will mark the proposal as rejected and remove it from the
+              proposed queue. You can still review it in the Rejected filter.
+            </DialogDescription>
+          </DialogHeader>
+          {rejectTarget && (
+            <p className="text-sm font-medium line-clamp-2">
+              {rejectTarget.title}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setRejectTarget(null)}
+              disabled={rejectProposal.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmReject}
+              disabled={rejectProposal.isPending}
+            >
+              {rejectProposal.isPending ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <X className="h-4 w-4" />
+              )}
+              {rejectProposal.isPending ? "Rejecting..." : "Reject Proposal"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(deleteTarget)}

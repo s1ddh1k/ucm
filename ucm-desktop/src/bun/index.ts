@@ -1,5 +1,6 @@
 import Electrobun, { BrowserWindow, Utils } from "electrobun/bun";
 import { DaemonManager } from "./daemon-manager";
+import { buildDesktopActionErrorMessage } from "./error-message";
 import { setupTray } from "./tray";
 import { setupUpdater } from "./updater";
 
@@ -19,7 +20,7 @@ daemon.setOnCrash(async (code) => {
     } catch (error) {
       await Utils.showMessageBox({
         title: "Restart Failed",
-        message: String(error),
+        message: buildDesktopActionErrorMessage("Daemon restart", error),
         buttons: ["Quit"],
       });
       Utils.quit();
@@ -37,7 +38,7 @@ try {
 } catch (error) {
   await Utils.showMessageBox({
     title: "UCM Startup Error",
-    message: `Failed to start daemon: ${error instanceof Error ? error.message : String(error)}`,
+    message: buildDesktopActionErrorMessage("Daemon startup", error),
     buttons: ["Quit"],
   });
   Utils.quit();
