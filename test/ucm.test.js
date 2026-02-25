@@ -109,6 +109,7 @@ const {
   analyzeProject,
   handleAnalyzeProject,
   handleResearchProject,
+  updateMemory,
 } = require("../lib/ucmd.js");
 
 const ucmdRefinement = require("../lib/ucmd-refinement.js");
@@ -1079,6 +1080,125 @@ async function testRejectWithoutFeedbackClearsDaemonTaskTracking() {
     } catch {}
     try {
       await rm(path.join(TASKS_DIR, "failed", `${taskId}.md`), { force: true });
+    } catch {}
+  }
+}
+
+async function testRecoverRunningTasksRequeuesMissingMergeQueueEntry() {
+  const taskId = generateTaskId();
+  const runningPath = path.join(TASKS_DIR, "running", `${taskId}.md`);
+  const projectPath = path.resolve(process.cwd());
+  const daemonState = {
+    daemonStatus: "running",
+    pausedAt: null,
+    pauseReason: null,
+    activeTasks: [],
+    suspendedTasks: [],
+    stats: { totalSpawns: 0 },
+  };
+  const requeued = [];
+  let markedDirty = 0;
+
+  await writeFile(
+    runningPath,
+    serializeTaskFile(
+      {
+        id: taskId,
+        title: "recover merge queue task",
+        state: "running",
+        project: projectPath,
+        mergeQueue: "queued",
+        priority: 42,
+        created: new Date().toISOString(),
+      },
+      "body",
+    ),
+  );
+
+  const mergeQueueManager = {
+    getStatus(project) {
+      return {
+        project,
+        processing: false,
+        current: null,
+        entries: requeued
+          .filter((entry) => entry.project === project)
+          .map((entry) => ({
+            taskId: entry.taskId,
+            status: "queued",
+            priority: entry.priority,
+          })),
+        queueLength: requeued.filter((entry) => entry.project === project)
+          .length,
+      };
+    },
+    enqueue(taskIdParam, project, priority) {
+      requeued.push({ taskId: taskIdParam, project, priority });
+    },
+  };
+
+  ucmdHandlers.setDeps({
+    config: () => DEFAULT_CONFIG,
+    daemonState: () => daemonState,
+    inflightTasks: new Set(),
+    taskQueue: [],
+    getResourcePressure: () => "normal",
+    getProbeTimer: () => null,
+    setProbeTimer: () => {},
+    setProbeIntervalMs: () => {},
+    requeueSuspendedTasks: async () => {},
+    markStateDirty: () => {
+      markedDirty++;
+    },
+    reloadConfig: async () => {},
+    log: () => {},
+    wakeProcessLoop: () => {},
+    broadcastWs: () => {},
+    activeForgePipelines: new Map(),
+    updateTaskMeta: async () => {},
+    mergeQueueManager,
+    QUOTA_PROBE_INITIAL_MS: 60_000,
+  });
+
+  try {
+    const recovered = await ucmdHandlers.recoverRunningTasks();
+    assertEqual(
+      recovered,
+      0,
+      "recover merge-queue: keeps running state while restoring queue entry",
+    );
+    assertEqual(
+      requeued.length,
+      1,
+      "recover merge-queue: re-enqueues missing merge queue entry",
+    );
+    assertEqual(
+      requeued[0].taskId,
+      taskId,
+      "recover merge-queue: re-enqueue uses current task id",
+    );
+    assertEqual(
+      requeued[0].project,
+      projectPath,
+      "recover merge-queue: re-enqueue uses normalized project path",
+    );
+    assertEqual(
+      requeued[0].priority,
+      42,
+      "recover merge-queue: re-enqueue preserves task priority",
+    );
+    assert(
+      daemonState.activeTasks.includes(taskId),
+      "recover merge-queue: tracks task as active after recovery",
+    );
+    assert(
+      markedDirty > 0,
+      "recover merge-queue: marks daemon state dirty when active tracking changes",
+    );
+  } finally {
+    ucmdHandlers.setDeps({});
+    try {
+      await rm(runningPath, { force: true });
     } catch {}
   }
 }
@@ -2377,6 +2497,50 @@ async function testArtifacts() {
   } finally {
     try {
       await rm(artifactDir, { recursive: true });
+    } catch {}
+  }
+}
+
+async function testUpdateMemorySerializesConcurrentWrites() {
+  const taskId = `memory-race-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const artifactDir = path.join(ARTIFACTS_DIR, taskId);
+  const memoryPath = path.join(artifactDir, "memory.json");
+  const writes = 12;
+
+  try {
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(
+      memoryPath,
+      JSON.stringify(
+        { timeline: [], metrics: { totalSpawns: 0, result: null } },
+        null,
+        2,
+      ),
+    );
+
+    await Promise.all(
+      Array.from({ length: writes }, async (_unused, index) => {
+        await updateMemory(taskId, {
+          timelineEntry: { kind: "race-test", index },
+        });
+      }),
+    );
+
+    const parsed = JSON.parse(await readFile(memoryPath, "utf-8"));
+    assertEqual(
+      parsed.timeline.length,
+      writes,
+      "updateMemory: preserves all concurrent timeline writes",
+    );
+    const seenIndexes = new Set(parsed.timeline.map((entry) => entry.index));
+    assertEqual(
+      seenIndexes.size,
+      writes,
+      "updateMemory: keeps each concurrent timeline entry",
+    );
+  } finally {
+    try {
+      await rm(artifactDir, { recursive: true, force: true });
     } catch {}
   }
 }
@@ -14813,6 +14977,7 @@ async function main() {
   await testHandleListRejectsInvalidMinPriority();
   await testRejectWithFeedbackTracksActiveTaskState();
   await testRejectWithFeedbackRecoveryPreservesRunningTask();
+  await testRecoverRunningTasksRequeuesMissingMergeQueueEntry();
   await testRejectWithoutFeedbackClearsDaemonTaskTracking();
   await testHandleRetryClearsDaemonTaskTracking();
   await testHandleResumeRollsBackOnRequeueFailure();
@@ -15055,6 +15220,7 @@ async function main() {
   await testLoadProjectPreferences();
   await testConfig();
   await testArtifacts();
+  await testUpdateMemorySerializesConcurrentWrites();
   console.log();
 
   console.log("Worktree Tests:");
