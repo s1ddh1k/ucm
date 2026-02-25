@@ -1,16 +1,23 @@
 import type {
   Artifacts,
   BrowseResult,
+  ClusterData,
+  ConflictResult,
+  CurationModeData,
   DaemonStats,
   DaemonStatus,
+  DiscardRecord,
   DiffResult,
   GcResult,
   HivemindStats,
   ObserverStatus,
   Proposal,
+  ProposalScores,
+  ReadinessChecklist,
   ReindexResult,
   Task,
   UcmConfig,
+  WeightProfile,
   Zettel,
   ZettelSearchResult,
 } from "./types";
@@ -178,6 +185,48 @@ export const proposals = {
       `/api/proposal/priority/${proposalId}`,
       { delta },
     ),
+  score: (proposalId: string) =>
+    request<{ proposalId: string; scores: ProposalScores | null; priority: number; scoreSource: string | null; weightProfile: string | null }>(
+      `/api/proposal/score/${proposalId}`,
+    ),
+  setScore: (proposalId: string, scores: Partial<ProposalScores>) =>
+    post<{ proposalId: string; scores: ProposalScores; priority: number }>(
+      `/api/proposal/score/${proposalId}`,
+      { scores },
+    ),
+  clusters: (refresh?: boolean) =>
+    request<ClusterData>(`/api/proposal/clusters${refresh ? "?refresh=1" : ""}`),
+  mergeCluster: (proposalIds: string[], representativeId?: string) =>
+    post<unknown>("/api/proposal/cluster/merge", { proposalIds, representativeId }),
+  splitCluster: (proposalId: string) =>
+    post<unknown>(`/api/proposal/cluster/split/${proposalId}`),
+  conflicts: (proposalId: string) =>
+    request<ConflictResult>(`/api/proposal/conflicts/${proposalId}`),
+  discard: (proposalId: string, reason: string) =>
+    post<{ proposalId: string; discarded: boolean }>(
+      `/api/proposal/discard/${proposalId}`,
+      { reason, discardedBy: "user" },
+    ),
+  discardHistory: (limit?: number) =>
+    request<{ records: DiscardRecord[]; total: number }>(
+      `/api/proposal/discard-history${limit ? `?limit=${limit}` : ""}`,
+    ),
+  readiness: (proposalId: string) =>
+    request<ReadinessChecklist>(`/api/proposal/readiness/${proposalId}`),
+  feedback: (proposalId: string, taskId: string, outcome: Record<string, unknown>) =>
+    post<unknown>(`/api/proposal/feedback/${proposalId}`, { taskId, outcome }),
+};
+
+// Curation
+export const curation = {
+  mode: () => request<CurationModeData>("/api/curation/mode"),
+  setMode: (mode: string, reason?: string) =>
+    post<CurationModeData>("/api/curation/mode", { mode, reason }),
+  weights: () =>
+    request<{ activeProfile: string; profiles: WeightProfile[] }>("/api/curation/weights"),
+  setWeights: (params: { profile?: string; weights?: Record<string, number> }) =>
+    post<{ activeProfile: string; weights?: Record<string, number>; profiles?: WeightProfile[] }>("/api/curation/weights", params),
+  profiles: () => request<WeightProfile[]>("/api/curation/profiles"),
 };
 
 // Observer
@@ -293,6 +342,7 @@ export const api = {
   tasks,
   artifacts,
   proposals,
+  curation,
   observer,
   browse,
   refinement,

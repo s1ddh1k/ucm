@@ -145,10 +145,24 @@ export interface Proposal {
   project?: string;
   relatedTasks?: string[];
   evaluation?: ProposalEvaluation;
+  scores?: ProposalScores;
+  scoreSource?: "ai" | "user" | "mixed";
+  weightProfile?: string;
+  modeEligibility?: "stabilization" | "big_bet" | "both";
+  clusterId?: string | null;
+  packagedAt?: string;
+  packagingMode?: "interactive" | "autopilot" | "hybrid";
+  overallConfidence?: number;
+  dimensionConfidence?: Record<string, number>;
+  questionsAsked?: number;
+  curationHistory?: Array<Record<string, unknown>>;
 }
 
 export type ProposalStatus =
   | "proposed"
+  | "packaging"
+  | "packaged"
+  | "held"
   | "approved"
   | "rejected"
   | "implemented";
@@ -157,6 +171,90 @@ export interface ProposalEvaluation {
   regulatorApproved: boolean;
   regulatorReason?: string;
   score?: number;
+}
+
+// Curation types
+export type CurationMode = "stabilization" | "big_bet";
+
+export interface CurationModeData {
+  mode: CurationMode;
+  since: string;
+  forcedBy: "user" | "auto" | null;
+  history: Array<{
+    from: CurationMode;
+    to: CurationMode;
+    timestamp: string;
+    triggeredBy: "auto" | "user";
+    reason: string;
+  }>;
+  transitionScore?: Record<string, unknown> | null;
+  config?: Record<string, unknown>;
+}
+
+export interface ProposalScores {
+  impact: number;
+  urgency: number;
+  uncertainty: number;
+  executionCost: number;
+  cwFitness: number;
+}
+
+export interface ProposalCluster {
+  id: string;
+  representativeId: string;
+  title: string;
+  category: string;
+  members: Array<{
+    proposalId: string;
+    role: "representative" | "variant";
+    relationship: "duplicate" | "complementary";
+  }>;
+  mergedScores: ProposalScores;
+  mergedPriority: number;
+}
+
+export interface ClusterData {
+  version: number;
+  clusters: Record<string, ProposalCluster>;
+  proposalToCluster: Record<string, string>;
+}
+
+export interface ConflictResult {
+  proposalId: string;
+  conflicts: Array<{
+    type: string;
+    severity: "critical" | "high" | "medium";
+    conflictsWith: string;
+    detail: string;
+  }>;
+}
+
+export interface ReadinessChecklist {
+  proposalId: string;
+  ready: boolean;
+  checklist: Record<string, { passed: boolean; detail: string; blocking?: string[] }>;
+  computedAt: string;
+  promotable: boolean;
+}
+
+export interface DiscardRecord {
+  proposalId: string;
+  title: string;
+  category: string;
+  risk: string;
+  project: string | null;
+  dedupHash: string;
+  discardedAt: string;
+  actor: string;
+  reason: string;
+  reasonDetail: string;
+}
+
+export interface WeightProfile {
+  key: string;
+  label: string;
+  weights: Record<string, number>;
+  active: boolean;
 }
 
 // Observer — matches handleObserveStatus response

@@ -61,6 +61,21 @@ Usage:
   Proposals:
     ucm proposals [--status <s>]              제안 목록
     ucm proposal <approve|reject|up|down|eval> <id> [--force]  제안 관리
+    ucm proposal score <id>                   다축 점수 조회
+    ucm proposal score <id> --impact <n> ...  점수 오버라이드
+    ucm proposal weights [--profile <name>]   가중치 프로필 조회/전환
+    ucm proposal clusters [--refresh]         클러스터 목록
+    ucm proposal cluster-merge <id1> <id2>... 제안 클러스터 병합
+    ucm proposal cluster-split <id>           클러스터에서 제거
+    ucm proposal conflicts <id>               충돌 감지
+    ucm proposal discard <id> --reason <r>    제안 폐기
+    ucm proposal history [--limit 20]         폐기 이력
+    ucm proposal readiness <id>               Big Bet 체크리스트
+
+  Curation Mode:
+    ucm mode                                  현재 큐레이션 모드 조회
+    ucm mode set <stabilization|big_bet> --reason "..."  모드 전환
+    ucm mode criteria                         전환 기준 상세
 
   Daemon control:
     ucm daemon start|stop                     데몬 시작/종료
@@ -110,6 +125,15 @@ Options:
   --port <N>           UI 서버 포트 (기본: ${DEFAULT_CONFIG.uiPort})
   --dev                프론트엔드 개발 모드
   --force              확인 없이 강제 실행 (예: delete, reject)
+  --reason "..."       사유 (mode set, proposal discard)
+  --impact <N>         영향도 점수 (proposal score)
+  --urgency <N>        긴급도 점수 (proposal score)
+  --uncertainty <N>    불확실성 점수 (proposal score)
+  --executionCost <N>  실행 비용 점수 (proposal score)
+  --cwFitness <N>      CW 적합도 점수 (proposal score)
+  --profile <name>     가중치 프로필 이름 (proposal weights)
+  --refresh            새로고침 (proposal clusters)
+  --limit <N>          결과 수 제한 (proposal history)
   --help               도움말`;
 
 function tryOpenDashboard(url) {
@@ -202,6 +226,24 @@ function parseArgs(argv) {
       opts.lines = readIntegerOption("--lines", { min: 1 });
     } else if (args[i] === "--score") {
       opts.score = readIntegerOption("--score");
+    } else if (args[i] === "--reason") {
+      opts.reason = readOptionValue("--reason");
+    } else if (args[i] === "--impact") {
+      opts.impact = readIntegerOption("--impact");
+    } else if (args[i] === "--urgency") {
+      opts.urgency = readIntegerOption("--urgency");
+    } else if (args[i] === "--uncertainty") {
+      opts.uncertainty = readIntegerOption("--uncertainty");
+    } else if (args[i] === "--executionCost") {
+      opts.executionCost = readIntegerOption("--executionCost");
+    } else if (args[i] === "--cwFitness") {
+      opts.cwFitness = readIntegerOption("--cwFitness");
+    } else if (args[i] === "--profile") {
+      opts.profile = readOptionValue("--profile");
+    } else if (args[i] === "--refresh") {
+      opts.refresh = true;
+    } else if (args[i] === "--limit") {
+      opts.limit = readIntegerOption("--limit", { min: 1 });
     } else if (args[i] === "--port") {
       opts.port = readIntegerOption("--port", { min: 1, max: 65535 });
     } else if (args[i] === "--dev") {
@@ -924,8 +966,13 @@ async function cmdProposal(opts) {
   const subcommand = opts.positional[0];
   const proposalId = opts.positional[1];
 
-  if (!subcommand || !proposalId) {
-    console.error("usage: ucm proposal <approve|reject|up|down|eval> <id>");
+  if (!subcommand) {
+    console.error("usage: ucm proposal <approve|reject|up|down|eval|score|weights|clusters|cluster-merge|cluster-split|conflicts|discard|history|readiness> [id]");
+    process.exit(1);
+  }
+  const noIdSubcommands = ["history", "weights", "clusters"];
+  if (!noIdSubcommands.includes(subcommand) && !proposalId) {
+    console.error(`usage: ucm proposal ${subcommand} <id>`);
     process.exit(1);
   }
 
@@ -1001,11 +1048,307 @@ async function cmdProposal(opts) {
       console.log(`${result.proposalId}: priority → ${result.priority}`);
       break;
     }
+    case "score": {
+      if (!proposalId) {
+        console.error("usage: ucm proposal score <id> [--impact <n> --urgency <n> --uncertainty <n> --executionCost <n> --cwFitness <n>]");
+        process.exit(1);
+      }
+      const hasOverrides = opts.impact !== undefined || opts.urgency !== undefined ||
+        opts.uncertainty !== undefined || opts.executionCost !== undefined || opts.cwFitness !== undefined;
+      if (hasOverrides) {
+        const scores = {};
+        if (opts.impact !== undefined) scores.impact = opts.impact;
+        if (opts.urgency !== undefined) scores.urgency = opts.urgency;
+        if (opts.uncertainty !== undefined) scores.uncertainty = opts.uncertainty;
+        if (opts.executionCost !== undefined) scores.executionCost = opts.executionCost;
+        if (opts.cwFitness !== undefined) scores.cwFitness = opts.cwFitness;
+        const result = await socketRequest({
+          method: "proposal_score_set",
+          params: { proposalId, scores },
+        });
+        console.log(`scores updated: ${result.proposalId}`);
+        if (result.scores) {
+          for (const [axis, val] of Object.entries(result.scores)) {
+            console.log(`  ${axis}: ${val}`);
+          }
+        }
+      } else {
+        const result = await socketRequest({
+          method: "proposal_score",
+          params: { proposalId },
+        });
+        console.log(`proposal: ${result.proposalId}`);
+        if (result.scores) {
+          for (const [axis, val] of Object.entries(result.scores)) {
+            console.log(`  ${axis}: ${val}`);
+          }
+        }
+        if (result.priority != null) {
+          console.log(`  priority: ${result.priority}`);
+        }
+      }
+      break;
+    }
+    case "weights": {
+      const params = {};
+      if (opts.profile) params.profile = opts.profile;
+      const result = await socketRequest({
+        method: "curation_weights",
+        params,
+      });
+      if (opts.profile) {
+        console.log(`switched to profile: ${result.activeProfile || opts.profile}`);
+      }
+      if (result.weights) {
+        console.log(`profile: ${result.activeProfile || "(default)"}`);
+        for (const [axis, weight] of Object.entries(result.weights)) {
+          console.log(`  ${axis}: ${weight}`);
+        }
+      }
+      if (result.profiles && Array.isArray(result.profiles)) {
+        // Show active profile weights when no explicit weights in response
+        if (!result.weights) {
+          const active = result.profiles.find((p) => p.active);
+          if (active) {
+            console.log(`profile: ${active.key} (${active.label})`);
+            for (const [axis, weight] of Object.entries(active.weights)) {
+              console.log(`  ${axis}: ${weight}`);
+            }
+          }
+        }
+        console.log("\navailable profiles:");
+        for (const p of result.profiles) {
+          const marker = p.active ? " (active)" : "";
+          console.log(`  ${p.key}: ${p.label}${marker}`);
+        }
+      }
+      break;
+    }
+    case "clusters": {
+      const params = {};
+      if (opts.refresh) params.refresh = true;
+      const result = await socketRequest({
+        method: "proposal_clusters",
+        params,
+      });
+      const clusterList = Object.values(result.clusters || {});
+      if (clusterList.length === 0) {
+        console.log("(no clusters)");
+      } else {
+        for (const cluster of clusterList) {
+          const memberIds = cluster.members ? cluster.members.map((m) => m.proposalId).join(", ") : "";
+          console.log(`\n[${cluster.id}] ${cluster.title || ""}`);
+          console.log(`  category: ${cluster.category || "-"}`);
+          console.log(`  representative: ${cluster.representativeId || "-"}`);
+          if (memberIds) console.log(`  members: ${memberIds}`);
+          if (cluster.mergedPriority != null) console.log(`  priority: ${cluster.mergedPriority}`);
+        }
+      }
+      break;
+    }
+    case "cluster-merge": {
+      // proposalId is the first id, remaining are in opts.positional[2..]
+      const ids = [proposalId, ...opts.positional.slice(2)];
+      if (ids.length < 2) {
+        console.error("usage: ucm proposal cluster-merge <id1> <id2> [<id3>...]");
+        process.exit(1);
+      }
+      const result = await socketRequest({
+        method: "proposal_cluster_merge",
+        params: { proposalIds: ids },
+      });
+      console.log(`cluster merged: ${result.id || "(ok)"}`);
+      if (result.members) {
+        console.log(`  members: ${result.members.map((m) => m.proposalId).join(", ")}`);
+      }
+      break;
+    }
+    case "cluster-split": {
+      if (!proposalId) {
+        console.error("usage: ucm proposal cluster-split <id>");
+        process.exit(1);
+      }
+      const result = await socketRequest({
+        method: "proposal_cluster_split",
+        params: { proposalId },
+      });
+      console.log(`split: ${proposalId} removed from cluster${result.clusterId ? ` (${result.clusterId})` : ""}`);
+      break;
+    }
+    case "conflicts": {
+      if (!proposalId) {
+        console.error("usage: ucm proposal conflicts <id>");
+        process.exit(1);
+      }
+      const result = await socketRequest({
+        method: "proposal_conflicts",
+        params: { proposalId },
+      });
+      console.log(`proposal: ${result.proposalId || proposalId}`);
+      if (!result.conflicts || result.conflicts.length === 0) {
+        console.log("  (no conflicts detected)");
+      } else {
+        for (const conflict of result.conflicts) {
+          const target = conflict.conflictsWith || "unknown";
+          const detail = conflict.detail || conflict.type || "";
+          console.log(`  [${conflict.severity || "-"}] conflict with ${target}${detail ? `: ${detail}` : ""}`);
+        }
+      }
+      break;
+    }
+    case "discard": {
+      if (!proposalId) {
+        console.error("usage: ucm proposal discard <id> --reason <reason>");
+        process.exit(1);
+      }
+      if (!opts.reason) {
+        console.error("--reason 필수: ucm proposal discard <id> --reason <reason>");
+        process.exit(1);
+      }
+      const result = await socketRequest({
+        method: "proposal_discard",
+        params: { proposalId, reason: opts.reason },
+      });
+      console.log(`discarded: ${result.proposalId || proposalId}`);
+      console.log(`  reason: ${opts.reason}`);
+      break;
+    }
+    case "history": {
+      const params = {};
+      if (opts.limit) params.limit = opts.limit;
+      const result = await socketRequest({
+        method: "discard_history",
+        params,
+      });
+      if (!result.records || result.records.length === 0) {
+        console.log("(no discard history)");
+      } else {
+        for (const entry of result.records) {
+          const date = entry.discardedAt || entry.date || "";
+          const reason = entry.reason || "";
+          console.log(`  ${entry.proposalId}  ${date}  ${reason}`);
+          if (entry.title) console.log(`    ${entry.title}`);
+        }
+      }
+      break;
+    }
+    case "readiness": {
+      if (!proposalId) {
+        console.error("usage: ucm proposal readiness <id>");
+        process.exit(1);
+      }
+      const result = await socketRequest({
+        method: "bigbet_checklist",
+        params: { proposalId },
+      });
+      console.log(`proposal: ${result.proposalId || proposalId}`);
+      if (result.ready != null) {
+        console.log(`ready: ${result.ready ? "yes" : "no"}`);
+      }
+      const checklistEntries = Object.entries(result.checklist || {});
+      if (checklistEntries.length > 0) {
+        console.log("\nchecklist:");
+        for (const [key, item] of checklistEntries) {
+          const status = item.passed ? "\u2713" : "\u2717";
+          console.log(`  ${status} ${key}`);
+          if (item.detail) console.log(`    ${item.detail}`);
+          if (item.blocking && item.blocking.length > 0) {
+            console.log(`    blocking: ${item.blocking.join(", ")}`);
+          }
+        }
+      }
+      if (result.promotable != null) {
+        console.log(`promotable: ${result.promotable ? "yes" : "no"}`);
+      }
+      break;
+    }
     default:
       console.error(`알 수 없는 서브커맨드: ${subcommand}`);
-      console.error("usage: ucm proposal <approve|reject|up|down> <id>");
+      console.error("usage: ucm proposal <approve|reject|up|down|eval|score|weights|clusters|cluster-merge|cluster-split|conflicts|discard|history|readiness> <id>");
       process.exit(1);
   }
+}
+
+async function cmdMode(opts) {
+  await ensureDaemon();
+
+  const subcommand = opts.positional[0];
+
+  if (!subcommand) {
+    // ucm mode — show current curation mode
+    const result = await socketRequest({
+      method: "curation_mode",
+      params: {},
+    });
+    console.log(`mode: ${result.mode}`);
+    if (result.since) console.log(`since: ${result.since}`);
+    if (result.forcedBy) console.log(`set by: ${result.forcedBy}`);
+    if (result.transitionScore?.shouldTransition != null) {
+      console.log(`transition ready: ${result.transitionScore.shouldTransition ? "yes" : "no"}`);
+    }
+    return;
+  }
+
+  if (subcommand === "set") {
+    const mode = opts.positional[1];
+    if (!mode || !["stabilization", "big_bet"].includes(mode)) {
+      console.error("usage: ucm mode set <stabilization|big_bet> --reason \"...\"");
+      process.exit(1);
+    }
+    if (!opts.reason) {
+      console.error("--reason 필수: ucm mode set <mode> --reason \"...\"");
+      process.exit(1);
+    }
+    const result = await socketRequest({
+      method: "curation_set_mode",
+      params: { mode, reason: opts.reason },
+    });
+    console.log(`mode set: ${result.mode}`);
+    const lastEntry = result.history?.[result.history.length - 1];
+    if (lastEntry?.from) console.log(`previous: ${lastEntry.from}`);
+    if (lastEntry?.reason) console.log(`reason: ${lastEntry.reason}`);
+    return;
+  }
+
+  if (subcommand === "criteria") {
+    const result = await socketRequest({
+      method: "curation_mode",
+      params: {},
+    });
+    console.log(`mode: ${result.mode}`);
+    if (result.transitionScore?.shouldTransition != null) {
+      console.log(`transition ready: ${result.transitionScore.shouldTransition ? "yes" : "no"}`);
+    }
+    if (result.transitionScore?.criteria) {
+      console.log("\ntransition criteria:");
+      for (const [key, val] of Object.entries(result.transitionScore.criteria)) {
+        if (typeof val === "object" && val !== null) {
+          console.log(`  ${key}:`);
+          for (const [k, v] of Object.entries(val)) {
+            console.log(`    ${k}: ${v}`);
+          }
+        } else {
+          console.log(`  ${key}: ${val}`);
+        }
+      }
+    }
+    if (result.config) {
+      console.log("\nthresholds:");
+      for (const [key, val] of Object.entries(result.config)) {
+        if (typeof val === "object" && val !== null) {
+          for (const [k, v] of Object.entries(val)) {
+            console.log(`  ${key}.${k}: ${v}`);
+          }
+        } else {
+          console.log(`  ${key}: ${val}`);
+        }
+      }
+    }
+    return;
+  }
+
+  console.error("usage: ucm mode [set <stabilization|big_bet> --reason \"...\"|criteria]");
+  process.exit(1);
 }
 
 function formatUptime(seconds) {
@@ -1937,6 +2280,10 @@ async function main() {
       break;
     case "proposal":
       await cmdProposal(opts);
+      break;
+    // Curation mode
+    case "mode":
+      await cmdMode(opts);
       break;
     // Other
     case "init":

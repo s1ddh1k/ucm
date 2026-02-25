@@ -327,6 +327,42 @@ export function useWebSocket() {
         addActivity("proposal:deleted", data);
       }),
 
+      // Curation events
+      wsManager.on("mode:changed", (data) => {
+        queryClient.invalidateQueries({ queryKey: ["curation-mode"] });
+        addActivity("mode:changed", data);
+      }),
+      wsManager.on("proposal:scored", (data) => {
+        queryClient.invalidateQueries({ queryKey: ["proposals"] });
+        queryClient.invalidateQueries({ queryKey: ["proposal-score"] });
+        addActivity("proposal:scored", data);
+      }),
+      wsManager.on("proposal:clustered", (data) => {
+        queryClient.invalidateQueries({ queryKey: ["proposal-clusters"] });
+        addActivity("proposal:clustered", data);
+      }),
+      wsManager.on("proposal:discarded", (data) => {
+        const proposalId =
+          typeof data.proposalId === "string" ? data.proposalId : null;
+        if (proposalId) {
+          removeProposalFromCaches(proposalId);
+        }
+        queryClient.invalidateQueries({ queryKey: ["proposals"] });
+        queryClient.invalidateQueries({ queryKey: ["discard-history"] });
+        addActivity("proposal:discarded", data);
+      }),
+      wsManager.on("proposal:conflict_detected", (data) => {
+        queryClient.invalidateQueries({ queryKey: ["proposal-conflicts"] });
+        addActivity("proposal:conflict_detected", data);
+      }),
+      wsManager.on("proposal:feedback_recorded", (data) => {
+        addActivity("proposal:feedback_recorded", data);
+      }),
+      wsManager.on("proposal:readiness_checked", (data) => {
+        queryClient.invalidateQueries({ queryKey: ["bigbet-checklist"] });
+        addActivity("proposal:readiness_checked", data);
+      }),
+
       // Observer events
       wsManager.on("observer:started", (data) => {
         queryClient.invalidateQueries({ queryKey: ["observer-status"] });
