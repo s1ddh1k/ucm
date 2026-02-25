@@ -1,11 +1,16 @@
+import {
+  LayoutDashboard,
+  Lightbulb,
+  ListTodo,
+  ToggleRight,
+} from "lucide-react";
 import { useSearchParams } from "react-router";
-import { LayoutDashboard, ListTodo, Lightbulb, ToggleRight } from "lucide-react";
-import { useTasksQuery } from "@/queries/tasks";
-import { useProposalsQuery } from "@/queries/proposals";
-import { DashboardOverviewContent } from "@/components/dashboard/dashboard-overview-content";
-import { TaskInboxContent } from "@/components/tasks/task-inbox-content";
-import { ProposalInboxContent } from "@/components/proposals/proposal-inbox-content";
 import { AutomationTabContent } from "@/components/automation/automation-tab-content";
+import { DashboardOverviewContent } from "@/components/dashboard/dashboard-overview-content";
+import { ProposalInboxContent } from "@/components/proposals/proposal-inbox-content";
+import { TaskInboxContent } from "@/components/tasks/task-inbox-content";
+import { useProposalsQuery } from "@/queries/proposals";
+import { useTasksQuery } from "@/queries/tasks";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
@@ -14,7 +19,7 @@ const TABS = [
   { key: "automation", label: "Automation", icon: ToggleRight },
 ] as const;
 
-type TabKey = typeof TABS[number]["key"];
+type TabKey = (typeof TABS)[number]["key"];
 
 export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,7 +28,8 @@ export default function DashboardPage() {
   const { data: proposals } = useProposalsQuery();
 
   const reviewCount = tasks?.filter((t) => t.state === "review").length ?? 0;
-  const proposedCount = proposals?.filter((p) => p.status === "proposed").length ?? 0;
+  const proposedCount =
+    proposals?.filter((p) => p.status === "proposed").length ?? 0;
 
   function getBadge(key: TabKey): number {
     if (key === "tasks") return reviewCount;
@@ -49,6 +55,7 @@ export default function DashboardPage() {
           return (
             <button
               key={key}
+              type="button"
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 isActive
                   ? "border-foreground text-foreground"

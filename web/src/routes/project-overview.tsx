@@ -1,6 +1,7 @@
 import { FileText, Lightbulb } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
+import { AutomationOverrideCard } from "@/components/automation/automation-override-card";
 import { ProjectWorkspaceNav } from "@/components/layout/project-workspace-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
@@ -16,7 +17,6 @@ import {
   getTaskProjectPath,
   UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
-import { AutomationOverrideCard } from "@/components/automation/automation-override-card";
 import { useProposalsQuery } from "@/queries/proposals";
 import { useTasksQuery } from "@/queries/tasks";
 import { useUiStore } from "@/stores/ui";
@@ -151,6 +151,7 @@ export default function ProjectOverviewPage() {
               recentTasks.map((task) => (
                 <button
                   key={task.id}
+                  type="button"
                   className="w-full rounded border px-3 py-2 text-left hover:bg-accent/40 transition-colors"
                   onClick={() => {
                     setSelectedTaskId(task.id);
