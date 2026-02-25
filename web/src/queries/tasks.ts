@@ -6,8 +6,19 @@ import { useSmartInterval } from "@/hooks/use-smart-interval";
 import { useEventsStore } from "@/stores/events";
 import { useUiStore } from "@/stores/ui";
 
+const TASK_LIST_REFETCH_MS = 30000;
+const TASK_DETAIL_REFETCH_MS = 20000;
+const TASK_LOGS_REFETCH_MS = 8000;
+
+function requireTaskId(taskId: string | null): string {
+  if (!taskId) {
+    throw new Error("taskId is required");
+  }
+  return taskId;
+}
+
 export function useTasksQuery(status?: string, paused = false) {
-  const interval = useSmartInterval(30000, paused);
+  const interval = useSmartInterval(TASK_LIST_REFETCH_MS, paused);
   return useQuery({
     queryKey: ["tasks", status],
     queryFn: () => api.tasks.list(status),
@@ -18,17 +29,17 @@ export function useTasksQuery(status?: string, paused = false) {
 export function useTaskQuery(taskId: string | null) {
   return useQuery({
     queryKey: ["task", taskId],
-    queryFn: () => api.tasks.status(taskId!),
-    enabled: !!taskId,
-    refetchInterval: useSmartInterval(20000),
+    queryFn: () => api.tasks.status(requireTaskId(taskId)),
+    enabled: Boolean(taskId),
+    refetchInterval: useSmartInterval(TASK_DETAIL_REFETCH_MS),
   });
 }
 
 export function useTaskDiffQuery(taskId: string | null) {
   return useQuery({
     queryKey: ["task-diff", taskId],
-    queryFn: () => api.tasks.diff(taskId!),
-    enabled: !!taskId,
+    queryFn: () => api.tasks.diff(requireTaskId(taskId)),
+    enabled: Boolean(taskId),
   });
 }
 
@@ -37,11 +48,11 @@ export function useTaskLogsQuery(
   lines?: number,
   live = true,
 ) {
-  const smartInterval = useSmartInterval(8000);
+  const smartInterval = useSmartInterval(TASK_LOGS_REFETCH_MS);
   return useQuery({
     queryKey: ["task-logs", taskId, lines],
-    queryFn: () => api.tasks.logs(taskId!, lines),
-    enabled: !!taskId,
+    queryFn: () => api.tasks.logs(requireTaskId(taskId), lines),
+    enabled: Boolean(taskId),
     refetchInterval: live ? smartInterval : false,
   });
 }
@@ -49,8 +60,8 @@ export function useTaskLogsQuery(
 export function useTaskArtifactsQuery(taskId: string | null) {
   return useQuery({
     queryKey: ["task-artifacts", taskId],
-    queryFn: () => api.artifacts.get(taskId!),
-    enabled: !!taskId,
+    queryFn: () => api.artifacts.get(requireTaskId(taskId)),
+    enabled: Boolean(taskId),
   });
 }
 

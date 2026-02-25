@@ -123,6 +123,12 @@ interface PipelineStats {
   successRate: number;
 }
 
+function hasStartAndCompletionTime(
+  task: Task,
+): task is Task & { startedAt: string; completedAt: string } {
+  return Boolean(task.startedAt && task.completedAt);
+}
+
 function computeMetrics(tasks: Task[]) {
   const total = tasks.length;
   const done = tasks.filter((t) => t.state === "done").length;
@@ -134,10 +140,10 @@ function computeMetrics(tasks: Task[]) {
 
   // Average duration for completed tasks
   const durations = tasks
-    .filter((t) => t.startedAt && t.completedAt)
+    .filter(hasStartAndCompletionTime)
     .map(
       (t) =>
-        new Date(t.completedAt!).getTime() - new Date(t.startedAt!).getTime(),
+        new Date(t.completedAt).getTime() - new Date(t.startedAt).getTime(),
     );
   const avgMs =
     durations.length > 0

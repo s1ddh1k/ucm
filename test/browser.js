@@ -9,7 +9,6 @@ const net = require("node:net");
 const http = require("node:http");
 
 const {
-  state,
   assert,
   assertEqual,
   runGroup,
@@ -535,7 +534,6 @@ async function main() {
         );
         assert(hasHivemind, "hivemind section should exist");
       },
-
     },
     { timeout: 15000 },
   );
