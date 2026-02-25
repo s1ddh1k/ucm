@@ -78,6 +78,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
   const [feedbackText, setFeedbackText] = useState("");
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmStageReject, setConfirmStageReject] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<TaskDetailTab>("overview");
 
@@ -285,7 +286,7 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => gateReject.mutate({ taskId })}
+              onClick={() => setConfirmStageReject(true)}
               disabled={gateReject.isPending}
             >
               <X className="h-4 w-4" /> Reject Stage
@@ -393,6 +394,54 @@ export function TaskDetail({ taskId }: TaskDetailProps) {
                   <Trash2 className="h-4 w-4" />
                 )}{" "}
                 {deleteTask.isPending ? "Deleting..." : "Delete Task"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={confirmStageReject} onOpenChange={setConfirmStageReject}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reject Current Stage?</DialogTitle>
+              <DialogDescription>
+                This marks the current stage as rejected and moves the task to
+                failed state. Add feedback if you want to preserve retry
+                guidance before rejecting.
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-sm font-medium truncate">{task.title}</p>
+            {task.stageGate && (
+              <p className="text-xs text-muted-foreground">
+                Stage: {task.stageGate}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setConfirmStageReject(false)}
+                disabled={gateReject.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  gateReject.mutate(
+                    { taskId },
+                    {
+                      onSuccess: () => {
+                        setConfirmStageReject(false);
+                      },
+                    },
+                  )
+                }
+                disabled={gateReject.isPending}
+              >
+                {gateReject.isPending ? (
+                  <RotateCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}{" "}
+                {gateReject.isPending ? "Rejecting..." : "Reject Stage"}
               </Button>
             </div>
           </DialogContent>

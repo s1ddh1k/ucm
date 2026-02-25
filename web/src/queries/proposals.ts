@@ -30,7 +30,12 @@ export function useApproveProposal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (proposalId: string) => api.proposals.approve(proposalId),
-    onSuccess: (data) => {
+    onMutate: (proposalId) =>
+      ({
+        toastId: toast.loading(`Approving proposal ${proposalId}...`),
+      }) satisfies PendingToastContext,
+    onSuccess: (data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       qc.invalidateQueries({ queryKey: ["proposals"] });
       if (data.taskId) {
         toast.success(`Proposal approved. Task created: ${data.taskId}`);
@@ -38,7 +43,8 @@ export function useApproveProposal() {
       }
       toast.success("Proposal approved.");
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       toast.error(
         buildActionErrorMessage(
           "Failed to approve proposal",
@@ -54,11 +60,17 @@ export function useRejectProposal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (proposalId: string) => api.proposals.reject(proposalId),
-    onSuccess: () => {
+    onMutate: (proposalId) =>
+      ({
+        toastId: toast.loading(`Rejecting proposal ${proposalId}...`),
+      }) satisfies PendingToastContext,
+    onSuccess: (_data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       qc.invalidateQueries({ queryKey: ["proposals"] });
       toast.success("Proposal rejected.");
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       toast.error(
         buildActionErrorMessage(
           "Failed to reject proposal",
@@ -84,9 +96,13 @@ export function useDeleteProposal() {
           ? old.filter((proposal) => proposal.id !== proposalId)
           : old,
       );
-      return { previous };
+      return {
+        previous,
+        toastId: toast.loading(`Deleting proposal ${proposalId}...`),
+      };
     },
-    onError: (_error, _proposalId, context) => {
+    onError: (error, _proposalId, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       if (context?.previous) {
         for (const [queryKey, snapshot] of context.previous) {
           qc.setQueryData(queryKey, snapshot);
@@ -95,12 +111,13 @@ export function useDeleteProposal() {
       toast.error(
         buildActionErrorMessage(
           "Failed to delete proposal",
-          _error,
+          error,
           "Try again after refreshing proposals.",
         ),
       );
     },
-    onSuccess: () => {
+    onSuccess: (_data, _vars, context) => {
+      if (context?.toastId !== undefined) toast.dismiss(context.toastId);
       qc.invalidateQueries({ queryKey: ["proposals"] });
       toast.success("Proposal deleted.");
     },
@@ -168,6 +185,7 @@ export function useRunObserver() {
 }
 
 export function useAnalyzeProject() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (project: string) => api.observer.analyze(project),
     onMutate: () =>
@@ -176,6 +194,7 @@ export function useAnalyzeProject() {
       }) satisfies PendingToastContext,
     onSuccess: (data, _vars, context) => {
       if (context?.toastId !== undefined) toast.dismiss(context.toastId);
+      qc.invalidateQueries({ queryKey: ["proposals"] });
       toast.success(
         `Project analysis completed. ${data.proposalCount} proposal(s) created for ${data.project}.`,
       );
@@ -194,6 +213,7 @@ export function useAnalyzeProject() {
 }
 
 export function useResearchProject() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (project: string) => api.observer.research(project),
     onMutate: () =>
@@ -202,6 +222,7 @@ export function useResearchProject() {
       }) satisfies PendingToastContext,
     onSuccess: (data, _vars, context) => {
       if (context?.toastId !== undefined) toast.dismiss(context.toastId);
+      qc.invalidateQueries({ queryKey: ["proposals"] });
       toast.success(
         `Project research completed. ${data.proposalCount} proposal(s) created.`,
       );

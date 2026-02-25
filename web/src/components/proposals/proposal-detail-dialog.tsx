@@ -20,7 +20,10 @@ interface ProposalDetailDialogProps {
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onDelete: (id: string) => void;
+  approvePending?: boolean;
+  rejectPending?: boolean;
   deletePending?: boolean;
+  actionDisabled?: boolean;
 }
 
 export function ProposalDetailDialog({
@@ -30,7 +33,10 @@ export function ProposalDetailDialog({
   onApprove,
   onReject,
   onDelete,
+  approvePending = false,
+  rejectPending = false,
   deletePending = false,
+  actionDisabled = false,
 }: ProposalDetailDialogProps) {
   if (!proposal) return null;
 
@@ -96,19 +102,34 @@ export function ProposalDetailDialog({
                 <Button
                   variant="destructive"
                   size="sm"
+                  disabled={actionDisabled || rejectPending}
                   onClick={() => onReject(proposal.id)}
                 >
-                  <ThumbsDown className="h-4 w-4" /> Reject
+                  {rejectPending ? (
+                    <RotateCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ThumbsDown className="h-4 w-4" />
+                  )}{" "}
+                  Reject
                 </Button>
-                <Button size="sm" onClick={() => onApprove(proposal.id)}>
-                  <ThumbsUp className="h-4 w-4" /> Approve
+                <Button
+                  size="sm"
+                  disabled={actionDisabled || approvePending}
+                  onClick={() => onApprove(proposal.id)}
+                >
+                  {approvePending ? (
+                    <RotateCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ThumbsUp className="h-4 w-4" />
+                  )}{" "}
+                  Approve
                 </Button>
               </>
             )}
             <Button
               variant="outline"
               size="sm"
-              disabled={deletePending}
+              disabled={deletePending || actionDisabled}
               onClick={() => onDelete(proposal.id)}
             >
               {deletePending ? (

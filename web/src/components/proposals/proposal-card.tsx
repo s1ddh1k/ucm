@@ -19,7 +19,10 @@ interface ProposalCardProps {
   onApprove: () => void;
   onReject: () => void;
   onDelete: () => void;
+  approvePending?: boolean;
+  rejectPending?: boolean;
   deletePending?: boolean;
+  actionDisabled?: boolean;
   onPriorityUp: () => void;
   onPriorityDown: () => void;
   onClick: () => void;
@@ -30,7 +33,10 @@ export function ProposalCard({
   onApprove,
   onReject,
   onDelete,
+  approvePending = false,
+  rejectPending = false,
   deletePending = false,
+  actionDisabled = false,
   onPriorityUp,
   onPriorityDown,
   onClick,
@@ -95,6 +101,7 @@ export function ProposalCard({
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7"
+                  disabled={actionDisabled}
                   onClick={(e) => {
                     stop(e);
                     onPriorityUp();
@@ -106,6 +113,7 @@ export function ProposalCard({
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7"
+                  disabled={actionDisabled}
                   onClick={(e) => {
                     stop(e);
                     onPriorityDown();
@@ -117,23 +125,33 @@ export function ProposalCard({
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-emerald-400"
+                  disabled={actionDisabled || approvePending}
                   onClick={(e) => {
                     stop(e);
                     onApprove();
                   }}
                 >
-                  <ThumbsUp className="h-3 w-3" />
+                  {approvePending ? (
+                    <RotateCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ThumbsUp className="h-3 w-3" />
+                  )}
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-red-400"
+                  disabled={actionDisabled || rejectPending}
                   onClick={(e) => {
                     stop(e);
                     onReject();
                   }}
                 >
-                  <ThumbsDown className="h-3 w-3" />
+                  {rejectPending ? (
+                    <RotateCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ThumbsDown className="h-3 w-3" />
+                  )}
                 </Button>
               </>
             )}
@@ -141,7 +159,7 @@ export function ProposalCard({
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-destructive"
-              disabled={deletePending}
+              disabled={deletePending || actionDisabled}
               onClick={(e) => {
                 stop(e);
                 onDelete();

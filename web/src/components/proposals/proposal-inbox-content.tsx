@@ -1,8 +1,26 @@
 import { useMemo, useEffect, useState } from "react";
-import { Lightbulb, Eye, Search as SearchIcon, FlaskConical, LayoutGrid, List, Check, X } from "lucide-react";
+import {
+  Lightbulb,
+  Eye,
+  Search as SearchIcon,
+  FlaskConical,
+  LayoutGrid,
+  List,
+  Check,
+  RotateCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ProposalCard } from "@/components/proposals/proposal-card";
 import { ProposalDetailDialog } from "@/components/proposals/proposal-detail-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -19,10 +37,23 @@ import {
   getProjectKey, getProjectLabel, getProposalProjectPath, UNKNOWN_PROJECT_KEY,
 } from "@/lib/project";
 
+interface ConfirmProposalAction {
+  type: "reject" | "delete";
+  proposalId: string;
+  proposalTitle: string;
+}
+
+interface PendingProposalAction {
+  type: "approve" | "reject" | "delete";
+  proposalId: string;
+}
+
 export function ProposalInboxContent() {
   const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [confirmAction, setConfirmAction] = useState<ConfirmProposalAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingProposalAction | null>(null);
 
   const proposalFilter = useUiStore((s) => s.proposalFilter);
   const proposalProjectFilter = useUiStore((s) => s.proposalProjectFilter);
@@ -92,17 +123,91 @@ export function ProposalInboxContent() {
     return result;
   }, [proposals, proposalFilter, proposalProjectFilter, categoryFilter, riskFilter]);
 
+  const actionsLocked = setPriority.isPending || pendingAction !== null;
+
   const handleApprove = (id: string) => {
-    approveProposal.mutate(id);
-    setDetailOpen(false);
+    setPendingAction({ type: "approve", proposalId: id });
+    approveProposal.mutate(id, {
+      onSuccess: () => {
+        setDetailOpen(false);
+      },
+      onSettled: () => {
+        setPendingAction((current) =>
+          current?.proposalId === id && current.type === "approve"
+            ? null
+            : current,
+        );
+      },
+    });
   };
-  const handleReject = (id: string) => {
-    rejectProposal.mutate(id);
-    setDetailOpen(false);
+
+  const requestReject = (proposal: Proposal) => {
+    setConfirmAction({
+      type: "reject",
+      proposalId: proposal.id,
+      proposalTitle: proposal.title,
+    });
   };
-  const handleDelete = (id: string) => {
-    deleteProposal.mutate(id);
-    if (detailProposal?.id === id) setDetailOpen(false);
+
+  const requestDelete = (proposal: Proposal) => {
+    setConfirmAction({
+      type: "delete",
+      proposalId: proposal.id,
+      proposalTitle: proposal.title,
+    });
+  };
+
+  const handleRejectFromId = (id: string) => {
+    const proposal =
+      proposals?.find((item) => item.id === id) ||
+      (detailProposal?.id === id ? detailProposal : null);
+    if (!proposal) return;
+    requestReject(proposal);
+  };
+
+  const handleDeleteFromId = (id: string) => {
+    const proposal =
+      proposals?.find((item) => item.id === id) ||
+      (detailProposal?.id === id ? detailProposal : null);
+    if (!proposal) return;
+    requestDelete(proposal);
+  };
+
+  const handleConfirmAction = () => {
+    if (!confirmAction) return;
+    const { proposalId, type } = confirmAction;
+    setPendingAction({ proposalId, type });
+
+    if (type === "reject") {
+      rejectProposal.mutate(proposalId, {
+        onSuccess: () => {
+          setConfirmAction(null);
+          setDetailOpen(false);
+        },
+        onSettled: () => {
+          setPendingAction((current) =>
+            current?.proposalId === proposalId && current.type === "reject"
+              ? null
+              : current,
+          );
+        },
+      });
+      return;
+    }
+
+    deleteProposal.mutate(proposalId, {
+      onSuccess: () => {
+        setConfirmAction(null);
+        if (detailProposal?.id === proposalId) setDetailOpen(false);
+      },
+      onSettled: () => {
+        setPendingAction((current) =>
+          current?.proposalId === proposalId && current.type === "delete"
+            ? null
+            : current,
+        );
+      },
+    });
   };
 
   if (isLoading) return <LoadingSkeleton />;
@@ -222,16 +327,44 @@ export function ProposalInboxContent() {
                 "bg-emerald-500/20 text-emerald-400"
               }`}>{proposal.risk}</span>
               <span className="text-xs text-muted-foreground w-8 text-center shrink-0">{proposal.priority || 0}</span>
-              {proposal.status === "proposed" && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300" onClick={(e) => { e.stopPropagation(); handleApprove(proposal.id); }}>
-                    <Check className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-300" onClick={(e) => { e.stopPropagation(); handleReject(proposal.id); }}>
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
+                  {proposal.status === "proposed" && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0 text-emerald-400 hover:text-emerald-300"
+                        disabled={actionsLocked}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleApprove(proposal.id);
+                        }}
+                      >
+                        {pendingAction?.proposalId === proposal.id &&
+                        pendingAction?.type === "approve" ? (
+                          <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
+                        disabled={actionsLocked}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          requestReject(proposal);
+                        }}
+                      >
+                        {pendingAction?.proposalId === proposal.id &&
+                        pendingAction?.type === "reject" ? (
+                          <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <X className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  )}
             </div>
           ))}
         </div>
@@ -242,8 +375,21 @@ export function ProposalInboxContent() {
               key={proposal.id}
               proposal={proposal}
               onApprove={() => handleApprove(proposal.id)}
-              onReject={() => handleReject(proposal.id)}
-              onDelete={() => handleDelete(proposal.id)}
+              onReject={() => requestReject(proposal)}
+              onDelete={() => requestDelete(proposal)}
+              approvePending={
+                pendingAction?.proposalId === proposal.id &&
+                pendingAction?.type === "approve"
+              }
+              rejectPending={
+                pendingAction?.proposalId === proposal.id &&
+                pendingAction?.type === "reject"
+              }
+              deletePending={
+                pendingAction?.proposalId === proposal.id &&
+                pendingAction?.type === "delete"
+              }
+              actionDisabled={actionsLocked}
               onPriorityUp={() => setPriority.mutate({ proposalId: proposal.id, delta: 1 })}
               onPriorityDown={() => setPriority.mutate({ proposalId: proposal.id, delta: -1 })}
               onClick={() => { setDetailProposal(proposal); setDetailOpen(true); }}
@@ -257,9 +403,76 @@ export function ProposalInboxContent() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onApprove={handleApprove}
-        onReject={handleReject}
-        onDelete={handleDelete}
+        onReject={handleRejectFromId}
+        onDelete={handleDeleteFromId}
+        approvePending={
+          pendingAction?.proposalId === detailProposal?.id &&
+          pendingAction?.type === "approve"
+        }
+        rejectPending={
+          pendingAction?.proposalId === detailProposal?.id &&
+          pendingAction?.type === "reject"
+        }
+        deletePending={
+          pendingAction?.proposalId === detailProposal?.id &&
+          pendingAction?.type === "delete"
+        }
+        actionDisabled={actionsLocked}
       />
+
+      <Dialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction?.type === "reject"
+                ? "Reject this proposal?"
+                : "Delete this proposal?"}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction?.type === "reject"
+                ? "Rejecting marks this proposal as declined. You can still review it later in the rejected list."
+                : "Deleting permanently removes this proposal from the dashboard. This action cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm font-medium truncate">
+            {confirmAction?.proposalTitle}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmAction(null)}
+              disabled={pendingAction !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={
+                confirmAction?.type === "delete" ? "destructive" : "default"
+              }
+              onClick={handleConfirmAction}
+              disabled={pendingAction !== null}
+            >
+              {pendingAction !== null ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : confirmAction?.type === "delete" ? (
+                <Trash2 className="h-4 w-4" />
+              ) : (
+                <X className="h-4 w-4" />
+              )}{" "}
+              {pendingAction !== null
+                ? "Processing..."
+                : confirmAction?.type === "delete"
+                  ? "Delete Proposal"
+                  : "Reject Proposal"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
