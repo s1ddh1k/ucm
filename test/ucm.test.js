@@ -3939,6 +3939,30 @@ function testUiServerWebSocketOriginGuard() {
   );
 }
 
+function testUiServerLoopbackAddressGuard() {
+  const { isLoopbackAddress } = require("../lib/ucm-ui-server.js");
+  assert(
+    isLoopbackAddress("127.0.0.1"),
+    "uiServer loopback guard: allows IPv4 loopback",
+  );
+  assert(
+    isLoopbackAddress("::1"),
+    "uiServer loopback guard: allows IPv6 loopback",
+  );
+  assert(
+    isLoopbackAddress("::ffff:127.0.0.1"),
+    "uiServer loopback guard: allows IPv4-mapped loopback",
+  );
+  assert(
+    !isLoopbackAddress("192.168.0.10"),
+    "uiServer loopback guard: rejects private network address",
+  );
+  assert(
+    !isLoopbackAddress("8.8.8.8"),
+    "uiServer loopback guard: rejects public address",
+  );
+}
+
 function testDashboardCommandPassesDevFlag() {
   const src = fs.readFileSync(
     path.join(__dirname, "..", "bin", "ucm.js"),
@@ -15094,6 +15118,7 @@ async function main() {
   await testUiServerResolvePathWithinHomeBlocksSymlinkEscape();
   testUiServerGitInitRouteUsesPathGuardAndAsyncExec();
   testUiServerWebSocketOriginGuard();
+  testUiServerLoopbackAddressGuard();
   await testMkdirApi();
   testUiModalNotClosedBeforeSuccess();
   testUiRightPanelRefinementGuard();
