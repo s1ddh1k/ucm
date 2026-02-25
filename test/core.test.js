@@ -7,6 +7,7 @@ const {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   rm,
 } = require("node:fs/promises");
 const {
@@ -1013,8 +1014,6 @@ title: line1\\nline2
         await dag.save();
       } catch (e) {
         err = e;
-      } finally {
-        await rm(dir, { recursive: true, force: true });
       }
 
       assert(!!err, "save should throw when destination is a directory");
@@ -1028,6 +1027,12 @@ title: line1\\nline2
       );
       assertEqual(err.taskId, id, "error.taskId");
       assertEqual(err.filePath, filePath, "error.filePath");
+      const dirEntries = await readdir(dir);
+      assert(
+        !dirEntries.some((entry) => entry.endsWith(".tmp")),
+        "save failure cleanup removed temp files",
+      );
+      await rm(dir, { recursive: true, force: true });
     },
   });
 
@@ -2569,6 +2574,25 @@ exit 0
       });
 
       assertDeepEqual(events, ["first", "second"], "queue recovered");
+    },
+
+    "does not report operation failures as lock cleanup errors": async () => {
+      const logs = [];
+      await enqueueTaskFileOp(
+        "task-lock-no-cleanup-false-positive",
+        async () => {
+          throw new Error("intentional operation failure");
+        },
+        {
+          label: "write-meta",
+          log: (line) => logs.push(line),
+        },
+      ).catch(() => {});
+
+      assert(
+        !logs.some((line) => line.includes("lock cleanup error")),
+        "operation failure should not emit lock cleanup error log",
+      );
     },
 
     "이전 작업 실패 로그에 taskId와 label을 포함한다": async () => {

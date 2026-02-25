@@ -474,6 +474,43 @@ async function testUpdateTaskProject() {
   await rm(taskPath);
 }
 
+async function testUpdateTaskProjectThrowsWithIoContext() {
+  const taskId = generateTaskId();
+  const taskPath = path.join(TASKS_DIR, "pending", `${taskId}.md`);
+  await mkdir(taskPath, { recursive: true });
+
+  let err = null;
+  try {
+    await updateTaskProject(taskId, "/tmp/project-should-fail");
+  } catch (e) {
+    err = e;
+  } finally {
+    await rm(taskPath, { recursive: true, force: true });
+  }
+
+  assert(!!err, "updateTaskProject: throws on non-ENOENT read failure");
+  assert(
+    err.message.includes("updateTaskProject read failed"),
+    "updateTaskProject: error includes operation",
+  );
+  assert(
+    err.message.includes(`taskId=${taskId}`),
+    "updateTaskProject: error includes task id context",
+  );
+  assert(
+    err.message.includes(`taskPath=${taskPath}`),
+    "updateTaskProject: error includes task path context",
+  );
+  assertEqual(err.taskId, taskId, "updateTaskProject: error.taskId");
+  assertEqual(err.taskPath, taskPath, "updateTaskProject: error.taskPath");
+  assertEqual(err.state, "pending", "updateTaskProject: error.state");
+  assertEqual(
+    err.retryable,
+    false,
+    "updateTaskProject: classifies non-retryable read failure",
+  );
+}
+
 async function testMoveTaskSerializesConcurrentTransitions() {
   const taskId = generateTaskId();
   const doneDir = path.join(TASKS_DIR, "done");
@@ -15023,6 +15060,7 @@ async function main() {
   testNormalizeProjectsEmpty();
   await testCreateTempWorkspace();
   await testUpdateTaskProject();
+  await testUpdateTaskProjectThrowsWithIoContext();
   await testMoveTaskSerializesConcurrentTransitions();
   await testMoveTaskRollsBackWhenSourceCleanupFails();
   await testHandleLogsTailAndLineLimits();
