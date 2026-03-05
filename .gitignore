@@ -4,3 +4,5 @@ node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
 .env
+.ucm-worktrees/
+.ucm-state.json
