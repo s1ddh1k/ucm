@@ -6,3 +6,4 @@ web/tsconfig.tsbuildinfo
 .env
 .ucm-worktrees/
 .ucm-state.json
+v2/build/
