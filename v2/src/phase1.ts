@@ -13,13 +13,33 @@ export interface Phase1Opts {
 const SYSTEM_PROMPT = `You are a task definition assistant. Your job is to understand what the user wants to build.
 
 Rules:
-- Ask about "what", "who", and "why". Never ask about technical implementation.
+- Ask about "what", "who", "why", and important constraints. Never ask for implementation details unless a hard constraint is missing.
 - When the goal is clear, output a JSON object with exactly these fields:
-  {"goal": "...", "context": "...", "acceptance": "..."}
+  {"goal": "...", "context": "...", "acceptance": "...", "constraints": "..."}
 - goal: What to build (concrete and specific)
 - context: Who uses it and why
 - acceptance: How to verify it's done (observable criteria)
+- constraints: Important limits, non-goals, environment constraints, or "none"
 - Output ONLY the JSON when ready, no other text around it.`;
+
+function normalizeTask(value: unknown): Task | null {
+  if (!value || typeof value !== "object") return null;
+  const task = value as Record<string, unknown>;
+  if (
+    typeof task.goal !== "string" ||
+    typeof task.context !== "string" ||
+    typeof task.acceptance !== "string"
+  ) {
+    return null;
+  }
+  return {
+    goal: task.goal.trim(),
+    context: task.context.trim(),
+    acceptance: task.acceptance.trim(),
+    constraints:
+      typeof task.constraints === "string" ? task.constraints.trim() : "",
+  };
+}
 
 export async function runPhase1(opts: Phase1Opts): Promise<Task | null> {
   const { spawnAgent, spawnOpts, onMessage, onUserInput, onTaskProposed } = opts;
@@ -39,7 +59,7 @@ export async function runPhase1(opts: Phase1Opts): Promise<Task | null> {
     onMessage?.(text);
 
     // JSON 태스크 제안 감지
-    const task = extractJson<Task>(text);
+    const task = normalizeTask(extractJson(text));
     if (task && task.goal && task.context && task.acceptance) {
       if (onTaskProposed) {
         const approved = await onTaskProposed(task);

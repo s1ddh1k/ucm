@@ -2,13 +2,12 @@ import { BrowserWindow, BrowserView, Tray } from "electrobun/bun";
 import type { AppRPC } from "./rpc.ts";
 import { runController, type ControllerStatus } from "../controller.ts";
 import { createDynamicSpawnAgent } from "../spawn.ts";
-import type { Task, LoopEvent, SpawnAgent } from "../types.ts";
+import type { AdaptivePlan, LoopEvent, ReviewPack, SpawnAgent, Task } from "../types.ts";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_HARD_TIMEOUT_MS,
 } from "../constants.ts";
 
-// --- 테스트 모드 ---
 const isE2E = !!process.env.UCM_E2E_TEST;
 const e2eProjectPath = process.env.UCM_E2E_PROJECT_PATH;
 const e2eMockAgentPath = process.env.UCM_E2E_MOCK_AGENT;
@@ -21,6 +20,7 @@ function buildE2ESpawnAgent(): SpawnAgent | undefined {
     goal: "E2E test feature",
     context: "Automated test",
     acceptance: "e2e.txt exists",
+    constraints: "stay inside the repository",
   });
 
   return createDynamicSpawnAgent((prompt) => {
@@ -70,10 +70,17 @@ function buildE2ESpawnAgent(): SpawnAgent | undefined {
   });
 }
 
-// --- 태스크/머지 승인 대기 ---
 let resolveTaskApproval: ((approved: boolean) => void) | null = null;
 let resolveMergeApproval: ((approved: boolean) => void) | null = null;
 let resolveUserInput: ((text: string) => void) | null = null;
+
+function emitPlan(plan: AdaptivePlan): void {
+  win.webview.rpc.send.planReady({ plan });
+}
+
+function emitReview(review: ReviewPack): void {
+  win.webview.rpc.send.reviewReady({ review });
+}
 
 const rpc = BrowserView.defineRPC<AppRPC>({
   maxRequestTime: 600_000,
@@ -91,6 +98,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
             idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
             hardTimeoutMs: DEFAULT_HARD_TIMEOUT_MS,
             autoApprove: params.autoApprove,
+            resume: params.resume,
           },
           {
             ...(e2eAgent ? { spawnAgent: e2eAgent } : {}),
@@ -112,9 +120,11 @@ const rpc = BrowserView.defineRPC<AppRPC>({
                 resolveTaskApproval = resolve;
               });
             },
+            onPlanReady: emitPlan,
             onPhase2Event: (event: LoopEvent) => {
               win.webview.rpc.send.phase2Event({ event });
             },
+            onReviewReady: emitReview,
             onApproveMerge: () => {
               win.webview.rpc.send.requestMergeApproval({});
               return new Promise<boolean>((resolve) => {
@@ -124,9 +134,8 @@ const rpc = BrowserView.defineRPC<AppRPC>({
           },
         );
 
-        win.webview.rpc.send.controllerDone({ status: result.status, task: result.task });
+        win.webview.rpc.send.controllerDone(result);
 
-        // E2E: 결과 파일 기록 후 종료
         if (isE2E && e2eResultPath) {
           await Bun.write(e2eResultPath, JSON.stringify(result));
           setTimeout(() => process.exit(0), 500);
@@ -157,7 +166,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 const win = new BrowserWindow({
   title: "UCM",
   url: "views://ui/index.html",
-  frame: { width: 900, height: 700, x: 200, y: 200 },
+  frame: { width: 1200, height: 820, x: 200, y: 200 },
   rpc,
 });
 
@@ -165,7 +174,6 @@ new Tray({
   title: "UCM",
 });
 
-// E2E: bun 프로세스에서 직접 controller 실행 (UI를 경유하지 않음)
 if (isE2E && e2eProjectPath) {
   console.log("[E2E] Test mode active");
   console.log("[E2E] projectPath:", e2eProjectPath);
@@ -174,7 +182,6 @@ if (isE2E && e2eProjectPath) {
 
   const e2eAgent = buildE2ESpawnAgent();
 
-  // DOM이 준비되면 UI에 상태 표시하면서 controller 실행
   win.webview.on("dom-ready", async () => {
     console.log("[E2E] DOM ready, starting controller from bun process...");
 
@@ -187,6 +194,7 @@ if (isE2E && e2eProjectPath) {
           idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
           hardTimeoutMs: DEFAULT_HARD_TIMEOUT_MS,
           autoApprove: true,
+          resume: false,
         },
         {
           ...(e2eAgent ? { spawnAgent: e2eAgent } : {}),
@@ -202,15 +210,17 @@ if (isE2E && e2eProjectPath) {
             win.webview.rpc.send.taskProposed({ task });
             return true;
           },
+          onPlanReady: emitPlan,
           onPhase2Event: (event) => {
             console.log("[E2E] event:", event.type);
             win.webview.rpc.send.phase2Event({ event });
           },
+          onReviewReady: emitReview,
         },
       );
 
       console.log("[E2E] Controller done:", result.status);
-      win.webview.rpc.send.controllerDone({ status: result.status, task: result.task });
+      win.webview.rpc.send.controllerDone(result);
 
       if (e2eResultPath) {
         await Bun.write(e2eResultPath, JSON.stringify(result));

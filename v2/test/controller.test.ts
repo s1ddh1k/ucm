@@ -1,7 +1,7 @@
 import { describe, it, assert } from "./harness.ts";
 import { runController, type ControllerStatus } from "../src/controller.ts";
 import { createDynamicSpawnAgent, type SpawnOverrides } from "../src/spawn.ts";
-import type { Config, LoopEvent } from "../src/types.ts";
+import type { AdaptivePlan, Config, LoopEvent, ReviewPack } from "../src/types.ts";
 import { saveState } from "../src/state.ts";
 import type { ControllerState } from "../src/state.ts";
 import { createWorktree } from "../src/worktree.ts";
@@ -73,6 +73,7 @@ function makeConfig(projectPath: string, overrides: Partial<Config> = {}): Confi
     idleTimeoutMs: 10_000,
     hardTimeoutMs: 30_000,
     autoApprove: true,
+    resume: false,
     ...overrides,
   };
 }
@@ -108,18 +109,27 @@ describe("controller.test.ts (E2E)", () => {
 
     const statuses: ControllerStatus[] = [];
     const events: LoopEvent[] = [];
+    const plans: AdaptivePlan[] = [];
+    const reviews: ReviewPack[] = [];
 
     const result = await runController(makeConfig(repoDir), {
       spawnAgent: agent,
       onStatusChange: (s) => statuses.push(s),
       onTaskProposed: async () => true,
+      onPlanReady: (plan) => plans.push(plan),
       onPhase2Event: (e) => events.push(e),
+      onReviewReady: (review) => reviews.push(review),
     });
 
     // 전체 흐름 성공
     assert.equal(result.status, "done");
     assert(result.task !== null);
     assert.equal(result.task!.goal, "Add greeting feature");
+    assert(result.plan !== null, "adaptive plan should be returned");
+    assert(result.review !== null, "review pack should be returned");
+    assert.equal(plans.length, 1);
+    assert.equal(reviews.length, 1);
+    assert(result.review!.changedFiles.includes("greeting.txt"));
 
     // 상태 전이 확인
     assert.equal(statuses[0], "phase1");
@@ -374,12 +384,19 @@ describe("controller.test.ts (E2E)", () => {
     // 미리 worktree를 생성하고 상태 파일을 저장
     const worktree = await createWorktree(repoDir, "resume-test");
 
-    const task = { goal: "Resumed feature", context: "Testing resume", acceptance: "file.txt exists" };
-    const config = makeConfig(repoDir);
+    const task = {
+      goal: "Resumed feature",
+      context: "Testing resume",
+      acceptance: "file.txt exists",
+      constraints: "Preserve existing README",
+    };
+    const config = makeConfig(repoDir, { resume: true });
 
     await saveState(repoDir, {
       phase: "phase2",
       task,
+      plan: null,
+      review: null,
       worktree,
       iteration: 0,
       config,
@@ -437,6 +454,8 @@ describe("controller.test.ts (E2E)", () => {
     // phase1을 건너뛰고 바로 phase2로 진행
     assert.equal(result.status, "done");
     assert.equal(result.task!.goal, "Resumed feature");
+    assert(result.plan !== null);
+    assert(result.review !== null);
     // resume 메시지 확인
     assert(messages.some((m) => m.includes("Resuming")), "should emit resume message");
     // phase1 상태가 없고 바로 phase2로 시작
@@ -482,7 +501,63 @@ describe("controller.test.ts (E2E)", () => {
     await cleanupDir(repoDir);
   });
 
-  it("E2E: worktree cleaned up after failure", async () => {
+  it("saved state is ignored unless resume=true", async () => {
+    repoDir = await createTempGitRepo();
+
+    const worktree = await createWorktree(repoDir, "ignore-saved-state");
+    await saveState(repoDir, {
+      phase: "phase2",
+      task: {
+        goal: "Old task",
+        context: "Should be ignored",
+        acceptance: "Never",
+        constraints: "none",
+      },
+      plan: null,
+      review: null,
+      worktree,
+      iteration: 0,
+      config: makeConfig(repoDir, { resume: true }),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const taskJson = JSON.stringify({
+      goal: "Fresh task",
+      context: "New run",
+      acceptance: "fresh.txt exists",
+      constraints: "none",
+    });
+
+    const agent = createDynamicSpawnAgent(
+      e2eResolver({
+        phase1: {
+          behavior: "json_response",
+          env: { MOCK_JSON: taskJson },
+        },
+        implement: {
+          behavior: "implement",
+          env: { MOCK_FILENAME: "fresh.txt", MOCK_CONTENT: "fresh\n" },
+        },
+        verify: {
+          behavior: "json_response",
+          env: { MOCK_JSON: '{"passed":true,"keepChanges":true,"reason":"ok"}' },
+        },
+      }),
+    );
+
+    const result = await runController(makeConfig(repoDir), {
+      spawnAgent: agent,
+      onTaskProposed: async () => true,
+    });
+
+    assert.equal(result.status, "done");
+    assert.equal(result.task!.goal, "Fresh task");
+
+    await cleanupDir(repoDir);
+  });
+
+  it("E2E: failed runs keep worktree and state for resume", async () => {
     repoDir = await createTempGitRepo();
 
     const taskJson = JSON.stringify({
@@ -501,14 +576,16 @@ describe("controller.test.ts (E2E)", () => {
       }),
     );
 
-    await runController(makeConfig(repoDir), {
+    const result = await runController(makeConfig(repoDir), {
       spawnAgent: agent,
       onTaskProposed: async () => true,
     });
 
+    assert.equal(result.status, "failed");
     const { stdout } = Bun.spawnSync(["git", "-C", repoDir, "worktree", "list"]);
     const worktrees = stdout.toString().trim().split("\n");
-    assert.equal(worktrees.length, 1, "worktree cleaned up after failure");
+    assert.equal(worktrees.length, 2, "failed runs should keep the task worktree for resume");
+    assert(existsSync(join(repoDir, ".ucm-state.json")), "state should remain after failure");
 
     await cleanupDir(repoDir);
   });

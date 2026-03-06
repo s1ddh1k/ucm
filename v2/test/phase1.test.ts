@@ -17,6 +17,7 @@ describe("phase1.ts", () => {
       goal: "Build a CLI tool",
       context: "Developers use it daily",
       acceptance: "Can parse arguments and output results",
+      constraints: "Do not introduce a daemon",
     });
     const agent = mockAgent([okResult(`Here's the task:\n\`\`\`json\n${json}\n\`\`\``)]);
 
@@ -29,6 +30,7 @@ describe("phase1.ts", () => {
     assert(task !== null);
     assert.equal(task!.goal, "Build a CLI tool");
     assert.equal(task!.context, "Developers use it daily");
+    assert.equal(task!.constraints, "Do not introduce a daemon");
   });
 
   it("returns null on spawn error", async () => {
@@ -126,6 +128,27 @@ describe("phase1.ts", () => {
     });
 
     assert.equal(task, null);
+  });
+
+  it("normalizes missing constraints to empty string", async () => {
+    const agent = mockAgent([
+      okResult(
+        JSON.stringify({
+          goal: "Simple task",
+          context: "Users",
+          acceptance: "Done",
+        }),
+      ),
+    ]);
+
+    const task = await runPhase1({
+      spawnAgent: agent,
+      spawnOpts: { cwd: "/tmp", provider: "claude" },
+      projectPath: "/tmp/project",
+    });
+
+    assert(task !== null);
+    assert.equal(task!.constraints, "");
   });
 
   // --- 멀티턴 대화 테스트 ---

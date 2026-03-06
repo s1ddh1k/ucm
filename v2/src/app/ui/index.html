@@ -5,128 +5,443 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UCM</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0a0a0a;
-      color: #e0e0e0;
-      padding: 24px;
+    :root {
+      --bg: #f3eee2;
+      --panel: rgba(255, 252, 245, 0.92);
+      --text: #1f1b16;
+      --muted: #5f564c;
+      --line: rgba(31, 27, 22, 0.14);
+      --accent: #b4491c;
+      --accent-soft: rgba(180, 73, 28, 0.12);
+      --ok: #215732;
+      --ok-soft: rgba(33, 87, 50, 0.12);
+      --danger: #8a2d21;
+      --danger-soft: rgba(138, 45, 33, 0.12);
+      --shadow: 0 20px 60px rgba(63, 44, 17, 0.12);
     }
-    h1 { font-size: 18px; margin-bottom: 16px; color: #fff; }
-    .status {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 500;
-      background: #1a1a2e;
-      color: #7c8db5;
-      margin-bottom: 16px;
-    }
-    .status.active { background: #1a2e1a; color: #7cb57c; }
-    .status.done { background: #1a2e1a; color: #4caf50; }
-    .status.failed { background: #2e1a1a; color: #b57c7c; }
 
-    #config-form {
-      background: #111;
-      border: 1px solid #222;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(180, 73, 28, 0.15), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(33, 87, 50, 0.16), transparent 28%),
+        linear-gradient(145deg, #efe6d4 0%, #f8f3e9 48%, #efe8db 100%);
+      padding: 28px;
     }
-    #config-form label {
+
+    .app {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 18px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      backdrop-filter: blur(18px);
+    }
+
+    .hero {
+      background: linear-gradient(155deg, rgba(255, 250, 240, 0.98), rgba(245, 235, 220, 0.94));
+    }
+
+    .eyebrow {
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    h1, p, pre { margin: 0; }
+    h1 {
+      font-family: "Iowan Old Style", Georgia, serif;
+      font-size: 34px;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+
+    .hero-copy {
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .status.active, .status.done { background: var(--ok-soft); color: var(--ok); }
+    .status.failed { background: var(--danger-soft); color: var(--danger); }
+
+    #config-form { display: grid; gap: 10px; }
+    label {
       display: block;
-      font-size: 13px;
-      color: #999;
-      margin: 8px 0 4px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 5px;
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
     }
-    #config-form input, #config-form select {
+
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea {
       width: 100%;
-      padding: 6px 10px;
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 4px;
-      color: #e0e0e0;
-      font-size: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--text);
+      padding: 10px 12px;
     }
-    #config-form .checkbox-row {
+    textarea { min-height: 100px; resize: vertical; }
+
+    .checkbox-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 8px;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.6);
     }
-    #config-form .checkbox-row input { width: auto; }
-    button {
-      padding: 8px 16px;
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      margin-top: 12px;
-    }
-    button:hover { background: #1d4ed8; }
+    .checkbox-row input { width: auto; }
+    .checkbox-row label { margin: 0; }
 
-    #log {
-      background: #111;
-      border: 1px solid #222;
-      border-radius: 8px;
-      padding: 16px;
-      font-family: "SF Mono", "Fira Code", monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      max-height: 400px;
-      overflow-y: auto;
-      white-space: pre-wrap;
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 11px 16px;
+      background: var(--accent);
+      color: #fffaf0;
+      cursor: pointer;
+      transition: transform 140ms ease;
     }
-    .entry { padding: 2px 0; }
-    .entry.event { color: #7c8db5; }
-    .entry.error { color: #b57c7c; }
+    button:hover { transform: translateY(-1px); }
+    button.secondary { background: rgba(31, 27, 22, 0.12); color: var(--text); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 18px;
+    }
+    .field { display: grid; gap: 6px; margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label {
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .field-value {
+      line-height: 1.5;
+      color: var(--text);
+      min-height: 20px;
+    }
 
     #approval {
       display: none;
-      background: #1a1a2e;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 16px;
-      margin: 12px 0;
+      border-radius: 18px;
+      padding: 14px;
+      background: linear-gradient(160deg, rgba(180, 73, 28, 0.14), rgba(255, 250, 240, 0.96));
+      border: 1px solid rgba(180, 73, 28, 0.18);
+      margin-top: 16px;
     }
-    #approval p { margin-bottom: 8px; }
-    #approval button { margin-right: 8px; }
-    #approval button:last-child { background: #444; }
+    #approval p { line-height: 1.5; margin-bottom: 10px; }
+    .approval-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+
+    #log {
+      display: grid;
+      gap: 8px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .entry {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.64);
+      border: 1px solid rgba(31, 27, 22, 0.08);
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .entry.event { color: #29495e; }
+    .entry.error { color: var(--danger); background: rgba(138, 45, 33, 0.08); }
+
+    .tool-grid { display: grid; gap: 10px; }
+    .tool-card, .review-tool, .issue-card {
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.65);
+      padding: 12px;
+    }
+    .review-tool.blocking, .issue-card.critical, .issue-card.major {
+      border-color: rgba(138, 45, 33, 0.2);
+      background: rgba(138, 45, 33, 0.06);
+    }
+    .tool-name, .review-tool-head, .issue-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .tool-stage, .tool-rationale, .review-tool-summary, .issue-summary, .issue-meta {
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .issue-summary { color: var(--text); margin-bottom: 4px; }
+
+    .pill-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pill {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(31, 27, 22, 0.08);
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+    }
+    .empty { color: var(--muted); font-style: italic; }
+
+    .file-tab-list {
+      display: grid;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .file-tab {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      text-align: left;
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+      padding: 10px 12px;
+    }
+    .file-tab.selected {
+      background: var(--accent-soft);
+      border-color: rgba(180, 73, 28, 0.3);
+    }
+
+    pre {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(31, 27, 22, 0.06);
+      border: 1px solid rgba(31, 27, 22, 0.08);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SF Mono", "IBM Plex Mono", monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 960px) {
+      body { padding: 16px; }
+      .app, .grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>UCM</h1>
-  <div class="status" id="status">idle</div>
+  <div class="app">
+    <div class="stack">
+      <section class="card hero">
+        <div class="eyebrow">Goal / Run / Review</div>
+        <h1>UCM v2</h1>
+        <p class="hero-copy">A focused autonomous coding runner. Define the goal contract, let the agent iterate in a worktree, and approve only after the review pack is ready.</p>
+        <div class="status" id="status">idle</div>
+      </section>
 
-  <div id="config-form">
-    <label for="project-path">Project Path</label>
-    <input id="project-path" type="text" placeholder="/path/to/project">
+      <section class="card">
+        <div class="eyebrow">Run Config</div>
+        <div id="config-form">
+          <div>
+            <label for="project-path">Project Path</label>
+            <input id="project-path" type="text" placeholder="/path/to/project">
+          </div>
+          <div>
+            <label for="provider">Provider</label>
+            <select id="provider">
+              <option value="claude">Claude</option>
+              <option value="codex">Codex</option>
+            </select>
+          </div>
+          <div>
+            <label for="model">Model</label>
+            <input id="model" type="text" placeholder="Optional override">
+          </div>
+          <div>
+            <label for="max-iterations">Max Iterations</label>
+            <input id="max-iterations" type="number" value="10" min="1" max="50">
+          </div>
+          <div class="checkbox-row">
+            <input id="auto-approve" type="checkbox">
+            <label for="auto-approve">Auto-approve merge</label>
+          </div>
+          <div class="checkbox-row">
+            <input id="resume-run" type="checkbox">
+            <label for="resume-run">Resume saved run</label>
+          </div>
+          <button id="start-btn">Start Run</button>
+        </div>
+        <div id="approval"></div>
+      </section>
 
-    <label for="provider">Provider</label>
-    <select id="provider">
-      <option value="claude">Claude</option>
-      <option value="codex">Codex</option>
-    </select>
-
-    <label for="model">Model (optional)</label>
-    <input id="model" type="text" placeholder="e.g. opus, o3-high">
-
-    <label for="max-iterations">Max Iterations</label>
-    <input id="max-iterations" type="number" value="10" min="1" max="50">
-
-    <div class="checkbox-row">
-      <input id="auto-approve" type="checkbox">
-      <label for="auto-approve" style="margin:0">Auto-approve merge</label>
+      <section class="card">
+        <div class="eyebrow">Run Log</div>
+        <div id="log"></div>
+      </section>
     </div>
 
-    <button id="start-btn">Start</button>
-  </div>
+    <div class="stack">
+      <section class="card">
+        <div class="eyebrow">Goal Contract</div>
+        <div class="field">
+          <div class="field-label">Goal</div>
+          <div class="field-value" id="task-goal">No task yet.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Context</div>
+          <div class="field-value" id="task-context">-</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Acceptance</div>
+          <div class="field-value" id="task-acceptance">-</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Constraints</div>
+          <div class="field-value" id="task-constraints">-</div>
+        </div>
+      </section>
 
-  <div id="approval"></div>
-  <div id="log"></div>
+      <section class="card">
+        <div class="eyebrow">Adaptive Plan</div>
+        <div class="field">
+          <div class="field-label">Summary</div>
+          <div class="field-value" id="plan-summary">No adaptive plan yet.</div>
+        </div>
+        <div class="tool-grid" id="plan-tools">
+          <div class="empty">No tools selected.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="eyebrow">Review Pack</div>
+        <div class="grid">
+          <div class="stack">
+            <div class="field">
+              <div class="field-label">Branch</div>
+              <div class="field-value" id="review-branch">-</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Iterations</div>
+              <div class="field-value" id="review-iterations">-</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Final Reason</div>
+              <div class="field-value" id="review-reason">-</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Current Review Status</div>
+              <div class="field-value" id="review-blocked-summary">No unresolved review blockers.</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Changed Files</div>
+              <div class="pill-wrap" id="review-files-summary">
+                <div class="empty">No changed files yet.</div>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">Commits</div>
+              <div class="pill-wrap" id="review-commits">
+                <div class="empty">No commits yet.</div>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">Review Issues</div>
+              <div class="tool-grid" id="review-issues">
+                <div class="empty">No review issues yet.</div>
+              </div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="field">
+              <div class="field-label">Diff Stat</div>
+              <pre id="review-diffstat">Review pack will appear after verify passes.</pre>
+            </div>
+            <div class="field">
+              <div class="field-label">Test Output</div>
+              <pre id="review-tests">Not run</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <div class="field-label">Adaptive Tool Output</div>
+          <div class="tool-grid" id="review-tools">
+            <div class="empty">No adaptive tool output yet.</div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <div class="field-label">File Viewer</div>
+          <div class="grid">
+            <div class="stack">
+              <div class="file-tab-list" id="review-file-list">
+                <div class="empty">No file patches yet.</div>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="field">
+                <div class="field-label">Selected File</div>
+                <div class="field-value" id="review-file-meta">-</div>
+              </div>
+              <pre id="review-file-patch">No file patch selected.</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <div class="field-label">Full Diff</div>
+          <pre id="review-diff">Review pack will appear after verify passes.</pre>
+        </div>
+      </section>
+    </div>
+  </div>
 
   <script type="module" src="views://ui/index.js"></script>
 </body>

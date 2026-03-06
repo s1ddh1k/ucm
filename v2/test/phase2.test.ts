@@ -44,12 +44,16 @@ describe("phase2.ts", () => {
       spawnOpts: { cwd: repoDir, provider: "claude" },
       task: testTask,
       worktreePath: repoDir,
+      baseBranch: "HEAD~1",
+      branchName: "ucm/direct",
       maxIterations: 5,
       onEvent: (e) => events.push(e),
     });
 
     assert.equal(result.success, true);
     assert.equal(result.iterations, 1);
+    assert(result.review !== null, "review pack should be generated on success");
+    assert(result.review!.changedFiles.includes("hello.txt"));
     assert(events.some((e) => e.type === "passed"));
     await cleanupDir(repoDir);
   });
@@ -299,6 +303,37 @@ describe("phase2.ts", () => {
     await cleanupDir(repoDir);
   });
 
+  it("test gate runs commands through a shell", async () => {
+    repoDir = await createTempGitRepo();
+    const agent: SpawnAgent = async (prompt) => {
+      if (prompt.includes("implementation agent")) return okResult("done");
+      return okResult(verifyJson(true, true, "all good"));
+    };
+
+    const events: LoopEvent[] = [];
+    const result = await runPhase2({
+      spawnAgent: agent,
+      spawnOpts: { cwd: repoDir, provider: "claude" },
+      task: {
+        ...testTask,
+        constraints: "Command uses quoted shell syntax",
+      },
+      worktreePath: repoDir,
+      maxIterations: 2,
+      testCommand: "printf 'shell works'",
+      onEvent: (e) => events.push(e),
+    });
+
+    assert.equal(result.success, true);
+    assert(
+      events.some(
+        (e) => e.type === "test_done" && e.passed && e.output.includes("shell works"),
+      ),
+      "quoted shell command should be executed successfully",
+    );
+    await cleanupDir(repoDir);
+  });
+
   it("test gate overrides verdict when test command fails", async () => {
     repoDir = await createTempGitRepo();
     let verifyCount = 0;
@@ -350,6 +385,176 @@ describe("phase2.ts", () => {
     assert.equal(result.success, true);
     assert(!events.some((e) => e.type === "test_start"));
     assert(!events.some((e) => e.type === "test_done"));
+    await cleanupDir(repoDir);
+  });
+
+  it("runs adaptive tools and records them in the review pack", async () => {
+    repoDir = await createTempGitRepo();
+    const prompts: string[] = [];
+
+    const agent: SpawnAgent = async (prompt) => {
+      prompts.push(prompt);
+
+      if (prompt.includes("specify adaptive tool")) {
+        return okResult(JSON.stringify({
+          summary: "Tighten the stop condition around the file and commit.",
+          stopConditions: ["hello.txt exists with the expected content"],
+          evidence: ["git diff", "test output"],
+          expectedFiles: ["hello.txt"],
+        }));
+      }
+
+      if (prompt.includes("decompose adaptive tool")) {
+        return okResult(JSON.stringify({
+          summary: "Implement the file first, then verify.",
+          checklist: ["Create the file", "Commit the change", "Verify the result"],
+          expectedFiles: ["hello.txt"],
+        }));
+      }
+
+      if (prompt.includes("ux-review adaptive tool")) {
+        return okResult(JSON.stringify({
+          passed: true,
+          summary: "The visible change is small; no UX issues detected.",
+          issues: [],
+        }));
+      }
+
+      if (prompt.includes("polish adaptive tool")) {
+        return okResult(JSON.stringify({
+          passed: true,
+          summary: "Naming and diff size look acceptable for review.",
+          issues: [],
+        }));
+      }
+
+      if (prompt.includes("implementation agent")) {
+        await Bun.write(join(repoDir, "hello.txt"), "hello\n");
+        await $`git -C ${repoDir} add .`.quiet();
+        await $`git -C ${repoDir} commit -m "add hello"`.quiet();
+        return okResult("implemented");
+      }
+
+      return okResult(verifyJson(true, true, "all good"));
+    };
+
+    const events: LoopEvent[] = [];
+    const result = await runPhase2({
+      spawnAgent: agent,
+      spawnOpts: { cwd: repoDir, provider: "claude" },
+      task: {
+        goal: "Refresh the settings page UI",
+        context: "Users need a clearer page",
+        acceptance: "hello.txt exists with content",
+        constraints: "Keep the diff reviewable",
+      },
+      plan: {
+        summary: "Adaptive tools: specify and decompose before implementation, ux-review and polish after verify.",
+        tools: [
+          { tool: "specify", stage: "preflight", rationale: "Acceptance needs tightening." },
+          { tool: "decompose", stage: "preflight", rationale: "The work should be sequenced." },
+          { tool: "ux-review", stage: "review", rationale: "The change is user-facing." },
+          { tool: "polish", stage: "review", rationale: "Run a final quality pass." },
+        ],
+      },
+      worktreePath: repoDir,
+      baseBranch: "HEAD~1",
+      branchName: "ucm/review",
+      maxIterations: 3,
+      onEvent: (event) => events.push(event),
+    });
+
+    assert.equal(result.success, true);
+    assert(result.review !== null);
+    assert.equal(result.review!.toolResults.length, 4);
+    assert(result.review!.toolResults.some((tool) => tool.tool === "specify"));
+    assert(result.review!.toolResults.some((tool) => tool.tool === "ux-review"));
+    assert(events.some((event) => event.type === "tool_start" && event.tool === "specify" && event.iteration === 0));
+    assert(events.some((event) => event.type === "tool_done" && event.result.tool === "polish"));
+    assert(prompts.some((prompt) => prompt.includes("Preflight Guidance")));
+    assert(result.review!.files.some((file) => file.path === "hello.txt"));
+    assert(result.review!.toolResults.find((tool) => tool.tool === "decompose")?.checklist.length === 3);
+    await cleanupDir(repoDir);
+  });
+
+  it("uses review blockers to trigger another implementation iteration", async () => {
+    repoDir = await createTempGitRepo();
+    let verifyCount = 0;
+    const prompts: string[] = [];
+
+    const agent: SpawnAgent = async (prompt) => {
+      prompts.push(prompt);
+
+      if (prompt.includes("implementation agent")) {
+        if (prompts.filter((entry) => entry.includes("implementation agent")).length === 1) {
+          await Bun.write(join(repoDir, "hello.txt"), "v1\n");
+        } else {
+          await Bun.write(join(repoDir, "hello.txt"), "v2\n");
+        }
+        await $`git -C ${repoDir} add .`.quiet();
+        await $`git -C ${repoDir} commit -m "update hello" --allow-empty`.quiet();
+        return okResult("implemented");
+      }
+
+      if (prompt.includes("ux-review adaptive tool")) {
+        if (verifyCount === 1) {
+          return okResult(JSON.stringify({
+            passed: false,
+            summary: "Primary action label is unclear.",
+            issues: [
+              { severity: "major", summary: "Primary action label is unclear", where: "settings page", fix: "Rename it to Save settings" },
+            ],
+          }));
+        }
+        return okResult(JSON.stringify({
+          passed: true,
+          summary: "UX issues addressed.",
+          issues: [],
+        }));
+      }
+
+      if (prompt.includes("polish adaptive tool")) {
+        return okResult(JSON.stringify({
+          passed: true,
+          summary: "No polish issues remain.",
+          issues: [],
+        }));
+      }
+
+      verifyCount++;
+      return okResult(verifyJson(true, true, "verify passed"));
+    };
+
+    const events: LoopEvent[] = [];
+    const result = await runPhase2({
+      spawnAgent: agent,
+      spawnOpts: { cwd: repoDir, provider: "claude" },
+      task: {
+        goal: "Update a user-facing screen",
+        context: "Users need clearer copy",
+        acceptance: "hello.txt exists with content",
+        constraints: "Keep the diff reviewable",
+      },
+      plan: {
+        summary: "Run review tools after verify.",
+        tools: [
+          { tool: "ux-review", stage: "review", rationale: "The change is user-facing." },
+          { tool: "polish", stage: "review", rationale: "Check final quality." },
+        ],
+      },
+      worktreePath: repoDir,
+      baseBranch: "HEAD~1",
+      branchName: "ucm/review-loop",
+      maxIterations: 4,
+      onEvent: (event) => events.push(event),
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.iterations, 2);
+    assert(events.some((event) => event.type === "review_blocked"));
+    assert(prompts.some((prompt) => prompt.includes("Review Feedback To Fix")));
+    assert(result.review !== null);
+    assert.equal(result.review!.reviewIssues.length, 0);
     await cleanupDir(repoDir);
   });
 

@@ -1,10 +1,11 @@
-import type { Config, Task, LoopEvent, SpawnAgent, SpawnOpts } from "./types.ts";
+import type { AdaptivePlan, Config, LoopEvent, ReviewPack, SpawnAgent, SpawnOpts, Task } from "./types.ts";
 import { spawnAgent as defaultSpawnAgent } from "./spawn.ts";
 import { createWorktree, mergeWorktree, removeWorktree } from "./worktree.ts";
 import { runPhase1 } from "./phase1.ts";
 import { runPhase2 } from "./phase2.ts";
 import { saveState, loadState, clearState } from "./state.ts";
 import type { ControllerState } from "./state.ts";
+import { buildAdaptivePlan } from "./adaptive.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_HARD_TIMEOUT_MS, DEFAULT_MAX_ITERATIONS } from "./constants.ts";
 
 export type ControllerStatus =
@@ -21,26 +22,50 @@ export interface ControllerCallbacks {
   onPhase1Message?: (text: string) => void;
   onUserInput?: (prompt: string) => Promise<string>;
   onTaskProposed?: (task: Task) => Promise<boolean>;
+  onPlanReady?: (plan: AdaptivePlan) => void;
   onPhase2Event?: (event: LoopEvent) => void;
+  onReviewReady?: (review: ReviewPack) => void;
   onApproveMerge?: () => Promise<boolean>;
   spawnAgent?: SpawnAgent;
+}
+
+export interface ControllerResult {
+  status: ControllerStatus;
+  task: Task | null;
+  plan: AdaptivePlan | null;
+  review: ReviewPack | null;
+}
+
+async function resolveSavedState(config: Config): Promise<ControllerState | null> {
+  if (!config.resume) return null;
+  const saved = await loadState(config.projectPath);
+  if (!saved) {
+    throw new Error("no saved state to resume");
+  }
+  return saved;
 }
 
 export async function runController(
   config: Config,
   callbacks: ControllerCallbacks = {},
-): Promise<{ status: ControllerStatus; task: Task | null }> {
+): Promise<ControllerResult> {
   const {
     onStatusChange,
     onPhase1Message,
     onUserInput,
     onTaskProposed,
+    onPlanReady,
     onPhase2Event,
+    onReviewReady,
     onApproveMerge,
     spawnAgent = defaultSpawnAgent,
   } = callbacks;
 
-  const setStatus = (s: ControllerStatus) => onStatusChange?.(s);
+  let currentStatus: ControllerStatus = "idle";
+  const setStatus = (status: ControllerStatus) => {
+    currentStatus = status;
+    onStatusChange?.(status);
+  };
 
   const spawnOpts: SpawnOpts = {
     cwd: config.projectPath,
@@ -50,139 +75,176 @@ export async function runController(
     hardTimeoutMs: config.hardTimeoutMs ?? DEFAULT_HARD_TIMEOUT_MS,
   };
 
-  // --- 이전 상태 복원 확인 ---
-  const saved = await loadState(config.projectPath);
+  const saved = await resolveSavedState(config);
 
-  let task: Task | null = null;
+  let task: Task | null = saved?.task ?? null;
+  let plan: AdaptivePlan | null = saved?.plan ?? null;
+  let review: ReviewPack | null = saved?.review ?? null;
+  let worktree = saved?.worktree ?? null;
+  const createdAt = saved?.createdAt ?? Date.now();
+  let shouldRemoveWorktree = false;
+  let shouldClearState = false;
 
-  if (saved && saved.task && saved.phase !== "phase1") {
-    // 이전 태스크가 있고 phase2 이상이면 phase1 스킵
-    task = saved.task;
-    onPhase1Message?.(`Resuming task: ${task.goal}`);
-  } else {
-    // --- Phase 1: 태스크 확정 ---
-    setStatus("phase1");
+  const result = (): ControllerResult => ({ status: currentStatus, task, plan, review });
 
+  const persistState = async (
+    phase: ControllerState["phase"],
+    iteration: number,
+  ): Promise<void> => {
     await saveState(config.projectPath, {
-      phase: "phase1",
-      task: null,
-      worktree: null,
-      iteration: 0,
+      phase,
+      task,
+      plan,
+      review,
+      worktree,
+      iteration,
       config,
-      createdAt: Date.now(),
+      createdAt,
       updatedAt: Date.now(),
     });
-
-    try {
-      task = await runPhase1({
-        spawnAgent,
-        spawnOpts,
-        projectPath: config.projectPath,
-        onMessage: onPhase1Message,
-        onUserInput,
-        onTaskProposed,
-      });
-    } catch (e) {
-      setStatus("failed");
-      await clearState(config.projectPath);
-      throw e;
-    }
-
-    if (!task) {
-      setStatus("failed");
-      await clearState(config.projectPath);
-      return { status: "failed", task: null };
-    }
-  }
-
-  // --- Worktree 생성 (또는 기존 복원) ---
-  let worktree = saved?.worktree ?? null;
-
-  if (!worktree) {
-    const taskId = `task-${Date.now()}`;
-    try {
-      worktree = await createWorktree(config.projectPath, taskId);
-    } catch (e) {
-      setStatus("failed");
-      await clearState(config.projectPath);
-      throw e;
-    }
-  }
-
-  await saveState(config.projectPath, {
-    phase: "phase2",
-    task,
-    worktree,
-    iteration: saved?.iteration ?? 0,
-    config,
-    createdAt: saved?.createdAt ?? Date.now(),
-    updatedAt: Date.now(),
-  });
+  };
 
   try {
-    // --- Phase 2: 구현+검증 루프 ---
-    setStatus("phase2");
+    if (saved && task && saved.phase !== "phase1") {
+      onPhase1Message?.(`Resuming task: ${task.goal}`);
+    } else {
+      setStatus("phase1");
 
-    const startIteration = saved?.phase === "phase2" ? (saved.iteration ?? 0) : 0;
-
-    const result = await runPhase2({
-      spawnAgent,
-      spawnOpts: { ...spawnOpts, cwd: worktree.worktreePath },
-      task,
-      worktreePath: worktree.worktreePath,
-      maxIterations: config.maxIterations ?? DEFAULT_MAX_ITERATIONS,
-      testCommand: config.testCommand,
-      onEvent: (event) => onPhase2Event?.(event),
-      onIterationStart: (iteration) =>
-        saveState(config.projectPath, {
-          phase: "phase2",
-          task,
-          worktree,
-          iteration,
-          config,
-          createdAt: saved?.createdAt ?? Date.now(),
-          updatedAt: Date.now(),
-        }),
-    });
-
-    if (!result.success) {
-      setStatus("failed");
-      await clearState(config.projectPath);
-      return { status: "failed", task };
-    }
-
-    // --- 머지 승인 ---
-    if (!config.autoApprove && onApproveMerge) {
       await saveState(config.projectPath, {
-        phase: "merging",
-        task,
-        worktree,
-        iteration: result.iterations,
+        phase: "phase1",
+        task: null,
+        plan: null,
+        review: null,
+        worktree: null,
+        iteration: 0,
         config,
-        createdAt: saved?.createdAt ?? Date.now(),
+        createdAt,
         updatedAt: Date.now(),
       });
 
-      const approved = await onApproveMerge();
-      if (!approved) {
-        setStatus("cancelled");
-        await clearState(config.projectPath);
-        return { status: "cancelled", task };
+      try {
+        task = await runPhase1({
+          spawnAgent,
+          spawnOpts,
+          projectPath: config.projectPath,
+          onMessage: onPhase1Message,
+          onUserInput,
+          onTaskProposed,
+        });
+      } catch (error) {
+        setStatus("failed");
+        shouldClearState = true;
+        throw error;
+      }
+
+      if (!task) {
+        setStatus("failed");
+        shouldClearState = true;
+        return result();
       }
     }
 
-    // --- 머지 ---
-    setStatus("merging");
-    await mergeWorktree(worktree);
-    setStatus("done");
-    await clearState(config.projectPath);
-    return { status: "done", task };
-  } finally {
-    // --- Cleanup ---
+    if (!plan && task) {
+      plan = buildAdaptivePlan(task);
+    }
+    if (plan) {
+      onPlanReady?.(plan);
+    }
+
+    if (!worktree) {
+      const taskId = `task-${Date.now()}`;
+      try {
+        worktree = await createWorktree(config.projectPath, taskId);
+      } catch (error) {
+        setStatus("failed");
+        shouldClearState = true;
+        throw error;
+      }
+    }
+
+    const mergeReady = async (iteration: number): Promise<ControllerResult> => {
+      setStatus("merging");
+      await persistState("merging", iteration);
+
+      if (review) {
+        onReviewReady?.(review);
+      }
+
+      if (!config.autoApprove && onApproveMerge) {
+        const approved = await onApproveMerge();
+        if (!approved) {
+          setStatus("cancelled");
+          shouldRemoveWorktree = true;
+          shouldClearState = true;
+          return result();
+        }
+      }
+
+      try {
+        await mergeWorktree(worktree!);
+      } catch (error) {
+        setStatus("failed");
+        await persistState("merging", iteration);
+        throw error;
+      }
+      setStatus("done");
+      shouldRemoveWorktree = true;
+      shouldClearState = true;
+      return result();
+    };
+
+    if (saved?.phase === "merging" && worktree) {
+      return await mergeReady(saved.iteration ?? 0);
+    }
+
+    await persistState("phase2", saved?.iteration ?? 0);
+
+    setStatus("phase2");
+    let phase2Iteration = saved?.iteration ?? 0;
+    let phase2;
     try {
-      await removeWorktree(worktree);
-    } catch {
-      // worktree가 이미 제거된 경우 무시
+      phase2 = await runPhase2({
+        spawnAgent,
+        spawnOpts: { ...spawnOpts, cwd: worktree.worktreePath },
+        task,
+        plan,
+        worktreePath: worktree.worktreePath,
+        baseBranch: worktree.baseBranch,
+        branchName: worktree.branchName,
+        maxIterations: config.maxIterations ?? DEFAULT_MAX_ITERATIONS,
+        testCommand: config.testCommand,
+        onEvent: (event) => onPhase2Event?.(event),
+        onIterationStart: (iteration) => {
+          phase2Iteration = iteration;
+          return persistState("phase2", iteration);
+        },
+      });
+    } catch (error) {
+      setStatus("failed");
+      await persistState("phase2", phase2Iteration);
+      throw error;
+    }
+
+    review = phase2.review;
+
+    if (!phase2.success) {
+      setStatus("failed");
+      await persistState("phase2", phase2.iterations);
+      return result();
+    }
+
+    return await mergeReady(phase2.iterations);
+  } finally {
+    if (shouldClearState) {
+      await clearState(config.projectPath);
+    }
+
+    if (shouldRemoveWorktree && worktree) {
+      try {
+        await removeWorktree(worktree);
+      } catch {
+        // 이미 정리되었거나 수동 변경된 경우 무시
+      }
     }
   }
 }

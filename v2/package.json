@@ -7,8 +7,11 @@
   "scripts": {
     "start": "electrobun build && electrobun dev",
     "dev": "electrobun dev",
+    "build:dev": "electrobun build --env=dev",
     "build": "electrobun build --env=stable",
-    "test": "bun test/harness.ts",
+    "test": "bun test/harness.ts test/adaptive.test.ts test/cli.test.ts test/controller.test.ts test/env.test.ts test/json.test.ts test/kill.test.ts test/phase1.test.ts test/phase2.test.ts test/providers.test.ts test/spawn.test.ts test/state.test.ts test/worktree.test.ts",
+    "test:app": "UCM_REQUIRE_APP_E2E=1 bun test/harness.ts test/e2e.test.ts",
+    "test:all": "bun run test && bun run test:app",
     "cli": "bun src/cli.ts"
   },
   "dependencies": {

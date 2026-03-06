@@ -22,10 +22,71 @@ export interface VerifyResult {
   reason: string;
 }
 
+export type ToolName = "specify" | "decompose" | "ux-review" | "polish";
+
+export type ToolStage = "preflight" | "review";
+
+export interface AdaptiveToolPlan {
+  tool: ToolName;
+  stage: ToolStage;
+  rationale: string;
+}
+
+export interface AdaptivePlan {
+  summary: string;
+  tools: AdaptiveToolPlan[];
+}
+
+export interface ReviewIssue {
+  severity: "critical" | "major" | "minor";
+  summary: string;
+  where?: string;
+  fix?: string;
+  source?: ToolName;
+}
+
+export interface ToolResult {
+  tool: ToolName;
+  stage: ToolStage;
+  iteration: number;
+  status: "ok" | "failed";
+  rationale: string;
+  summary: string;
+  raw: string;
+  blocking: boolean;
+  checklist: string[];
+  evidence: string[];
+  expectedFiles: string[];
+  issues: ReviewIssue[];
+}
+
+export interface ReviewFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface ReviewPack {
+  baseBranch: string;
+  branchName: string;
+  changedFiles: string[];
+  commits: string[];
+  diffStat: string;
+  diff: string;
+  finalReason: string;
+  testOutput: string;
+  iterations: number;
+  toolResults: ToolResult[];
+  reviewIssues: ReviewIssue[];
+  files: ReviewFile[];
+}
+
 export interface Task {
   goal: string;
   context: string;
   acceptance: string;
+  constraints?: string;
 }
 
 export type LoopEvent =
@@ -33,6 +94,9 @@ export type LoopEvent =
   | { type: "implement_done"; iteration: number }
   | { type: "verify_start"; iteration: number }
   | { type: "verify_done"; result: VerifyResult }
+  | { type: "tool_start"; tool: ToolName; stage: ToolStage; iteration: number }
+  | { type: "tool_done"; result: ToolResult }
+  | { type: "review_blocked"; iteration: number; summary: string; issues: ReviewIssue[] }
   | { type: "test_start" }
   | { type: "test_done"; passed: boolean; output: string }
   | { type: "passed" }
@@ -47,6 +111,7 @@ export interface Config {
   idleTimeoutMs: number;
   hardTimeoutMs: number;
   autoApprove: boolean;
+  resume?: boolean;
   testCommand?: string;
 }
 

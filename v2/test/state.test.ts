@@ -12,6 +12,8 @@ describe("state.ts", () => {
     const state: ControllerState = {
       phase: "phase2",
       task: { goal: "Test", context: "Ctx", acceptance: "Acc" },
+      plan: { summary: "default", tools: [] },
+      review: null,
       worktree: {
         worktreePath: "/tmp/wt",
         branchName: "ucm/test",
@@ -57,6 +59,8 @@ describe("state.ts", () => {
     await saveState(repoDir, {
       phase: "phase1",
       task: null,
+      plan: null,
+      review: null,
       worktree: null,
       iteration: 0,
       config: {

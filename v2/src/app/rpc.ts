@@ -1,6 +1,6 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ControllerStatus } from "../controller.ts";
-import type { Task, LoopEvent } from "../types.ts";
+import type { AdaptivePlan, LoopEvent, ReviewPack, Task } from "../types.ts";
 
 export type AppRPC = {
   bun: RPCSchema<{
@@ -12,8 +12,14 @@ export type AppRPC = {
           model?: string;
           maxIterations: number;
           autoApprove: boolean;
+          resume: boolean;
         };
-        response: { status: ControllerStatus; task: Task | null };
+        response: {
+          status: ControllerStatus;
+          task: Task | null;
+          plan: AdaptivePlan | null;
+          review: ReviewPack | null;
+        };
       };
       approveTask: {
         params: { approved: boolean };
@@ -37,10 +43,17 @@ export type AppRPC = {
       statusChange: { status: ControllerStatus };
       phase1Message: { text: string };
       taskProposed: { task: Task };
+      planReady: { plan: AdaptivePlan };
       phase2Event: { event: LoopEvent };
       requestTaskApproval: { task: Task };
+      reviewReady: { review: ReviewPack };
       requestMergeApproval: {};
-      controllerDone: { status: ControllerStatus; task: Task | null };
+      controllerDone: {
+        status: ControllerStatus;
+        task: Task | null;
+        plan: AdaptivePlan | null;
+        review: ReviewPack | null;
+      };
     };
   }>;
 };

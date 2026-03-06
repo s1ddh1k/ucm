@@ -5,14 +5,12 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { runController } from "./controller.ts";
 import { loadState } from "./state.ts";
-import type { Config, Task, LoopEvent } from "./types.ts";
+import type { AdaptivePlan, Config, LoopEvent, ReviewPack, Task } from "./types.ts";
 import {
   DEFAULT_MAX_ITERATIONS,
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_HARD_TIMEOUT_MS,
 } from "./constants.ts";
-
-// ── parseArgs ──────────────────────────────────────────────
 
 interface ParsedArgs {
   projectPath: string;
@@ -78,7 +76,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
     } else if (arg.startsWith("-")) {
       throw new Error(`unknown flag: ${arg}`);
     } else {
-      // positional → projectPath
       result.projectPath = arg;
       i++;
     }
@@ -87,8 +84,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   result.projectPath = resolve(result.projectPath);
   return result;
 }
-
-// ── help ───────────────────────────────────────────────────
 
 const HELP = `ucm [project-path] [options]
 
@@ -102,8 +97,6 @@ Options:
   --recursive                 Re-run with improved code after merge
   -h, --help                  Show this help`;
 
-// ── formatEvent ────────────────────────────────────────────
-
 function formatEvent(event: LoopEvent): string {
   switch (event.type) {
     case "implement_start":
@@ -115,7 +108,13 @@ function formatEvent(event: LoopEvent): string {
     case "verify_done":
       return event.result.passed
         ? `[verify] passed`
-        : `[verify] failed — ${event.result.reason}`;
+        : `[verify] failed - ${event.result.reason}`;
+    case "tool_start":
+      return `[tool:${event.stage}] ${event.tool}...`;
+    case "tool_done":
+      return `[tool:${event.result.stage}] ${event.result.tool} - ${event.result.summary}`;
+    case "review_blocked":
+      return `[review] blocked on iteration ${event.iteration}\n${event.issues.map((issue) => `- [${issue.severity}] ${issue.summary}`).join("\n")}`;
     case "test_start":
       return `[test] running...`;
     case "test_done":
@@ -131,17 +130,38 @@ function formatEvent(event: LoopEvent): string {
   }
 }
 
-// ── formatTask ─────────────────────────────────────────────
-
 function formatTask(task: Task): string {
   return [
     `\nGoal: ${task.goal}`,
     `Context: ${task.context}`,
-    `Acceptance: ${task.acceptance}\n`,
+    `Acceptance: ${task.acceptance}`,
+    `Constraints: ${task.constraints?.trim() || "none"}\n`,
   ].join("\n");
 }
 
-// ── main ───────────────────────────────────────────────────
+function formatPlan(plan: AdaptivePlan): string {
+  const lines = [`\nAdaptive Plan: ${plan.summary}`];
+  for (const tool of plan.tools) {
+    lines.push(`- ${tool.tool} [${tool.stage}] ${tool.rationale}`);
+  }
+  return lines.join("\n");
+}
+
+function formatReview(review: ReviewPack): string {
+  return [
+    "\nReview Pack",
+    `Base: ${review.baseBranch}`,
+    `Branch: ${review.branchName}`,
+    `Iterations: ${review.iterations}`,
+    `Reason: ${review.finalReason}`,
+    `Changed Files: ${review.changedFiles.length > 0 ? review.changedFiles.join(", ") : "none"}`,
+    `File Stats: ${review.files.length > 0 ? review.files.map((file) => `${file.path} (+${file.additions}/-${file.deletions})`).join(" | ") : "none"}`,
+    `Commits: ${review.commits.length > 0 ? review.commits.join(" | ") : "none"}`,
+    `Review Issues: ${review.reviewIssues.length > 0 ? review.reviewIssues.map((issue) => `[${issue.severity}] ${issue.summary}`).join(" | ") : "none"}`,
+    `Diff Stat:\n${review.diffStat || "none"}`,
+    `Test Output:\n${review.testOutput || "Not run"}`,
+  ].join("\n");
+}
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -151,7 +171,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // --resume 검증
   if (args.resume) {
     const saved = await loadState(args.projectPath);
     if (!saved) {
@@ -168,6 +187,7 @@ async function main(): Promise<void> {
     idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
     hardTimeoutMs: DEFAULT_HARD_TIMEOUT_MS,
     autoApprove: args.autoApprove,
+    resume: args.resume,
     testCommand: args.testCommand,
   };
 
@@ -179,21 +199,29 @@ async function main(): Promise<void> {
   };
 
   try {
-    const { status, task } = await runController(config, {
-      onStatusChange: (s) => console.log(`[status] ${s}`),
+    const { status, task, plan, review } = await runController(config, {
+      onStatusChange: (controllerStatus) => console.log(`[status] ${controllerStatus}`),
       onPhase1Message: (text) => console.log(text),
       onUserInput: (prompt) => rl.question(`${prompt}\n> `),
-      onTaskProposed: async (task) => {
-        console.log(formatTask(task));
+      onTaskProposed: async (proposedTask) => {
+        console.log(formatTask(proposedTask));
         return args.autoApprove || (await confirm("Approve? [Y/n] "));
       },
+      onPlanReady: (adaptivePlan) => console.log(formatPlan(adaptivePlan)),
       onPhase2Event: (event) => console.log(formatEvent(event)),
+      onReviewReady: (reviewPack) => console.log(formatReview(reviewPack)),
       onApproveMerge: args.autoApprove
         ? undefined
         : () => confirm("Merge? [Y/n] "),
     });
 
-    console.log(`\n[result] ${status}${task ? ` — ${task.goal}` : ""}`);
+    console.log(`\n[result] ${status}${task ? ` - ${task.goal}` : ""}`);
+    if (plan && plan.tools.length === 0) {
+      console.log("[plan] default loop used");
+    }
+    if (review && !args.autoApprove) {
+      console.log("[review] merge approval requested after review pack generation");
+    }
 
     if (status === "done" && args.recursive) {
       const depth = parseInt(process.env.UCM_RECURSIVE_DEPTH ?? "0", 10);
