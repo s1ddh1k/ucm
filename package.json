@@ -37,6 +37,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",
     "format": "biome format --write .",
+    "prepare": "node scripts/setup-git-hooks.js",
     "postinstall": "node scripts/postinstall.js",
     "install-skill": "node scripts/install-skill.js"
   },

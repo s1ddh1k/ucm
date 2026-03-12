@@ -1,9 +1,9 @@
 export type AppScreen =
   | "home"
-  | "command-center"
-  | "mission"
-  | "run"
-  | "memory"
+  | "monitor"
+  | "plan"
+  | "execute"
+  | "review"
   | "settings";
 
 export type NavigationItem = {

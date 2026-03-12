@@ -22,10 +22,10 @@
 +------------------+-----------------------------------------------------------+
 | Navigation Rail  | Main Surface                                              |
 | Home             |                                                           |
-| Command Center   |                                                           |
-| Mission          |                                                           |
-| Run              |                                                           |
-| Memory           |                                                           |
+| Monitor          |                                                           |
+| Plan             |                                                           |
+| Execute          |                                                           |
+| Review           |                                                           |
 | Settings         |                                                           |
 +------------------+-----------------------------------------------------------+
 | Context Strip / Status Strip                                                 |
@@ -54,10 +54,10 @@
 초기 탭은 6개만 둔다.
 
 - `Home`
-- `Command Center`
-- `Mission`
-- `Run`
-- `Memory`
+- `Monitor`
+- `Plan`
+- `Execute`
+- `Review`
 - `Settings`
 
 ### Context Strip

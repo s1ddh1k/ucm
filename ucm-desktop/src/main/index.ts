@@ -36,32 +36,32 @@ const navigation: NavigationItem[] = [
   {
     id: "home",
     label: "Home",
-    description: "Launch workspaces, missions, and org templates.",
+    description: "Open a workspace and start or resume a mission.",
   },
   {
-    id: "command-center",
-    label: "Command Center",
-    description: "Monitor agent teams, bottlenecks, and live runs.",
+    id: "monitor",
+    label: "Monitor",
+    description: "Watch agents, bottlenecks, review alerts, and live runs.",
   },
   {
-    id: "mission",
-    label: "Mission",
-    description: "Define goals, constraints, plan, and team structure.",
+    id: "plan",
+    label: "Plan",
+    description: "Define goals, constraints, phases, and team structure.",
   },
   {
-    id: "run",
-    label: "Run",
-    description: "Inspect timeline, terminal, diff, artifacts, and decisions.",
+    id: "execute",
+    label: "Execute",
+    description: "Inspect diffs, traces, runtime state, and interventions.",
   },
   {
-    id: "memory",
-    label: "Memory",
-    description: "Recall prior missions, decisions, and reusable templates.",
+    id: "review",
+    label: "Review",
+    description: "Verify results, approve packets, and inspect deliverables.",
   },
   {
     id: "settings",
     label: "Settings",
-    description: "Configure providers, defaults, and app behavior.",
+    description: "Configure language, providers, defaults, and app behavior.",
   },
 ];
 
