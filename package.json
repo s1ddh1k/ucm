@@ -31,7 +31,7 @@
     "test": "node test/core.test.js && node test/ucm.test.js && node test/hivemind.test.js && node test/integration.js && node test/browser.js",
     "test:core": "node test/core.test.js",
     "build:web": "cd web && npm run build",
-    "build:desktop": "cd ucm-desktop && (command -v bun >/dev/null 2>&1 && bun run build || npm run build)",
+    "build:desktop": "cd ucm-desktop && npm run build",
     "release:pack": "npm pack --dry-run",
     "release:check": "node test/core.test.js && npm run build:web && npm run build:desktop && npm run release:pack",
     "lint": "biome check .",
