@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
 import type {
@@ -9,12 +10,27 @@ import { RuntimeService } from "./runtime";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const windows = new Set<BrowserWindow>();
-const runtime = new RuntimeService({
+let runtime: RuntimeService;
+let autopilotTimer: NodeJS.Timeout | null = null;
+
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-gpu-compositing");
+app.commandLine.appendSwitch("use-gl", "swiftshader");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("in-process-gpu");
+
+const customUserDataPath = process.env.UCM_DESKTOP_USER_DATA_DIR;
+if (customUserDataPath) {
+  fs.mkdirSync(customUserDataPath, { recursive: true });
+  app.setPath("userData", customUserDataPath);
+}
+
+runtime = new RuntimeService({
   onStateChange: (reason) => {
     broadcastRuntimeUpdate({ reason });
   },
 });
-let autopilotTimer: NodeJS.Timeout | null = null;
 
 const navigation: NavigationItem[] = [
   {
@@ -96,6 +112,7 @@ function registerIpc() {
   ipcMain.handle("mission:create", (_, input) => runtime.createMission(input));
   ipcMain.handle("run:get-active", () => runtime.getActiveRun());
   ipcMain.handle("run:list-for-active-mission", () => runtime.listRunsForActiveMission());
+  ipcMain.handle("run:set-active", (_, input) => runtime.setActiveRun(input));
   ipcMain.handle("run:autopilot-step", () => runtime.autopilotStep());
   ipcMain.handle("run:autopilot-burst", (_, input) => runtime.autopilotBurst(input));
   ipcMain.handle("run:steering-submit", (_, input) => runtime.submitSteering(input));

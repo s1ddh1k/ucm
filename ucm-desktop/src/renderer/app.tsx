@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AppScreen,
+  ArtifactRecord,
   DecisionRecord,
   MissionDetail,
   NavigationItem,
@@ -11,6 +12,8 @@ import type {
   RuntimeUpdateEvent,
   WorkspaceSummary,
 } from "@shared/contracts";
+
+type Locale = "ko" | "en";
 
 const screenCopy: Record<
   AppScreen,
@@ -35,10 +38,10 @@ const screenCopy: Record<
       "Capture goals, constraints, success criteria, and the team structure that should attack the work.",
   },
   run: {
-    eyebrow: "Execution Inspection",
-    title: "Inspect a run like a control room, not a terminal dump.",
+    eyebrow: "Workbench",
+    title: "Inspect code, tests, and artifacts in one work surface.",
     body:
-      "Timeline, terminal, diff, artifacts, and decisions are presented as observation surfaces for brief steering.",
+      "The workbench turns a run into a code-facing surface: changed files, patch shape, tests, and steering stay visible together.",
   },
   memory: {
     eyebrow: "Operational Memory",
@@ -54,6 +57,204 @@ const screenCopy: Record<
   },
 };
 
+const messages = {
+  ko: {
+    nav: {
+      home: { label: "홈", description: "워크스페이스, 미션, 템플릿 시작" },
+      "command-center": { label: "커맨드 센터", description: "에이전트 팀과 병목, 실행 현황" },
+      mission: { label: "미션", description: "목표, 제약, 계획, 팀 구조" },
+      run: { label: "워크벤치", description: "코드, 테스트, 산출물 작업면" },
+      memory: { label: "메모리", description: "이전 미션, 결정, 재사용 패턴" },
+      settings: { label: "설정", description: "프로바이더와 기본 동작 설정" },
+    },
+    screen: {
+      home: {
+        eyebrow: "시작 화면",
+        title: "파일이 아니라 미션에서 시작합니다.",
+        body: "워크스페이스를 열고, 미션을 만들고, 재사용 가능한 템플릿을 고릅니다. 홈은 런처이지 대시보드가 아닙니다.",
+      },
+      "command-center": {
+        eyebrow: "메인 콘솔",
+        title: "에이전트 조직 전체를 한눈에 봅니다.",
+        body: "활성 에이전트, 막힌 작업, 리뷰 대기열, 미션 압력을 한 화면에서 봅니다.",
+      },
+      mission: {
+        eyebrow: "목표 정의",
+        title: "실행 전에 미션을 정리합니다.",
+        body: "목표, 제약, 성공 기준, 팀 구조를 먼저 정리합니다.",
+      },
+      run: {
+        eyebrow: "워크벤치",
+        title: "코드, 테스트, 산출물을 한 작업면에서 봅니다.",
+        body: "워크벤치는 실행을 코드 중심 표면으로 바꿉니다. 변경 파일, 패치 형태, 테스트, 스티어링을 같이 둡니다.",
+      },
+      memory: {
+        eyebrow: "운영 메모리",
+        title: "재사용할 결정과 패턴을 다시 불러옵니다.",
+        body: "메모리는 과거 미션과 실패 사례를 현재 실행 컨텍스트로 끌어옵니다.",
+      },
+      settings: {
+        eyebrow: "환경",
+        title: "핵심 화면을 어지럽히지 않고 시스템을 조정합니다.",
+        body: "설정은 보조 레이어에 둡니다. 프로바이더 선택과 기본값, 알림은 여기서 다룹니다.",
+      },
+    },
+    topbar: { mission: "미션", providers: "프로바이더", agents: "에이전트", blocked: "막힘", review: "리뷰" },
+    common: {
+      loadingWorkspace: "워크스페이스 불러오는 중...",
+      loading: "불러오는 중",
+      navigation: "탐색",
+      workspaces: "워크스페이스",
+      active: "active",
+      available: "available",
+      teamMembers: "팀 멤버",
+      phases: "단계",
+      runEvents: "실행 이벤트",
+      missions: "미션",
+      language: "언어",
+      korean: "한국어",
+      english: "영어",
+    },
+    sections: {
+      missionLauncher: "미션 시작",
+      agentOrg: "에이전트 조직",
+      runGraph: "실행 그래프",
+      goal: "목표",
+      successCriteria: "성공 기준",
+      constraints: "제약",
+      planPhases: "계획 단계",
+      changedFiles: "변경 파일",
+      patchSurface: "패치 표면",
+      testAndDelivery: "테스트 + 전달",
+      runLineage: "실행 계보",
+      missionPressure: "미션 압력",
+      providerWindows: "프로바이더 창",
+      steeringInbox: "스티어링 인박스",
+      approvalQueue: "승인 대기열",
+      emergencyStop: "긴급 중지",
+      executionTrace: "실행 추적",
+      terminalTrace: "터미널 추적",
+      artifactTrace: "산출물 추적",
+      deliverableHistory: "전달물 이력",
+      missionNotes: "미션 노트",
+      missionRisks: "미션 리스크",
+      reviewLog: "리뷰 로그",
+      lifecycleQueue: "라이프사이클 큐",
+    },
+    labels: {
+      currentRun: "현재 실행",
+      parentRun: "부모 실행",
+      childRun: "자식 실행",
+      verificationSignal: "검증 신호",
+      latestDecision: "최신 결정",
+      deliveryPacket: "전달 패킷",
+      briefSteering: "짧은 스티어링",
+      activeSteering: "활성 스티어링",
+      steeringHistory: "스티어링 이력",
+      approvalPacket: "승인 패킷",
+      activeReview: "활성 리뷰",
+      approvalHistory: "승인 이력",
+      handoffHistory: "전달 이력",
+      eventDrivenLoop: "이벤트 기반 전달 루프",
+      noLiveTerminal: "실시간 터미널 없음",
+      noPatchYet: "아직 패치 없음",
+      noChangedFiles: "아직 변경 파일 없음",
+      noDiffPreview: "아직 diff preview가 없습니다.",
+      noTestArtifact: "아직 테스트 결과 산출물이 없습니다.",
+      noDecision: "아직 결정 요약이 없습니다.",
+      noDeliverable: "아직 활성 전달물 리비전이 없습니다.",
+    },
+    actions: {
+      createMission: "미션 생성",
+      submitSteering: "스티어링 전달",
+      approveLatest: "최신본 승인",
+      stopSession: "세션 중지",
+    },
+  },
+  en: {
+    nav: {
+      home: { label: "Home", description: "Launch workspaces, missions, and templates" },
+      "command-center": { label: "Command Center", description: "Agent teams, bottlenecks, and live runs" },
+      mission: { label: "Mission", description: "Goals, constraints, plan, and team shape" },
+      run: { label: "Workbench", description: "Code, tests, and artifact work surface" },
+      memory: { label: "Memory", description: "Past missions, decisions, and reusable patterns" },
+      settings: { label: "Settings", description: "Providers and runtime defaults" },
+    },
+    screen: screenCopy,
+    topbar: { mission: "Mission", providers: "Providers", agents: "Agents", blocked: "Blocked", review: "Review" },
+    common: {
+      loadingWorkspace: "Loading workspace...",
+      loading: "Loading",
+      navigation: "Navigation",
+      workspaces: "Workspaces",
+      active: "active",
+      available: "available",
+      teamMembers: "team members",
+      phases: "phases",
+      runEvents: "run events",
+      missions: "missions",
+      language: "Language",
+      korean: "Korean",
+      english: "English",
+    },
+    sections: {
+      missionLauncher: "Mission Launcher",
+      agentOrg: "Agent Org",
+      runGraph: "Run Graph",
+      goal: "Goal",
+      successCriteria: "Success Criteria",
+      constraints: "Constraints",
+      planPhases: "Plan Phases",
+      changedFiles: "Changed Files",
+      patchSurface: "Patch Surface",
+      testAndDelivery: "Test + Delivery",
+      runLineage: "Run Lineage",
+      missionPressure: "Mission Pressure",
+      providerWindows: "Provider Windows",
+      steeringInbox: "Steering Inbox",
+      approvalQueue: "Approval Queue",
+      emergencyStop: "Emergency Stop",
+      executionTrace: "Execution Trace",
+      terminalTrace: "Terminal Trace",
+      artifactTrace: "Artifact Trace",
+      deliverableHistory: "Deliverable History",
+      missionNotes: "Mission Notes",
+      missionRisks: "Mission Risks",
+      reviewLog: "Review Log",
+      lifecycleQueue: "Lifecycle Queue",
+    },
+    labels: {
+      currentRun: "Current Run",
+      parentRun: "Parent Run",
+      childRun: "Child Run",
+      verificationSignal: "Verification Signal",
+      latestDecision: "Latest Decision",
+      deliveryPacket: "Delivery Packet",
+      briefSteering: "Brief Steering",
+      activeSteering: "Active Steering",
+      steeringHistory: "Steering History",
+      approvalPacket: "Approval Packet",
+      activeReview: "Active Review",
+      approvalHistory: "Approval History",
+      handoffHistory: "Handoff History",
+      eventDrivenLoop: "Event-driven delivery loop",
+      noLiveTerminal: "No live terminal",
+      noPatchYet: "No patch emitted yet",
+      noChangedFiles: "No changed files yet",
+      noDiffPreview: "No diff preview is available yet.",
+      noTestArtifact: "No test result artifact is attached to this run yet.",
+      noDecision: "No decision summary available.",
+      noDeliverable: "No deliverable revision is active.",
+    },
+    actions: {
+      createMission: "Create Mission",
+      submitSteering: "Send Steering",
+      approveLatest: "Approve Latest",
+      stopSession: "Stop Session",
+    },
+  },
+} as const;
+
 function App() {
   const [version, setVersion] = useState("...");
   const [navigation, setNavigation] = useState<NavigationItem[]>([]);
@@ -63,11 +264,16 @@ function App() {
   const [activeMission, setActiveMission] = useState<MissionDetail | null>(null);
   const [activeRun, setActiveRun] = useState<RunDetail | null>(null);
   const [missionRuns, setMissionRuns] = useState<RunDetail[]>([]);
+  const [locale, setLocale] = useState<Locale>(() => {
+    if (typeof window === "undefined") return "ko";
+    return (window.localStorage.getItem("ucm-locale") as Locale | null) ?? "ko";
+  });
   const [activeScreen, setActiveScreen] =
     useState<AppScreen>("command-center");
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
   const [steeringInput, setSteeringInput] = useState("");
+  const [selectedPatchPath, setSelectedPatchPath] = useState<string | null>(null);
   const [autopilotResult, setAutopilotResult] = useState<RunAutopilotResult>({
     run: null,
     eventKind: "none",
@@ -107,6 +313,11 @@ function App() {
   }
 
   useEffect(() => {
+    window.localStorage.setItem("ucm-locale", locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
+
+  useEffect(() => {
     void refresh();
     const unsubscribe = window.ucm.events.onRuntimeUpdate(
       (_event: RuntimeUpdateEvent) => {
@@ -131,6 +342,10 @@ function App() {
       rows: 32,
     });
   }, [activeRun?.terminalSessionId]);
+
+  useEffect(() => {
+    setSelectedPatchPath(null);
+  }, [activeRun?.id]);
 
   async function handleCreateMission(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,7 +394,15 @@ function App() {
     });
   }
 
-  const current = screenCopy[activeScreen];
+  async function handleSelectRun(runId: string) {
+    await window.ucm.run.setActive({ runId });
+    setActiveScreen("run");
+    await refresh();
+  }
+
+  const current = messages[locale].screen[activeScreen];
+  const navCopy = messages[locale].nav;
+  const ui = messages[locale];
   const selectedMissionTitle = activeMission?.title ?? snapshot?.missionName ?? "No mission";
   const recentRunEvents = [...(activeRun?.runEvents ?? [])].reverse();
   const latestEventByAgentId = new Map(
@@ -220,13 +443,23 @@ function App() {
     .slice(-3)
     .reverse();
   const activeRunBudgetLabel = activeRun?.budgetClass
-    ? `${activeRun.budgetClass} budget`
+    ? locale === "ko"
+      ? `${activeRun.budgetClass} 버짓`
+      : `${activeRun.budgetClass} budget`
     : activeRun?.origin?.budgetClass
-      ? `${activeRun.origin.budgetClass} budget`
-      : "default budget";
+      ? locale === "ko"
+        ? `${activeRun.origin.budgetClass} 버짓`
+        : `${activeRun.origin.budgetClass} budget`
+      : locale === "ko"
+        ? "기본 버짓"
+        : "default budget";
   const activeProviderLabel = activeRun?.providerPreference
-    ? `${activeRun.providerPreference} window`
-    : "provider window";
+    ? locale === "ko"
+      ? `${activeRun.providerPreference} 창`
+      : `${activeRun.providerPreference} window`
+    : locale === "ko"
+      ? "프로바이더 창"
+      : "provider window";
   const providerSummary =
     (snapshot?.providerWindows ?? [])
       .map((windowInfo) => `${windowInfo.provider}:${windowInfo.status}`)
@@ -238,30 +471,52 @@ function App() {
   );
   const rootRuns = missionRuns.filter((run) => !run.origin?.parentRunId);
   const followupRuns = missionRuns.filter((run) => Boolean(run.origin?.parentRunId));
+  const activeRunParent =
+    activeRun?.origin?.parentRunId
+      ? missionRuns.find((run) => run.id === activeRun.origin?.parentRunId) ?? null
+      : null;
+  const activeRunChildren = missionRuns.filter(
+    (run) => run.origin?.parentRunId === activeRun?.id,
+  );
+  const changedFiles = (activeRun?.artifacts ?? [])
+    .filter((artifact) => artifact.type === "diff")
+    .flatMap((artifact) => getChangedFilesForArtifact(artifact));
+  const testArtifacts = (activeRun?.artifacts ?? []).filter(
+    (artifact) => artifact.type === "test_result",
+  );
+  const diffArtifact =
+    (activeRun?.artifacts ?? []).find((artifact) => artifact.type === "diff") ?? null;
+  const diffFilePatches = diffArtifact ? getFilePatchesForArtifact(diffArtifact) : [];
+  const selectedPatch =
+    diffFilePatches.find((patch) => patch.path === selectedPatchPath) ??
+    diffFilePatches[0] ??
+    null;
+  const primaryDecision = activeRun?.decisions.at(-1) ?? null;
+  const primaryDeliverable = activeRun?.deliverables[0] ?? null;
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">UCM Agent IDE</p>
-          <h1>{snapshot?.workspaceName ?? "Loading workspace..."}</h1>
+          <h1>{snapshot?.workspaceName ?? ui.common.loadingWorkspace}</h1>
         </div>
         <div className="topbar-metrics">
-          <Metric label="Mission" value={snapshot?.missionName ?? "Loading"} />
-          <Metric label="Providers" value={providerSummary} />
-          <Metric label="Agents" value={String(snapshot?.activeAgents ?? 0)} />
+          <Metric label={ui.topbar.mission} value={snapshot?.missionName ?? ui.common.loading} />
+          <Metric label={ui.topbar.providers} value={providerSummary} />
+          <Metric label={ui.topbar.agents} value={String(snapshot?.activeAgents ?? 0)} />
           <Metric
-            label="Blocked"
+            label={ui.topbar.blocked}
             value={String(snapshot?.blockedAgents ?? 0)}
           />
-          <Metric label="Review" value={String(snapshot?.reviewCount ?? 0)} />
+          <Metric label={ui.topbar.review} value={String(snapshot?.reviewCount ?? 0)} />
         </div>
       </header>
 
       <div className="workspace">
         <aside className="sidebar">
           <div className="sidebar-card">
-            <p className="section-label">Navigation</p>
+            <p className="section-label">{ui.common.navigation}</p>
             <nav className="nav-list">
               {navigation.map((item) => (
                 <button
@@ -272,21 +527,34 @@ function App() {
                   onClick={() => setActiveScreen(item.id)}
                   type="button"
                 >
-                  <span>{item.label}</span>
-                  <small>{item.description}</small>
+                  <span>{navCopy[item.id].label}</span>
+                  <small>{navCopy[item.id].description}</small>
                 </button>
               ))}
             </nav>
           </div>
 
           <div className="sidebar-card">
-            <p className="section-label">Workspaces</p>
+            <p className="section-label">{ui.common.workspaces}</p>
+            <div className="stack-list">
+              <div className="stack-card">
+                <strong>{ui.common.language}</strong>
+                <div className="action-stack">
+                  <button className="primary-button" onClick={() => setLocale("ko")} type="button">
+                    {ui.common.korean}
+                  </button>
+                  <button className="primary-button" onClick={() => setLocale("en")} type="button">
+                    {ui.common.english}
+                  </button>
+                </div>
+              </div>
+            </div>
             <div className="stack-list">
               {workspaces.map((workspace) => (
                 <div className="stack-card" key={workspace.id}>
                   <strong>{workspace.name}</strong>
                   <span className={`status ${workspace.active ? "status-running" : "status-queued"}`}>
-                    {workspace.active ? "active" : "available"}
+                    {workspace.active ? ui.common.active : ui.common.available}
                   </span>
                 </div>
               ))}
@@ -317,10 +585,10 @@ function App() {
                   {activeScreen === "home"
                     ? `${missions.length} missions`
                     : activeScreen === "mission"
-                      ? `${activeMission?.phases.length ?? 0} phases`
+                      ? `${activeMission?.phases.length ?? 0} ${ui.common.phases}`
                       : activeScreen === "run"
-                        ? `${activeRun?.runEvents.length ?? 0} run events`
-                    : `${snapshot?.agents.length ?? 0} team members`}
+                        ? `${activeRun?.runEvents.length ?? 0} ${ui.common.runEvents}`
+                    : `${snapshot?.agents.length ?? 0} ${ui.common.teamMembers}`}
                 </span>
               </div>
               {activeScreen === "home" ? (
@@ -344,7 +612,7 @@ function App() {
                       />
                     </label>
                     <button className="primary-button" type="submit">
-                      Create Mission
+                      {ui.actions.createMission}
                     </button>
                   </form>
 
@@ -363,11 +631,11 @@ function App() {
               ) : activeScreen === "mission" ? (
                 <div className="mission-detail-grid">
                   <section className="detail-block">
-                    <p className="section-label">Goal</p>
+                    <p className="section-label">{ui.sections.goal}</p>
                     <h4>{activeMission?.goal ?? "No active mission selected."}</h4>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Success Criteria</p>
+                    <p className="section-label">{ui.sections.successCriteria}</p>
                     <ul className="principles">
                       {(activeMission?.successCriteria ?? []).map((item) => (
                         <li key={item}>{item}</li>
@@ -375,7 +643,7 @@ function App() {
                     </ul>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Constraints</p>
+                    <p className="section-label">{ui.sections.constraints}</p>
                     <ul className="principles">
                       {(activeMission?.constraints ?? []).map((item) => (
                         <li key={item}>{item}</li>
@@ -383,7 +651,7 @@ function App() {
                     </ul>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Plan Phases</p>
+                    <p className="section-label">{ui.sections.planPhases}</p>
                     <div className="stack-list">
                       {(activeMission?.phases ?? []).map((phase) => (
                         <div className="stack-card" key={phase.id}>
@@ -398,12 +666,155 @@ function App() {
                   </section>
                 </div>
               ) : activeScreen === "run" ? (
-                <div className="run-detail-grid">
-                  <section className="detail-block">
-                    <p className="section-label">Mission Pressure</p>
+                <div className="workbench-grid">
+                  <section className="detail-block workbench-files">
+                    <p className="section-label">{ui.sections.changedFiles}</p>
+                    <div className="stack-list">
+                      {changedFiles.length > 0 ? (
+                        changedFiles.map((filePath) => (
+                          <button
+                            className={`stack-card file-card ${
+                              filePath === selectedPatch?.path ? "selected" : ""
+                            }`}
+                            key={filePath}
+                            onClick={() => setSelectedPatchPath(filePath)}
+                            type="button"
+                          >
+                            <strong>{filePath}</strong>
+                            <span className="status status-review">diff</span>
+                            <p className="stack-copy">
+                              {diffFilePatches.find((patch) => patch.path === filePath)?.summary ??
+                                (locale === "ko"
+                                  ? "이 파일의 패치 내용을 확인합니다."
+                                  : "Inspect the patch emitted for this file.")}
+                            </p>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="stack-card">
+                          <strong>{ui.labels.noChangedFiles}</strong>
+                          <p className="stack-copy">
+                            {locale === "ko"
+                              ? "현재 실행이 아직 코드 diff를 내지 않았습니다."
+                              : "The current run has not emitted a code diff yet."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                  <section className="detail-block workbench-diff">
+                    <p className="section-label">{ui.sections.patchSurface}</p>
+                    <div className="stack-card">
+                      <strong>{selectedPatch?.path ?? diffArtifact?.title ?? ui.labels.noPatchYet}</strong>
+                      <span className="status status-running">
+                        {activeRun?.status ?? "idle"}
+                      </span>
+                      <p className="stack-copy">
+                        {selectedPatch?.summary ??
+                          diffArtifact?.preview ??
+                          activeRun?.summary ??
+                          ui.labels.noDiffPreview}
+                      </p>
+                    </div>
+                    <pre className="terminal-preview workbench-preview" data-testid="patch-surface">
+{selectedPatch?.patch ??
+  (diffArtifact
+    ? buildFallbackPatch(diffArtifact)
+    : "// waiting for patch output")}
+                    </pre>
+                  </section>
+                  <section className="detail-block workbench-side">
+                    <p className="section-label">{ui.sections.testAndDelivery}</p>
                     <div className="stack-list">
                       <div className="stack-card">
-                        <strong>Event-driven delivery loop</strong>
+                        <strong>{ui.labels.verificationSignal}</strong>
+                        <span className="status status-review">
+                          {testArtifacts.length > 0 ? `${testArtifacts.length} test artifacts` : "pending"}
+                        </span>
+                        <p className="stack-copy">
+                          {testArtifacts[0]?.preview ?? ui.labels.noTestArtifact}
+                        </p>
+                      </div>
+                      <div className="stack-card">
+                        <strong>{ui.labels.latestDecision}</strong>
+                        <span className="status status-queued">
+                          {primaryDecision?.category ?? "none"}
+                        </span>
+                        <p className="stack-copy">
+                          {primaryDecision?.summary ?? ui.labels.noDecision}
+                        </p>
+                      </div>
+                      <div className="stack-card">
+                        <strong>{ui.labels.deliveryPacket}</strong>
+                        <span className="status status-running">
+                          {primaryDeliverable?.kind ?? "none"}
+                        </span>
+                        <p className="stack-copy">
+                          {primaryDeliverable?.revisions.find(
+                            (revision) => revision.id === primaryDeliverable.latestRevisionId,
+                          )?.summary ?? ui.labels.noDeliverable}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                  <div className="run-detail-grid">
+                  <section className="detail-block">
+                    <p className="section-label">{ui.sections.runLineage}</p>
+                    <div className="stack-list">
+                      <div className="stack-card">
+                        <strong>{ui.labels.currentRun}</strong>
+                        <span className="status status-running">
+                          {activeRun?.status ?? "unknown"}
+                        </span>
+                        <p className="stack-copy">
+                          {activeRun?.title ?? "No active run selected."}
+                        </p>
+                        <p className="stack-copy">
+                          {activeProviderLabel} • {activeRunBudgetLabel}
+                        </p>
+                      </div>
+                      {activeRunParent ? (
+                        <button
+                          className="stack-card lineage-button"
+                          onClick={() => {
+                            void handleSelectRun(activeRunParent.id);
+                          }}
+                          type="button"
+                        >
+                          <strong>{ui.labels.parentRun}</strong>
+                          <span className="status status-queued">
+                            {activeRunParent.status}
+                          </span>
+                          <p className="stack-copy">{activeRunParent.title}</p>
+                        </button>
+                      ) : null}
+                      {activeRunChildren.length > 0 ? (
+                        <div className="stack-list">
+                          {activeRunChildren.map((child) => (
+                            <button
+                              className="stack-card lineage-button"
+                              key={child.id}
+                              onClick={() => {
+                                void handleSelectRun(child.id);
+                              }}
+                              type="button"
+                            >
+                              <strong>{ui.labels.childRun}</strong>
+                              <span className={`status status-${child.status === "running" ? "running" : child.status === "queued" ? "queued" : child.status === "blocked" ? "blocked" : "review"}`}>
+                                {child.status}
+                              </span>
+                              <p className="stack-copy">{child.title}</p>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                  <section className="detail-block">
+                    <p className="section-label">{ui.sections.missionPressure}</p>
+                    <div className="stack-list">
+                      <div className="stack-card">
+                        <strong>{ui.labels.eventDrivenLoop}</strong>
                         <span className="status status-running">
                           {autopilotResult.decision === "observe"
                             ? "watching"
@@ -418,7 +829,7 @@ function App() {
                         <p className="stack-copy">Run budget: {activeRunBudgetLabel}</p>
                       </div>
                       <div className="stack-card">
-                        <strong>Provider Windows</strong>
+                        <strong>{ui.sections.providerWindows}</strong>
                         <span className="status status-review">
                           {activeProviderLabel}
                         </span>
@@ -439,10 +850,10 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Steering Inbox</p>
+                    <p className="section-label">{ui.sections.steeringInbox}</p>
                     <div className="action-stack">
                       <div className="stack-card">
-                        <strong>Brief Steering</strong>
+                        <strong>{ui.labels.briefSteering}</strong>
                         <span className="status status-review">
                           {activeSteeringEvents.length > 0
                             ? `${activeSteeringEvents.length} active`
@@ -457,7 +868,7 @@ function App() {
                         </p>
                         <form className="mission-form" onSubmit={handleSteeringSubmit}>
                           <label>
-                            Submit steering
+                            {ui.labels.briefSteering}
                             <input
                               onChange={(event) => setSteeringInput(event.target.value)}
                               placeholder="Use the fallback fixture from the checkout regression suite."
@@ -469,7 +880,7 @@ function App() {
                             disabled={!activeRun?.id || !steeringInput.trim()}
                             type="submit"
                           >
-                            Send Steering
+                            {ui.actions.submitSteering}
                           </button>
                         </form>
                       </div>
@@ -477,7 +888,7 @@ function App() {
                         <div className="stack-list">
                           {activeSteeringEvents.map((event) => (
                             <div className="stack-card" key={event.id}>
-                              <strong>Active Steering</strong>
+                              <strong>{ui.labels.activeSteering}</strong>
                               <span className="status status-running">
                                 {event.metadata?.status ?? "active"}
                               </span>
@@ -492,7 +903,7 @@ function App() {
                         <div className="stack-list">
                           {archivedSteeringEvents.slice(0, 3).map((event) => (
                             <div className="stack-card" key={event.id}>
-                              <strong>Steering History</strong>
+                              <strong>{ui.labels.steeringHistory}</strong>
                               <span
                                 className={`status ${
                                   event.metadata?.status === "resolved"
@@ -512,10 +923,10 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Approval Queue</p>
+                    <p className="section-label">{ui.sections.approvalQueue}</p>
                     <div className="action-stack">
                       <div className="stack-card">
-                        <strong>Approval Packet</strong>
+                        <strong>{ui.labels.approvalPacket}</strong>
                         <span className="status status-running">
                           {activeApprovalPackets.length > 0
                             ? `${activeApprovalPackets.length} active`
@@ -535,14 +946,14 @@ function App() {
                           }}
                           type="button"
                         >
-                          Approve Latest
+                          {ui.actions.approveLatest}
                         </button>
                       </div>
                       {activeApprovalPackets.length > 0 ? (
                         <div className="stack-list">
                           {activeApprovalPackets.map((revision) => (
                             <div className="stack-card" key={revision.id}>
-                              <strong>Active Review</strong>
+                              <strong>{ui.labels.activeReview}</strong>
                               <span className="status status-review">
                                 {revision.status}
                               </span>
@@ -567,7 +978,7 @@ function App() {
                         <div className="stack-list">
                           {archivedApprovalPackets.slice(0, 3).map((revision) => (
                             <div className="stack-card" key={revision.id}>
-                              <strong>Approval History</strong>
+                              <strong>{ui.labels.approvalHistory}</strong>
                               <span
                                 className={`status ${
                                   revision.status === "approved"
@@ -582,7 +993,7 @@ function App() {
                           ))}
                           {archivedApprovalHandoffs.map((handoff) => (
                             <div className="stack-card" key={handoff.id}>
-                              <strong>Handoff History</strong>
+                              <strong>{ui.labels.handoffHistory}</strong>
                               <span
                                 className={`status ${
                                   handoff.status === "approved"
@@ -603,10 +1014,10 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Emergency Stop</p>
+                    <p className="section-label">{ui.sections.emergencyStop}</p>
                     <div className="action-stack">
                       <div className="stack-card">
-                        <strong>Emergency Stop</strong>
+                        <strong>{ui.sections.emergencyStop}</strong>
                         <span className="status status-blocked">
                           {activeRun?.terminalSessionId ? "armed" : "idle"}
                         </span>
@@ -621,13 +1032,13 @@ function App() {
                           }}
                           type="button"
                         >
-                          Stop Session
+                          {ui.actions.stopSession}
                         </button>
                       </div>
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Execution Trace</p>
+                    <p className="section-label">{ui.sections.executionTrace}</p>
                     <div className="timeline-list">
                       {(activeRun?.runEvents ?? []).map((event) => (
                         <div className="timeline-item" key={event.id}>
@@ -653,12 +1064,12 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Terminal Trace</p>
+                    <p className="section-label">{ui.sections.terminalTrace}</p>
                     <div className="stack-card">
                       <strong>
                         {activeRun?.terminalProvider
                           ? `${activeRun.terminalProvider} session`
-                          : "No live terminal"}
+                          : ui.labels.noLiveTerminal}
                       </strong>
                       <span className="status status-running">
                         {activeRun?.terminalSessionId ?? "offline"}
@@ -672,7 +1083,7 @@ function App() {
                     </pre>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Artifact Trace</p>
+                    <p className="section-label">{ui.sections.artifactTrace}</p>
                     <div className="stack-list">
                       {(activeRun?.artifacts ?? []).map((artifact) => (
                         <div className="stack-card" key={artifact.id}>
@@ -684,7 +1095,7 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Deliverable History</p>
+                    <p className="section-label">{ui.sections.deliverableHistory}</p>
                     <div className="stack-list">
                       {(activeRun?.deliverables ?? []).map((deliverable) => (
                         <div className="stack-card" key={deliverable.id}>
@@ -719,11 +1130,12 @@ function App() {
                       ))}
                     </div>
                   </section>
+                  </div>
                 </div>
               ) : (
                 <div className="command-center-grid">
                   <section className="detail-block">
-                    <p className="section-label">Agent Org</p>
+                    <p className="section-label">{ui.sections.agentOrg}</p>
                     <div className="org-grid">
                       {snapshot?.agents.map((agent) => (
                         <article className="agent-card" key={agent.id}>
@@ -750,26 +1162,41 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">Run Graph</p>
+                    <p className="section-label">{ui.sections.runGraph}</p>
                     <div className="run-graph-list">
                       {rootRuns.map((run) => (
                         <div className="run-graph-node root" key={run.id}>
-                          <div className="run-graph-head">
-                            <strong>{run.title}</strong>
-                            <span className={`status status-${run.status === "running" ? "running" : run.status === "queued" ? "queued" : run.status === "blocked" ? "blocked" : "review"}`}>
-                              {run.status}
-                            </span>
-                          </div>
-                          <p className="stack-copy">
-                            {run.providerPreference ?? "provider"} • {run.budgetClass ?? "default"} • {run.id}
-                          </p>
-                          <p className="stack-copy">{run.summary}</p>
+                          <button
+                            className={`run-graph-button${activeRun?.id === run.id ? " selected" : ""}`}
+                            onClick={() => {
+                              void handleSelectRun(run.id);
+                            }}
+                            type="button"
+                          >
+                            <div className="run-graph-head">
+                              <strong>{run.title}</strong>
+                              <span className={`status status-${run.status === "running" ? "running" : run.status === "queued" ? "queued" : run.status === "blocked" ? "blocked" : "review"}`}>
+                                {run.status}
+                              </span>
+                            </div>
+                            <p className="stack-copy">
+                              {run.providerPreference ?? "provider"} • {run.budgetClass ?? "default"} • {run.id}
+                            </p>
+                            <p className="stack-copy">{run.summary}</p>
+                          </button>
                           {parentRunIds.has(run.id) ? (
                             <div className="run-children">
                               {followupRuns
                                 .filter((child) => child.origin?.parentRunId === run.id)
                                 .map((child) => (
-                                  <div className="run-graph-node child" key={child.id}>
+                                  <button
+                                    className={`run-graph-button child${activeRun?.id === child.id ? " selected" : ""}`}
+                                    key={child.id}
+                                    onClick={() => {
+                                      void handleSelectRun(child.id);
+                                    }}
+                                    type="button"
+                                  >
                                     <div className="run-graph-head">
                                       <strong>{child.title}</strong>
                                       <span className={`status status-${child.status === "running" ? "running" : child.status === "queued" ? "queued" : child.status === "blocked" ? "blocked" : "review"}`}>
@@ -784,7 +1211,7 @@ function App() {
                                         ? "Waiting for provider capacity before execution resumes."
                                         : child.summary}
                                     </p>
-                                  </div>
+                                  </button>
                                 ))}
                             </div>
                           ) : null}
@@ -878,6 +1305,51 @@ function DecisionCard({ decision }: { decision: DecisionRecord }) {
       <p className="stack-copy">{decision.rationale}</p>
     </div>
   );
+}
+
+function getChangedFilesForArtifact(artifact: ArtifactRecord): string[] {
+  if (artifact.filePatches?.length) {
+    return artifact.filePatches.map((patch) => patch.path);
+  }
+
+  if (artifact.type !== "diff") {
+    return [];
+  }
+
+  return [
+    "src/checkout/session.ts",
+    "src/auth/recover.ts",
+    "test/auth-redirect.spec.ts",
+  ];
+}
+
+function getFilePatchesForArtifact(artifact: ArtifactRecord): Array<{
+  path: string;
+  summary?: string;
+  patch: string;
+}> {
+  if (artifact.filePatches?.length) {
+    return artifact.filePatches;
+  }
+
+  if (artifact.type !== "diff") {
+    return [];
+  }
+
+  return [
+    {
+      path: "src/generated/fallback.ts",
+      summary: artifact.preview,
+      patch: buildFallbackPatch(artifact),
+    },
+  ];
+}
+
+function buildFallbackPatch(artifact: ArtifactRecord): string {
+  return `diff --git a/src/generated/fallback.ts b/src/generated/fallback.ts
+@@
+-// pending patch
++// ${artifact.preview}`;
 }
 
 export default App;

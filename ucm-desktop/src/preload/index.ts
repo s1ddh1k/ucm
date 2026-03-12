@@ -19,6 +19,7 @@ const api: UcmDesktopApi = {
   run: {
     getActive: () => ipcRenderer.invoke("run:get-active"),
     listForActiveMission: () => ipcRenderer.invoke("run:list-for-active-mission"),
+    setActive: (input) => ipcRenderer.invoke("run:set-active", input),
     autopilotStep: () => ipcRenderer.invoke("run:autopilot-step"),
     autopilotBurst: (input) => ipcRenderer.invoke("run:autopilot-burst", input),
     steeringSubmit: (input) => ipcRenderer.invoke("run:steering-submit", input),

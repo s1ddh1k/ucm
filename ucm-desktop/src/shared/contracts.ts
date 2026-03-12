@@ -104,6 +104,11 @@ export type ArtifactRecord = {
   type: "diff" | "report" | "test_result" | "handoff";
   title: string;
   preview: string;
+  filePatches?: Array<{
+    path: string;
+    summary?: string;
+    patch: string;
+  }>;
 };
 
 export type BudgetClass = "light" | "standard" | "heavy";
@@ -254,6 +259,7 @@ export type UcmDesktopApi = {
   run: {
     getActive: () => Promise<RunDetail | null>;
     listForActiveMission: () => Promise<RunDetail[]>;
+    setActive: (input: { runId: string }) => Promise<RunDetail | null>;
     autopilotStep: () => Promise<RunAutopilotResult>;
     autopilotBurst: (input?: { maxSteps?: number }) => Promise<RunAutopilotBurstResult>;
     steeringSubmit: (input: { runId: string; text: string }) => Promise<RunDetail | null>;

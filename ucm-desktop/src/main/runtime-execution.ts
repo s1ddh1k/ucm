@@ -186,6 +186,16 @@ export function completeAgentRunInState(
               ? "Provider builder diff note"
               : "Mock builder diff",
           preview: input.summary,
+          filePatches: [
+            {
+              path: "src/generated/provider-run.ts",
+              summary: "Generated implementation patch surface",
+              patch: `diff --git a/src/generated/provider-run.ts b/src/generated/provider-run.ts
+@@
+-// pending implementation output
++// ${input.summary}`,
+            },
+          ],
         }
       : {
           id: `art-verifier-${Date.now()}`,

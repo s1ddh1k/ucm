@@ -295,6 +295,36 @@ const seedState: RuntimeState = {
             type: "diff",
             title: "Partial auth fallback diff",
             preview: "checkout/session.ts and auth/recover.ts modified",
+            filePatches: [
+              {
+                path: "src/checkout/session.ts",
+                summary: "Fallback fixture resolution now flows through a dedicated helper.",
+                patch: `diff --git a/src/checkout/session.ts b/src/checkout/session.ts
+@@
+-const fixturePath = "/fixtures/session-restore.json";
++const fixturePath = resolveCheckoutFixture();
++
++function resolveCheckoutFixture() {
++  return process.env.CHECKOUT_FIXTURE_PATH ?? "/fixtures/checkout-session-restore.json";
++}`,
+              },
+              {
+                path: "src/auth/recover.ts",
+                summary: "Checkout recovery now uses the narrower recovery path.",
+                patch: `diff --git a/src/auth/recover.ts b/src/auth/recover.ts
+@@
+-return refreshSession(token);
++return recoverCheckoutSession(token);`,
+              },
+              {
+                path: "test/auth-redirect.spec.ts",
+                summary: "Regression spec now points at the checkout-specific fixture.",
+                patch: `diff --git a/test/auth-redirect.spec.ts b/test/auth-redirect.spec.ts
+@@
+-const fixture = loadFixture("/fixtures/session-restore.json");
++const fixture = loadFixture(resolveCheckoutFixture());`,
+              },
+            ],
           },
           {
             id: "art-2",
@@ -343,6 +373,73 @@ const seedState: RuntimeState = {
           },
         ],
       },
+      {
+        id: "r-1-verify",
+        missionId: "m-1",
+        agentId: "a-verifier",
+        title: "Verify Patch checkout auth regression",
+        status: "queued",
+        summary:
+          "Verifier follow-up is queued until the claude window is free again.",
+        budgetClass: "standard",
+        providerPreference: "claude",
+        terminalSessionId: undefined,
+        terminalProvider: undefined,
+        activeSurface: "artifacts",
+        terminalPreview: [],
+        origin: {
+          parentRunId: "r-1",
+          sourceEventId: "ev-1",
+          sourceEventKind: "artifact_created",
+          schedulerRuleId: "verification_from_diff_artifact",
+          spawnMode: "execute",
+          budgetClass: "standard",
+        },
+        timeline: [
+          {
+            id: "tl-r-1-verify-1",
+            kind: "started",
+            summary: "Verification follow-up was created from the latest diff artifact.",
+            timestampLabel: "7m ago",
+          },
+        ],
+        decisions: [
+          {
+            id: "d-r-1-verify-1",
+            category: "orchestration",
+            summary: "Queue verifier follow-up until the claude window reopens.",
+            rationale: "Provider capacity is temporarily saturated, so the follow-up should wait instead of blocking the root run.",
+          },
+        ],
+        artifacts: [
+          {
+            id: "art-r-1-verify-1",
+            type: "test_result",
+            title: "Queued verification packet",
+            preview: "Verification follow-up is staged and waiting for the provider window.",
+          },
+        ],
+        runEvents: [],
+        deliverables: [
+          {
+            id: "del-r-1-verify",
+            kind: "review_packet",
+            title: "Verification review packet",
+            latestRevisionId: "del-r-1-verify-r1",
+            revisions: [
+              {
+                id: "del-r-1-verify-r1",
+                revision: 1,
+                summary: "Queued verification follow-up packet created from the implementation diff.",
+                createdAtLabel: "7m ago",
+                basedOnArtifactIds: ["art-1", "art-r-1-verify-1"],
+                status: "active",
+              },
+            ],
+          },
+        ],
+        handoffs: [],
+      },
     ],
   },
   runEventsByRunId: {
@@ -364,6 +461,21 @@ const seedState: RuntimeState = {
         createdAtLabel: "3m ago",
         metadata: {
           requestedInput: "fixture_path",
+        },
+      },
+    ],
+    "r-1-verify": [
+      {
+        id: "ev-r-1-verify-1",
+        runId: "r-1-verify",
+        agentId: "a-verifier",
+        kind: "agent_status_changed",
+        summary: "Verifier follow-up is queued for the next claude window.",
+        createdAtLabel: "7m ago",
+        metadata: {
+          source: "provider_queue",
+          provider: "claude",
+          budgetClass: "standard",
         },
       },
     ],
@@ -393,6 +505,14 @@ const seedState: RuntimeState = {
         kind: "blocked",
         summary: "Builder-2 was parked behind a blocker after the fixture-path event arrived.",
         createdAtLabel: "3m ago",
+      },
+      {
+        id: "lc-4",
+        missionId: "m-1",
+        agentId: "a-verifier",
+        kind: "queued",
+        summary: "Verifier follow-up is queued until the claude provider window reopens.",
+        createdAtLabel: "7m ago",
       },
     ],
   },

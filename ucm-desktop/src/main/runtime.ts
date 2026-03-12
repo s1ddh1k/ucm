@@ -142,6 +142,28 @@ export class RuntimeService {
     );
   }
 
+  setActiveRun(input: { runId: string }): RunDetail | null {
+    const state = this.readState();
+    const located = findRun(state, input.runId);
+    if (!located) {
+      return this.getActiveRun();
+    }
+
+    state.activeMissionId = located.missionId;
+    state.activeRunId = located.run.id;
+    const workspaceId = state.workspaceIdByMissionId[located.missionId];
+    if (workspaceId) {
+      state.activeWorkspaceId = workspaceId;
+      state.workspaces = state.workspaces.map((workspace) => ({
+        ...workspace,
+        active: workspace.id === workspaceId,
+      }));
+    }
+
+    this.writeState(state);
+    return hydrateRunDetail(state, located.run);
+  }
+
   generateDeliverableRevision(input: {
     runId: string;
     deliverableId: string;
