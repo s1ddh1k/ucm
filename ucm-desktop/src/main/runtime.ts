@@ -23,6 +23,11 @@ import {
   cloneSeed,
 } from "./runtime-state";
 import {
+  createWorkspaceSummary,
+  discoverWorkspaceSummaries,
+  isWorkspacePathAvailable,
+} from "./workspace-discovery";
+import {
   deriveLifecycleTransitions,
   deriveMissionStatus,
 } from "./runtime-policy";
@@ -93,42 +98,130 @@ export class RuntimeService {
         }),
         this.onStateChange,
       );
+
+    const normalizedState = this.normalizeState(this.store.read());
+    this.store.write(normalizedState);
   }
 
   private readState(): RuntimeState {
-    return this.store.read();
+    return this.normalizeState(this.store.read());
   }
 
   private writeState(state: RuntimeState) {
-    this.store.write(state);
+    this.store.write(this.normalizeState(state));
   }
 
   listWorkspaces(): WorkspaceSummary[] {
     return this.readState().workspaces;
   }
 
+  addWorkspace(input: { rootPath: string }): WorkspaceSummary[] {
+    const normalizedRootPath = path.resolve(input.rootPath);
+    if (!isWorkspacePathAvailable(normalizedRootPath)) {
+      return this.readState().workspaces;
+    }
+
+    const state = this.readState();
+    const nextWorkspace = createWorkspaceSummary(normalizedRootPath);
+    const workspaceByPath = new Map(
+      state.workspaces.map((workspace) => [workspace.rootPath, workspace]),
+    );
+    workspaceByPath.set(normalizedRootPath, nextWorkspace);
+
+    state.workspaces = [...workspaceByPath.values()];
+    state.activeWorkspaceId = nextWorkspace.id;
+    state.workspaces = state.workspaces.map((workspace) => ({
+      ...workspace,
+      active: workspace.id === nextWorkspace.id,
+    }));
+
+    const workspaceMissions = state.missions.filter(
+      (mission) => state.workspaceIdByMissionId[mission.id] === nextWorkspace.id,
+    );
+    state.activeMissionId = workspaceMissions[0]?.id ?? "";
+    state.activeRunId = state.activeMissionId
+      ? (state.runsByMissionId[state.activeMissionId] ?? [])[0]?.id ?? ""
+      : "";
+
+    this.writeState(state);
+    return this.readState().workspaces;
+  }
+
   listMissions(): MissionSnapshot[] {
-    return this.readState().missions;
+    const state = this.readState();
+    return state.missions.filter(
+      (mission) =>
+        state.workspaceIdByMissionId[mission.id] === state.activeWorkspaceId,
+    );
+  }
+
+  setActiveWorkspace(input: { workspaceId: string }): WorkspaceSummary[] {
+    const state = this.readState();
+    const targetWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === input.workspaceId,
+    );
+    if (!targetWorkspace) {
+      return state.workspaces;
+    }
+
+    state.activeWorkspaceId = targetWorkspace.id;
+    state.workspaces = state.workspaces.map((workspace) => ({
+      ...workspace,
+      active: workspace.id === targetWorkspace.id,
+    }));
+
+    const workspaceMissions = state.missions.filter(
+      (mission) => state.workspaceIdByMissionId[mission.id] === targetWorkspace.id,
+    );
+    const nextMission =
+      workspaceMissions.find((mission) => mission.id === state.activeMissionId) ??
+      workspaceMissions[0] ??
+      null;
+
+    state.activeMissionId = nextMission?.id ?? "";
+    const nextRuns = nextMission ? state.runsByMissionId[nextMission.id] ?? [] : [];
+    state.activeRunId =
+      nextRuns.find((run) => run.id === state.activeRunId)?.id ??
+      nextRuns[0]?.id ??
+      "";
+
+    this.writeState(state);
+    return state.workspaces;
   }
 
   getActiveMission(): MissionDetail | null {
     const state = this.readState();
-    return state.missionDetailsById[state.activeMissionId] ?? null;
+    return state.activeMissionId
+      ? (state.missionDetailsById[state.activeMissionId] ?? null)
+      : null;
   }
 
   createMission(input: {
     workspaceId: string;
     title: string;
     goal: string;
+    command?: string;
   }): MissionSnapshot {
     const state = this.readState();
     const mission = createMissionInState(state, input);
     this.writeState(state);
+    const builderId = `a-builder-${mission.id}`;
+    const runId = `r-${mission.id}`;
+    if (input.command?.trim()) {
+      this.startAgentExecution({
+        missionId: mission.id,
+        runId,
+        agentId: builderId,
+      });
+    }
     return mission;
   }
 
   getActiveRun(): RunDetail | null {
     const state = this.readState();
+    if (!state.activeMissionId) {
+      return null;
+    }
     const runs = state.runsByMissionId[state.activeMissionId] ?? [];
     const run =
       runs.find((item) => item.id === state.activeRunId) ?? runs[0] ?? null;
@@ -137,6 +230,9 @@ export class RuntimeService {
 
   listRunsForActiveMission(): RunDetail[] {
     const state = this.readState();
+    if (!state.activeMissionId) {
+      return [];
+    }
     return (state.runsByMissionId[state.activeMissionId] ?? []).map((run) =>
       hydrateRunDetail(state, run),
     );
@@ -162,6 +258,119 @@ export class RuntimeService {
 
     this.writeState(state);
     return hydrateRunDetail(state, located.run);
+  }
+
+  retryRun(input: { runId: string }): RunDetail | null {
+    const state = this.readState();
+    const located = findRun(state, input.runId);
+    if (!located?.run.workspaceCommand?.trim()) {
+      return this.getActiveRun();
+    }
+
+    const sourceRun = located.run;
+    const missionId = located.missionId;
+    const workspaceId = state.workspaceIdByMissionId[missionId];
+    const nextRunId = `r-${missionId}-retry-${Date.now()}`;
+    const latestSourceEvent = (state.runEventsByRunId[sourceRun.id] ?? []).at(-1);
+    const retryEventId = `ev-retry-${Date.now()}`;
+    const builderAgent =
+      (state.agentsByMissionId[missionId] ?? []).find(
+        (agent) => agent.role === "implementation",
+      ) ?? null;
+    if (!builderAgent) {
+      return this.getActiveRun();
+    }
+
+    const nextRun: RunDetail = {
+      ...sourceRun,
+      id: nextRunId,
+      agentId: builderAgent.id,
+      title: sourceRun.title.includes("(retry)")
+        ? sourceRun.title
+        : `${sourceRun.title} (retry)`,
+      status: "running",
+      summary: `Re-running "${sourceRun.workspaceCommand}" in the selected workspace.`,
+      terminalSessionId: undefined,
+      terminalProvider: undefined,
+      terminalPreview: [
+        `$ ${sourceRun.workspaceCommand}`,
+        "Manual re-run started from the desktop app.",
+      ],
+      origin: {
+        parentRunId: sourceRun.id,
+        sourceEventId: latestSourceEvent?.id ?? retryEventId,
+        sourceEventKind: latestSourceEvent?.kind ?? "completed",
+        schedulerRuleId: "manual_retry",
+        spawnMode: "execute",
+        budgetClass:
+          sourceRun.budgetClass ?? sourceRun.origin?.budgetClass ?? "standard",
+      },
+      timeline: [
+        {
+          id: `tl-start-${nextRunId}`,
+          kind: "started",
+          summary: "Manual re-run was started from the desktop app.",
+          timestampLabel: "just now",
+        },
+      ],
+      decisions: [
+        {
+          id: `d-retry-${nextRunId}`,
+          category: "orchestration",
+          summary: "Restart the same workspace command as a fresh run.",
+          rationale:
+            "Keep the previous run intact and capture the retry as a separate execution record.",
+        },
+      ],
+      artifacts: [],
+      runEvents: [],
+      deliverables: [],
+      handoffs: [],
+    };
+
+    state.runsByMissionId[missionId] = [
+      ...(state.runsByMissionId[missionId] ?? []),
+      nextRun,
+    ];
+    state.runEventsByRunId[nextRunId] = [
+      {
+        id: retryEventId,
+        runId: nextRunId,
+        agentId: builderAgent.id,
+        kind: "agent_status_changed",
+        summary: "Manual re-run requested from the desktop app.",
+        createdAtLabel: "just now",
+        metadata: {
+          source: "manual_retry",
+          command: sourceRun.workspaceCommand ?? "",
+        },
+      },
+    ];
+    state.activeMissionId = missionId;
+    state.activeRunId = nextRunId;
+    if (workspaceId) {
+      state.activeWorkspaceId = workspaceId;
+      state.workspaces = state.workspaces.map((workspace) => ({
+        ...workspace,
+        active: workspace.id === workspaceId,
+      }));
+    }
+    updateMissionStatusInState(state, missionId, "running");
+    setAgentStatus(state, missionId, builderAgent.id, "running");
+    appendLifecycleEvent(state, missionId, {
+      agentId: builderAgent.id,
+      kind: "resumed",
+      summary: "Builder restarted the workspace command from the desktop app.",
+      createdAtLabel: "just now",
+    });
+
+    this.writeState(state);
+    this.startAgentExecution({
+      missionId,
+      runId: nextRunId,
+      agentId: builderAgent.id,
+    });
+    return this.getActiveRun();
   }
 
   generateDeliverableRevision(input: {
@@ -348,10 +557,18 @@ export class RuntimeService {
     const workspace =
       state.workspaces.find((item) => item.id === state.activeWorkspaceId) ??
       state.workspaces[0];
+    const workspaceMissionIds = new Set(
+      Object.entries(state.workspaceIdByMissionId)
+        .filter(([, workspaceId]) => workspaceId === workspace?.id)
+        .map(([missionId]) => missionId),
+    );
+    const workspaceMissions = state.missions.filter((mission) =>
+      workspaceMissionIds.has(mission.id),
+    );
     const mission =
-      state.missions.find((item) => item.id === state.activeMissionId) ??
-      state.missions[0];
-    const agents = state.agentsByMissionId[mission?.id ?? ""] ?? [];
+      workspaceMissions.find((item) => item.id === state.activeMissionId) ??
+      workspaceMissions[0];
+    const agents = mission ? state.agentsByMissionId[mission.id] ?? [] : [];
 
     return {
       workspaceName: workspace?.name ?? "No workspace",
@@ -359,14 +576,14 @@ export class RuntimeService {
       budgetLabel: this.formatBudgetLabel(state, mission?.id),
       budgetBuckets: this.listBudgetBuckets(state, mission?.id),
       providerWindows: this.listProviderWindows(state),
-      activeAgents: agents.length,
+      activeAgents: agents.filter((agent) => agent.status !== "idle").length,
       blockedAgents: agents.filter((agent) => agent.status === "blocked").length,
       reviewCount: agents.filter((agent) => agent.status === "needs_review").length,
       agents,
       lifecycleEvents: (
         state.lifecycleEventsByMissionId[mission?.id ?? ""] ?? []
       ).slice(-6).reverse(),
-      missions: state.missions.slice(0, 6),
+      missions: workspaceMissions.slice(0, 6),
     };
   }
 
@@ -398,7 +615,14 @@ export class RuntimeService {
   }
 
   private listProviderWindows(state: RuntimeState): ProviderWindowSummary[] {
-    const runs = Object.values(state.runsByMissionId).flat();
+    const workspaceMissionIds = new Set(
+      Object.entries(state.workspaceIdByMissionId)
+        .filter(([, workspaceId]) => workspaceId === state.activeWorkspaceId)
+        .map(([missionId]) => missionId),
+    );
+    const runs = Object.entries(state.runsByMissionId)
+      .filter(([missionId]) => workspaceMissionIds.has(missionId))
+      .flatMap(([, missionRuns]) => missionRuns);
     return (["claude", "codex"] as const).map((provider) => {
       const activeRuns = runs.filter(
         (run) => run.providerPreference === provider && run.status === "running",
@@ -419,6 +643,74 @@ export class RuntimeService {
               : "now",
       };
     });
+  }
+
+  private normalizeState(state: RuntimeState): RuntimeState {
+    const discoveredWorkspaces = discoverWorkspaceSummaries();
+    const validStoredWorkspaces = state.workspaces.filter((workspace) =>
+      isWorkspacePathAvailable(workspace.rootPath),
+    );
+    const workspaceByPath = new Map<string, WorkspaceSummary>();
+
+    for (const workspace of [...discoveredWorkspaces, ...validStoredWorkspaces]) {
+      const normalizedRootPath = path.resolve(workspace.rootPath);
+      workspaceByPath.set(normalizedRootPath, {
+        ...workspace,
+        rootPath: normalizedRootPath,
+      });
+    }
+
+    if (workspaceByPath.size === 0) {
+      const fallbackWorkspace = createWorkspaceSummary(process.cwd(), true);
+      workspaceByPath.set(fallbackWorkspace.rootPath, fallbackWorkspace);
+    }
+
+    const workspaces = [...workspaceByPath.values()];
+    const activeWorkspaceId = workspaces.some(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    )
+      ? state.activeWorkspaceId
+      : workspaces[0]?.id ?? "";
+    const normalizedWorkspaceIds = new Set(
+      workspaces.map((workspace) => workspace.id),
+    );
+    const workspaceIdByMissionId = { ...state.workspaceIdByMissionId };
+
+    for (const mission of state.missions) {
+      const workspaceId = workspaceIdByMissionId[mission.id];
+      if (!workspaceId || !normalizedWorkspaceIds.has(workspaceId)) {
+        workspaceIdByMissionId[mission.id] = activeWorkspaceId;
+      }
+    }
+
+    const activeWorkspaceMissions = state.missions.filter(
+      (mission) => workspaceIdByMissionId[mission.id] === activeWorkspaceId,
+    );
+    const activeMissionId = activeWorkspaceMissions.some(
+      (mission) => mission.id === state.activeMissionId,
+    )
+      ? state.activeMissionId
+      : activeWorkspaceMissions[0]?.id ?? "";
+    const activeMissionRuns = activeMissionId
+      ? state.runsByMissionId[activeMissionId] ?? []
+      : [];
+    const activeRunId = activeMissionRuns.some(
+      (run) => run.id === state.activeRunId,
+    )
+      ? state.activeRunId
+      : activeMissionRuns[0]?.id ?? "";
+
+    return {
+      ...state,
+      activeWorkspaceId,
+      activeMissionId,
+      activeRunId,
+      workspaceIdByMissionId,
+      workspaces: workspaces.map((workspace) => ({
+        ...workspace,
+        active: workspace.id === activeWorkspaceId,
+      })),
+    };
   }
 
   private resumeQueuedRuns(state: RuntimeState): boolean {
@@ -663,9 +955,11 @@ export class RuntimeService {
     runId: string;
     agentId: string;
     summary: string;
-    source: "provider" | "mock";
+    source: "provider" | "mock" | "local";
     outcome: "completed" | "blocked" | "needs_review";
     stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
   }) {
     const state = this.readState();
     const completed = completeAgentRunInState(state, input);
@@ -674,6 +968,33 @@ export class RuntimeService {
     }
     this.writeState(state);
     this.onStateChange?.("run_completed");
+  }
+
+  private startAgentExecution(input: {
+    missionId: string;
+    runId: string;
+    agentId: string;
+  }) {
+    const state = this.readState();
+    maybeStartAgentExecutionInState({
+      state,
+      missionId: input.missionId,
+      runId: input.runId,
+      agentId: input.agentId,
+      executionService: this.executionService,
+      callbacks: {
+        onSessionStart: (nextMissionId, nextRunId, session) => {
+          this.recordTerminalSession(nextMissionId, nextRunId, session);
+        },
+        onTerminalData: (nextMissionId, nextRunId, chunk) => {
+          this.appendTerminalPreview(nextMissionId, nextRunId, chunk);
+        },
+        onComplete: (result) => {
+          this.completeAgentRun(result);
+        },
+      },
+    });
+    this.writeState(state);
   }
 
   private recordTerminalSession(

@@ -12,9 +12,11 @@ export type AgentRunCompletion = {
   runId: string;
   agentId: string;
   summary: string;
-  source: "provider" | "mock";
+  source: "provider" | "mock" | "local";
   outcome: AgentRunOutcome;
   stderr?: string;
+  stdout?: string;
+  generatedPatch?: string;
 };
 
 export type SpawnAgentRunInput = {
@@ -26,10 +28,11 @@ export type SpawnAgentRunInput = {
   providerPreference?: ProviderName;
   executionBudgetLimit?: number;
   workspacePath?: string;
+  workspaceCommand?: string;
   steeringContext?: string;
   onSessionStart?: (session: {
     sessionId: string;
-    provider: ProviderName;
+    provider: Exclude<ProviderName, "local">;
   }) => void;
   onTerminalData?: (chunk: string) => void;
   onComplete: (result: AgentRunCompletion) => void;

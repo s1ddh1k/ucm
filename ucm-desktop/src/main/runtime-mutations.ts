@@ -20,12 +20,15 @@ export function createMissionInState(
     workspaceId: string;
     title: string;
     goal: string;
+    command?: string;
   },
 ): MissionSnapshot {
+  const normalizedCommand = input.command?.trim() || "";
   const mission: MissionSnapshot = {
     id: `m-${Date.now()}`,
     title: input.title.trim(),
     goal: input.goal.trim(),
+    command: normalizedCommand || undefined,
     status: "queued",
   };
 
@@ -47,6 +50,7 @@ export function createMissionInState(
     title: mission.title,
     status: mission.status,
     goal: mission.goal ?? "",
+    command: normalizedCommand || undefined,
     successCriteria: [
       "Mission has a clear execution path.",
       "Team has enough context to begin.",
@@ -81,15 +85,19 @@ export function createMissionInState(
       id: `a-conductor-${mission.id}`,
       name: "Conductor",
       role: "coordination",
-      status: "running",
-      objective: `Shape execution plan for ${mission.title}.`,
+      status: normalizedCommand ? "idle" : "running",
+      objective: normalizedCommand
+        ? `Coordinate local workspace command for ${mission.title}.`
+        : `Shape execution plan for ${mission.title}.`,
     },
     {
       id: `a-builder-${mission.id}`,
       name: "Builder",
       role: "implementation",
-      status: "idle",
-      objective: `Prepare implementation path for ${mission.title}.`,
+      status: normalizedCommand ? "running" : "idle",
+      objective: normalizedCommand
+        ? `Run "${normalizedCommand}" in the selected workspace.`
+        : `Prepare implementation path for ${mission.title}.`,
     },
     {
       id: `a-verifier-${mission.id}`,
@@ -108,13 +116,16 @@ export function createMissionInState(
       status: "running",
       summary: "Conductor is shaping the first execution plan for the new mission.",
       budgetClass: "standard",
-      providerPreference: "claude",
+      providerPreference: normalizedCommand ? undefined : "claude",
+      workspaceCommand: normalizedCommand || undefined,
       terminalSessionId: undefined,
       terminalProvider: undefined,
       activeSurface: "artifacts",
       terminalPreview: [
-        "$ collect-context",
-        "Reviewing workspace history and recent mission notes...",
+        normalizedCommand ? `$ ${normalizedCommand}` : "$ collect-context",
+        normalizedCommand
+          ? "Local workspace command is ready to run."
+          : "Reviewing workspace history and recent mission notes...",
       ],
       timeline: [
         {
@@ -177,7 +188,7 @@ export function createMissionInState(
       runId: `r-${mission.id}`,
       agentId: `a-conductor-${mission.id}`,
       kind: "artifact_created",
-      summary: "Mission bootstrap artifacts are ready for the first conductor pass.",
+          summary: "Mission bootstrap artifacts are ready for the first conductor pass.",
       createdAtLabel: "just now",
     },
   ];
@@ -186,16 +197,20 @@ export function createMissionInState(
       id: `lc-conductor-${mission.id}`,
       missionId: mission.id,
       agentId: `a-conductor-${mission.id}`,
-      kind: "spawned",
-      summary: "Conductor started automatically to scope the new mission.",
+      kind: normalizedCommand ? "parked" : "spawned",
+      summary: normalizedCommand
+        ? "Conductor is parked while the first local workspace command runs."
+        : "Conductor started automatically to scope the new mission.",
       createdAtLabel: "just now",
     },
     {
       id: `lc-builder-${mission.id}`,
       missionId: mission.id,
       agentId: `a-builder-${mission.id}`,
-      kind: "parked",
-      summary: "Builder is parked until the first executable plan is ready.",
+      kind: normalizedCommand ? "spawned" : "parked",
+      summary: normalizedCommand
+        ? "Builder started immediately with the supplied workspace command."
+        : "Builder is parked until the first executable plan is ready.",
       createdAtLabel: "just now",
     },
     {

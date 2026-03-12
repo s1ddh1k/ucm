@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { ExecutionService } from "../dist-electron/main/execution-service.js";
 
@@ -246,4 +250,56 @@ test("execution service blocks provider spawn when the budget bucket is saturate
   assert.equal(firstStarted, true);
   assert.equal(secondStarted, false);
   assert.equal(pendingSessions.length, 1);
+});
+
+test("execution service can run a local workspace command and capture git diff", async () => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-desktop-local-"));
+  spawnSync("git", ["init"], { cwd: workspacePath, encoding: "utf8" });
+  fs.writeFileSync(path.join(workspacePath, "note.txt"), "before\n", "utf8");
+  spawnSync("git", ["add", "."], { cwd: workspacePath, encoding: "utf8" });
+  spawnSync("git", ["commit", "-m", "init"], {
+    cwd: workspacePath,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+
+  const service = new ExecutionService({
+    providerAdapters: createProviderRegistry(),
+    terminalSessionService: {
+      startSession() {
+        throw new Error("local commands should not create provider terminal sessions");
+      },
+      killSession() {},
+      writeToSession() {
+        return false;
+      },
+      resizeSession() {
+        return false;
+      },
+    },
+  });
+
+  const result = await waitForCompletion((onComplete) => {
+    service.spawnAgentRun({
+      missionId: "m-local",
+      runId: "r-local",
+      agent: createAgent(),
+      objective: "Run local project command.",
+      budgetClass: "standard",
+      workspacePath,
+      workspaceCommand: "printf 'after\\n' > note.txt && printf 'workspace run complete\\n'",
+      onComplete,
+    });
+  });
+
+  assert.equal(result.source, "local");
+  assert.equal(result.outcome, "completed");
+  assert.match(result.summary, /workspace run complete/);
+  assert.match(result.generatedPatch || "", /diff --git a\/note.txt b\/note.txt/);
 });

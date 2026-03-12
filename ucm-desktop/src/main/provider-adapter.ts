@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-export type ProviderName = "claude" | "codex";
+export type ProviderName = "claude" | "codex" | "local";
 
 export type ProviderExecutionInput = {
   prompt: string;

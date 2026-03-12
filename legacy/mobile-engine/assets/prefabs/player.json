@@ -1,0 +1,9 @@
+{
+  "name": "Runner",
+  "radius": 18,
+  "sprite": "player",
+  "speed": 250,
+  "dashSpeed": 620,
+  "dashCooldown": 0.55,
+  "maxHealth": 5
+}

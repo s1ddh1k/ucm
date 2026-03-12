@@ -167,6 +167,8 @@ const messages = {
     },
     actions: {
       createMission: "미션 생성",
+      addWorkspace: "워크스페이스 추가",
+      retryRun: "다시 실행",
       submitSteering: "입력 보내기",
       approveLatest: "최신본 승인",
       stopSession: "세션 중지",
@@ -249,6 +251,8 @@ const messages = {
     },
     actions: {
       createMission: "Create Mission",
+      addWorkspace: "Add Workspace",
+      retryRun: "Run Again",
       submitSteering: "Send Input",
       approveLatest: "Approve Latest",
       stopSession: "Stop Session",
@@ -275,6 +279,7 @@ function App() {
     useState<AppScreen>("monitor");
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
+  const [command, setCommand] = useState("");
   const [steeringInput, setSteeringInput] = useState("");
   const [selectedPatchPath, setSelectedPatchPath] = useState<string | null>(null);
   const [executePanel, setExecutePanel] = useState<ExecutePanel>("patch");
@@ -360,11 +365,27 @@ function App() {
       workspaceId: activeWorkspace.id,
       title,
       goal,
+      command,
     });
     setTitle("");
     setGoal("");
+    setCommand("");
     setActiveScreen("monitor");
     void window.ucm.app.getVersion().then(setVersion);
+    await refresh();
+  }
+
+  async function handleSelectWorkspace(workspaceId: string) {
+    await window.ucm.workspace.setActive({ workspaceId });
+    await refresh();
+  }
+
+  async function handleAddWorkspace() {
+    const selectedPath = await window.ucm.workspace.pickDirectory();
+    if (!selectedPath) {
+      return;
+    }
+    await window.ucm.workspace.add({ rootPath: selectedPath });
     await refresh();
   }
 
@@ -405,9 +426,16 @@ function App() {
     await refresh();
   }
 
+  async function handleRetryRun(runId: string) {
+    await window.ucm.run.retry({ runId });
+    setActiveScreen("execute");
+    await refresh();
+  }
+
   const current = messages[locale].screen[activeScreen];
   const navCopy = messages[locale].nav;
   const ui = messages[locale];
+  const activeWorkspace = workspaces.find((workspace) => workspace.active) ?? null;
   const selectedMissionTitle = activeMission?.title ?? snapshot?.missionName ?? (locale === "ko" ? "선택된 미션 없음" : "No mission");
   const recentRunEvents = [...(activeRun?.runEvents ?? [])].reverse();
   const latestEventByAgentId = new Map(
@@ -540,16 +568,40 @@ function App() {
           </div>
 
           <div className="sidebar-card">
-            <p className="section-label">{ui.common.workspaces}</p>
+            <div className="detail-header">
+              <p className="section-label">{ui.common.workspaces}</p>
+              <button className="secondary-button" onClick={() => {
+                void handleAddWorkspace();
+              }} type="button">
+                {ui.actions.addWorkspace}
+              </button>
+            </div>
             <div className="stack-list">
               {workspaces.map((workspace) => (
-                <div className="stack-card" key={workspace.id}>
+                <button
+                  className="stack-card"
+                  key={workspace.id}
+                  onClick={() => {
+                    void handleSelectWorkspace(workspace.id);
+                  }}
+                  type="button"
+                >
                   <strong>{workspace.name}</strong>
                   <span className={`status ${workspace.active ? "status-running" : "status-queued"}`}>
                     {workspace.active ? ui.common.active : ui.common.available}
                   </span>
-                </div>
+                </button>
               ))}
+              {workspaces.length === 0 ? (
+                <div className="stack-card">
+                  <strong>{locale === "ko" ? "워크스페이스가 없습니다." : "No workspaces yet."}</strong>
+                  <p className="stack-copy">
+                    {locale === "ko"
+                      ? "로컬 프로젝트 폴더를 추가하면 여기서 바로 선택할 수 있습니다."
+                      : "Add a local project folder to select it here."}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </aside>
@@ -593,6 +645,18 @@ function App() {
                 <div className="launcher-grid">
                   <form className="mission-form" onSubmit={handleCreateMission}>
                     <label>
+                      {locale === "ko" ? "현재 워크스페이스" : "Current workspace"}
+                      <input
+                        disabled
+                        value={
+                          activeWorkspace?.rootPath ??
+                          (locale === "ko"
+                            ? "먼저 워크스페이스를 추가하세요."
+                            : "Add a workspace first.")
+                        }
+                      />
+                    </label>
+                    <label>
                       {locale === "ko" ? "미션 제목" : "Mission title"}
                       <input
                         onChange={(event) => setTitle(event.target.value)}
@@ -609,7 +673,19 @@ function App() {
                         value={goal}
                       />
                     </label>
-                    <button className="primary-button" type="submit">
+                    <label>
+                      {locale === "ko" ? "작업 명령" : "Workspace command"}
+                      <input
+                        onChange={(event) => setCommand(event.target.value)}
+                        placeholder={
+                          locale === "ko"
+                            ? "예: npm test 또는 npm run build"
+                            : "Example: npm test or npm run build"
+                        }
+                        value={command}
+                      />
+                    </label>
+                    <button className="primary-button" disabled={!activeWorkspace} type="submit">
                       {ui.actions.createMission}
                     </button>
                   </form>
@@ -622,6 +698,20 @@ function App() {
                           {formatStatusLabel(mission.status, locale)}
                         </span>
                         {mission.goal ? <p className="stack-copy">{mission.goal}</p> : null}
+                        {mission.command ? <p className="stack-copy">$ {mission.command}</p> : null}
+                        {mission.command && mission.id === activeMission?.id && activeRun?.workspaceCommand ? (
+                          <div className="button-row">
+                            <button
+                              className="secondary-button"
+                              onClick={() => {
+                                void handleRetryRun(activeRun.id);
+                              }}
+                              type="button"
+                            >
+                              {ui.actions.retryRun}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -677,6 +767,7 @@ function App() {
                   diffArtifact={diffArtifact}
                   diffFilePatches={diffFilePatches}
                   executePanel={executePanel}
+                  handleRetryRun={handleRetryRun}
                   handleSelectRun={handleSelectRun}
                   handleSteeringSubmit={handleSteeringSubmit}
                   handleTerminalStop={handleTerminalStop}
@@ -731,17 +822,41 @@ function App() {
                     </div>
                   </section>
                   <section className="detail-block">
-                    <p className="section-label">{ui.common.workspaces}</p>
+                    <div className="detail-header">
+                      <p className="section-label">{ui.common.workspaces}</p>
+                      <button className="secondary-button" onClick={() => {
+                        void handleAddWorkspace();
+                      }} type="button">
+                        {ui.actions.addWorkspace}
+                      </button>
+                    </div>
                     <div className="stack-list">
                       {workspaces.map((workspace) => (
-                        <div className="stack-card" key={workspace.id}>
+                        <button
+                          className="stack-card"
+                          key={workspace.id}
+                          onClick={() => {
+                            void handleSelectWorkspace(workspace.id);
+                          }}
+                          type="button"
+                        >
                           <strong>{workspace.name}</strong>
                           <span className={`status ${workspace.active ? "status-running" : "status-queued"}`}>
                             {workspace.active ? ui.common.active : ui.common.available}
                           </span>
                           <p className="stack-copy">{workspace.rootPath}</p>
-                        </div>
+                        </button>
                       ))}
+                      {workspaces.length === 0 ? (
+                        <div className="stack-card">
+                          <strong>{locale === "ko" ? "등록된 워크스페이스가 없습니다." : "No registered workspaces."}</strong>
+                          <p className="stack-copy">
+                            {locale === "ko"
+                              ? "프로젝트 폴더를 추가하면 선택 목록에 반영됩니다."
+                              : "Added project folders appear in the workspace list."}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   </section>
                 </div>
@@ -877,6 +992,7 @@ function ExecuteScreen({
   diffArtifact,
   diffFilePatches,
   executePanel,
+  handleRetryRun,
   handleSelectRun,
   handleSteeringSubmit,
   handleTerminalStop,
@@ -902,6 +1018,7 @@ function ExecuteScreen({
   diffArtifact: ArtifactRecord | null;
   diffFilePatches: Array<{ path: string; summary?: string; patch: string }>;
   executePanel: ExecutePanel;
+  handleRetryRun: (runId: string) => Promise<void>;
   handleSelectRun: (runId: string) => Promise<void>;
   handleSteeringSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   handleTerminalStop: () => Promise<void>;
@@ -915,6 +1032,19 @@ function ExecuteScreen({
   ui: UiMessages;
   onSteeringInputChange: (value: string) => void;
 }) {
+  if (!activeRun) {
+    return (
+      <div className="monitor-empty">
+        <strong>{locale === "ko" ? "선택된 실행이 없습니다." : "No run selected."}</strong>
+        <p>
+          {locale === "ko"
+            ? "모니터에서 실행을 선택하거나 홈에서 미션을 만들어 실행을 시작하세요."
+            : "Select a run from Monitor or create a mission from Home to start execution."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="workbench-grid">
       <div className="execute-command-bar">
@@ -943,6 +1073,20 @@ function ExecuteScreen({
           <p className="stack-copy">
             {activeRunBudgetLabel} • {activeProviderLabel}
           </p>
+          {activeRun.workspaceCommand ? (
+            <div className="button-row">
+              <button
+                className="secondary-button"
+                disabled={activeRun.status === "running"}
+                onClick={() => {
+                  void handleRetryRun(activeRun.id);
+                }}
+                type="button"
+              >
+                {ui.actions.retryRun}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="workbench-primary">
@@ -1344,6 +1488,19 @@ function ReviewScreen({
   testArtifacts: ArtifactRecord[];
   ui: UiMessages;
 }) {
+  if (!activeRun) {
+    return (
+      <div className="monitor-empty">
+        <strong>{locale === "ko" ? "검토할 실행이 없습니다." : "No run is ready for review."}</strong>
+        <p>
+          {locale === "ko"
+            ? "실행이 생성되고 결과물이 쌓이면 이 화면에서 검토할 수 있습니다."
+            : "This screen becomes useful once a run has artifacts and approval items."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="review-board">
       <section className="detail-block review-lead">
@@ -1567,6 +1724,13 @@ function MonitorScreen({
                 </div>
               </div>
             ))}
+            {visibleAgents.length === 0 ? (
+              <div className="monitor-empty-row">
+                {locale === "ko"
+                  ? "선택한 워크스페이스에 아직 에이전트가 없습니다."
+                  : "No agents are active in this workspace yet."}
+              </div>
+            ) : null}
             {hiddenAgentCount > 0 ? (
               <div className="monitor-summary-row">
                 {locale === "ko"
@@ -1600,6 +1764,13 @@ function MonitorScreen({
                 </div>
               </button>
             ))}
+            {rootRuns.length === 0 ? (
+              <div className="monitor-empty-row">
+                {locale === "ko"
+                  ? "선택한 워크스페이스에 아직 실행이 없습니다. 홈에서 미션을 만들면 여기 나타납니다."
+                  : "No runs yet for this workspace. Create a mission from Home to start one."}
+              </div>
+            ) : null}
           </div>
         </div>
 

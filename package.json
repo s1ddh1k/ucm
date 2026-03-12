@@ -1,70 +1,13 @@
 {
   "name": "ucm",
-  "version": "0.2.0",
-  "description": "UCM Forge — 소프트웨어 팩토리",
-  "bin": {
-    "ucm-dev": "./bin/ucm-dev.js",
-    "ucmd-dev": "./bin/ucmd-dev.js",
-    "rsa": "./bin/rsa.js",
-    "qna": "./bin/qna.js",
-    "spec": "./bin/spec.js",
-    "prl": "./bin/prl.js",
-    "req": "./bin/req.js",
-    "ucmd": "./bin/ucmd.js",
-    "ucm-watchdog": "./bin/ucm-watchdog.js",
-    "ucm": "./bin/ucm.js",
-    "hm": "./bin/hm.js",
-    "hmd": "./bin/hmd.js"
-  },
-  "main": "./lib/core/llm.js",
-  "files": [
-    "bin/",
-    "lib/",
-    "web/dist/",
-    "templates/",
-    "skill/",
-    "scripts/",
-    "docs/",
-    "CHANGELOG.md"
-  ],
+  "version": "0.3.0",
+  "private": true,
+  "description": "UCM desktop-first workspace",
   "scripts": {
-    "test": "node test/core.test.js && node test/ucm.test.js && node test/hivemind.test.js && node test/integration.js && node test/browser.js",
-    "test:core": "node test/core.test.js",
-    "build:web": "cd web && npm run build",
-    "build:desktop": "cd ucm-desktop && npm run build",
-    "release:pack": "npm pack --dry-run",
-    "release:check": "node test/core.test.js && npm run build:web && npm run build:desktop && npm run release:pack",
-    "lint": "biome check .",
-    "lint:fix": "biome check --fix .",
-    "format": "biome format --write .",
-    "prepare": "node scripts/setup-git-hooks.js",
-    "postinstall": "node scripts/postinstall.js",
-    "install-skill": "node scripts/install-skill.js"
-  },
-  "author": "Jugwan Kim",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Nathan-L256/ucm.git"
-  },
-  "homepage": "https://github.com/Nathan-L256/ucm#readme",
-  "keywords": [
-    "memory",
-    "knowledge-base",
-    "zettelkasten",
-    "llm",
-    "claude",
-    "ai-assistant"
-  ],
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.6.2",
-    "node-pty": "^1.2.0-beta.11",
-    "ws": "^8.19.0"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.4"
+    "desktop:dev": "cd ucm-desktop && npm run dev",
+    "desktop:build": "cd ucm-desktop && npm run build",
+    "desktop:typecheck": "cd ucm-desktop && npm run typecheck",
+    "desktop:test:runtime": "cd ucm-desktop && npm run test:runtime",
+    "desktop:test:smoke": "cd ucm-desktop && npm run test:smoke"
   }
 }

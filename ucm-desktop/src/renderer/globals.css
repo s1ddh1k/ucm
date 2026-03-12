@@ -765,6 +765,16 @@ select:focus-visible {
   line-height: 1.35;
 }
 
+.monitor-empty-row {
+  padding: 8px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  border: 1px dashed var(--line-soft);
+  border-radius: 6px;
+  background: rgba(10, 16, 21, 0.7);
+}
+
 .monitor-row,
 .monitor-run-row {
   display: grid;

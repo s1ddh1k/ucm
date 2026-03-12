@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import type {
   NavigationItem,
   RuntimeUpdateEvent,
@@ -107,12 +107,24 @@ function registerIpc() {
   ipcMain.handle("app:get-version", () => app.getVersion());
   ipcMain.handle("navigation:list-screens", () => navigation);
   ipcMain.handle("workspace:list", () => runtime.listWorkspaces());
+  ipcMain.handle("workspace:set-active", (_, input) => runtime.setActiveWorkspace(input));
+  ipcMain.handle("workspace:add", (_, input) => runtime.addWorkspace(input));
+  ipcMain.handle("workspace:pick-directory", async () => {
+    const parentWindow =
+      BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result = await dialog.showOpenDialog(parentWindow, {
+      properties: ["openDirectory"],
+      title: "Select workspace folder",
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
   ipcMain.handle("mission:list", () => runtime.listMissions());
   ipcMain.handle("mission:get-active", () => runtime.getActiveMission());
   ipcMain.handle("mission:create", (_, input) => runtime.createMission(input));
   ipcMain.handle("run:get-active", () => runtime.getActiveRun());
   ipcMain.handle("run:list-for-active-mission", () => runtime.listRunsForActiveMission());
   ipcMain.handle("run:set-active", (_, input) => runtime.setActiveRun(input));
+  ipcMain.handle("run:retry", (_, input) => runtime.retryRun(input));
   ipcMain.handle("run:autopilot-step", () => runtime.autopilotStep());
   ipcMain.handle("run:autopilot-burst", (_, input) => runtime.autopilotBurst(input));
   ipcMain.handle("run:steering-submit", (_, input) => runtime.submitSteering(input));

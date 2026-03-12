@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import * as runtimeState from "../dist-electron/main/runtime-state.js";
 import * as runtimeMutations from "../dist-electron/main/runtime-mutations.js";
@@ -866,4 +869,106 @@ test("scheduler blocks follow-up creation when mission budget bucket is exhauste
   assert.ok(
     executionCalls.every((call) => call.agentId !== "a-verifier"),
   );
+});
+
+test("runtime service can add a real workspace path and switch into an empty state", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const runtime = new runtimeServiceModule.RuntimeService({ store });
+  const tempWorkspacePath = fs.mkdtempSync(
+    path.join(os.tmpdir(), "ucm-desktop-workspace-"),
+  );
+
+  const workspaces = runtime.addWorkspace({ rootPath: tempWorkspacePath });
+  const addedWorkspace = workspaces.find(
+    (workspace) => workspace.rootPath === tempWorkspacePath,
+  );
+
+  assert.ok(addedWorkspace);
+  assert.equal(addedWorkspace.active, true);
+  assert.equal(runtime.getActiveMission(), null);
+  assert.equal(runtime.getActiveRun(), null);
+  assert.deepEqual(runtime.listMissions(), []);
+  assert.deepEqual(runtime.listRunsForActiveMission(), []);
+});
+
+test("creating a mission with a workspace command immediately starts execution", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({
+          runId: input.runId,
+          agentId: input.agent.id,
+          workspaceCommand: input.workspaceCommand,
+          workspacePath: input.workspacePath,
+        });
+        return true;
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  const workspaceId = runtime.listWorkspaces()[0].id;
+  const mission = runtime.createMission({
+    workspaceId,
+    title: "Run local build",
+    goal: "Execute a real workspace command from the desktop app.",
+    command: "npm test",
+  });
+
+  assert.ok(mission.id);
+  assert.equal(executionCalls.length, 1);
+  assert.equal(executionCalls[0].workspaceCommand, "npm test");
+});
+
+test("retrying a workspace command run starts a fresh execution record", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({
+          runId: input.runId,
+          agentId: input.agent.id,
+          workspaceCommand: input.workspaceCommand,
+        });
+        return true;
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  const workspaceId = runtime.listWorkspaces()[0].id;
+  runtime.createMission({
+    workspaceId,
+    title: "Retry local build",
+    goal: "Run the same local command twice from the desktop app.",
+    command: "npm test",
+  });
+
+  const initialRun = runtime.getActiveRun();
+  assert.ok(initialRun);
+
+  const retried = runtime.retryRun({ runId: initialRun.id });
+  assert.ok(retried);
+  assert.notEqual(retried.id, initialRun.id);
+  assert.equal(retried.workspaceCommand, "npm test");
+  assert.equal(retried.origin?.schedulerRuleId, "manual_retry");
+  assert.equal(executionCalls.length, 2);
+  assert.equal(executionCalls[1].workspaceCommand, "npm test");
 });

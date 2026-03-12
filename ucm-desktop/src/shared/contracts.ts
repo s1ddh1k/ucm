@@ -41,6 +41,7 @@ export type MissionSnapshot = {
   title: string;
   status: "running" | "queued" | "review" | "blocked" | "completed";
   goal?: string;
+  command?: string;
 };
 
 export type MissionDetail = {
@@ -48,6 +49,7 @@ export type MissionDetail = {
   title: string;
   status: "running" | "queued" | "review" | "blocked" | "completed";
   goal: string;
+  command?: string;
   successCriteria: string[];
   constraints: string[];
   risks: string[];
@@ -177,6 +179,7 @@ export type RunDetail = {
   summary: string;
   budgetClass?: BudgetClass;
   providerPreference?: "claude" | "codex";
+  workspaceCommand?: string;
   terminalSessionId?: string;
   terminalProvider?: "claude" | "codex";
   activeSurface: "terminal" | "diff" | "tests" | "artifacts";
@@ -246,6 +249,9 @@ export type UcmDesktopApi = {
   };
   workspace: {
     list: () => Promise<WorkspaceSummary[]>;
+    setActive: (input: { workspaceId: string }) => Promise<WorkspaceSummary[]>;
+    add: (input: { rootPath: string }) => Promise<WorkspaceSummary[]>;
+    pickDirectory: () => Promise<string | null>;
   };
   mission: {
     list: () => Promise<MissionSnapshot[]>;
@@ -254,12 +260,14 @@ export type UcmDesktopApi = {
       workspaceId: string;
       title: string;
       goal: string;
+      command?: string;
     }) => Promise<MissionSnapshot>;
   };
   run: {
     getActive: () => Promise<RunDetail | null>;
     listForActiveMission: () => Promise<RunDetail[]>;
     setActive: (input: { runId: string }) => Promise<RunDetail | null>;
+    retry: (input: { runId: string }) => Promise<RunDetail | null>;
     autopilotStep: () => Promise<RunAutopilotResult>;
     autopilotBurst: (input?: { maxSteps?: number }) => Promise<RunAutopilotBurstResult>;
     steeringSubmit: (input: { runId: string; text: string }) => Promise<RunDetail | null>;

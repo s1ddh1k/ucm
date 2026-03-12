@@ -10,6 +10,9 @@ const api: UcmDesktopApi = {
   },
   workspace: {
     list: () => ipcRenderer.invoke("workspace:list"),
+    setActive: (input) => ipcRenderer.invoke("workspace:set-active", input),
+    add: (input) => ipcRenderer.invoke("workspace:add", input),
+    pickDirectory: () => ipcRenderer.invoke("workspace:pick-directory"),
   },
   mission: {
     list: () => ipcRenderer.invoke("mission:list"),
@@ -20,6 +23,7 @@ const api: UcmDesktopApi = {
     getActive: () => ipcRenderer.invoke("run:get-active"),
     listForActiveMission: () => ipcRenderer.invoke("run:list-for-active-mission"),
     setActive: (input) => ipcRenderer.invoke("run:set-active", input),
+    retry: (input) => ipcRenderer.invoke("run:retry", input),
     autopilotStep: () => ipcRenderer.invoke("run:autopilot-step"),
     autopilotBurst: (input) => ipcRenderer.invoke("run:autopilot-burst", input),
     steeringSubmit: (input) => ipcRenderer.invoke("run:steering-submit", input),

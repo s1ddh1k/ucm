@@ -26,9 +26,11 @@ type ExecutionCallbacks = {
     runId: string;
     agentId: string;
     summary: string;
-    source: "provider" | "mock";
+    source: "provider" | "mock" | "local";
     outcome: "completed" | "blocked" | "needs_review";
     stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
   }) => void;
 };
 
@@ -100,6 +102,7 @@ export function maybeStartAgentExecutionInState(input: {
     providerPreference,
     executionBudgetLimit,
     workspacePath,
+    workspaceCommand: run.workspaceCommand,
     steeringContext,
     onSessionStart: (session) => {
       callbacks.onSessionStart(missionId, runId, session);
@@ -160,9 +163,11 @@ export function completeAgentRunInState(
     runId: string;
     agentId: string;
     summary: string;
-    source: "provider" | "mock";
+    source: "provider" | "mock" | "local";
     outcome: "completed" | "blocked" | "needs_review";
     stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
   },
 ): { run: RunDetail; agent: AgentSnapshot } | null {
   const located = findRun(state, input.runId);
@@ -184,16 +189,24 @@ export function completeAgentRunInState(
           title:
             input.source === "provider"
               ? "Provider builder diff note"
+              : input.source === "local"
+                ? "Local workspace diff"
               : "Mock builder diff",
-          preview: input.summary,
+          preview: input.generatedPatch
+            ? "Workspace changes were captured from git diff."
+            : input.summary,
           filePatches: [
             {
-              path: "src/generated/provider-run.ts",
+              path:
+                input.generatedPatch && input.generatedPatch.includes("diff --git")
+                  ? extractPrimaryPatchPath(input.generatedPatch)
+                  : "command-output.txt",
               summary: "Generated implementation patch surface",
-              patch: `diff --git a/src/generated/provider-run.ts b/src/generated/provider-run.ts
+              patch:
+                input.generatedPatch ||
+                `diff --git a/command-output.txt b/command-output.txt
 @@
--// pending implementation output
-+// ${input.summary}`,
++${input.summary}`,
             },
           ],
         }
@@ -203,8 +216,10 @@ export function completeAgentRunInState(
           title:
             input.source === "provider"
               ? "Provider verifier completion report"
+              : input.source === "local"
+                ? "Local workspace command report"
               : "Mock verifier completion report",
-          preview: input.summary,
+          preview: input.stdout || input.summary,
         };
 
   located.run.artifacts = [...located.run.artifacts, nextArtifact];
@@ -223,6 +238,8 @@ export function completeAgentRunInState(
       summary:
         input.source === "provider"
           ? `${input.summary}${input.stderr ? " (stderr captured)" : ""}`
+          : input.source === "local"
+            ? `${input.summary}${input.stderr ? " (command exited with stderr)" : ""}`
           : input.summary,
       timestampLabel: "just now",
     },
@@ -253,6 +270,8 @@ export function completeAgentRunInState(
       source:
         input.source === "provider"
           ? "provider_execution_service"
+          : input.source === "local"
+            ? "local_workspace_command"
           : "mock_execution_service",
     },
   });
@@ -277,6 +296,11 @@ export function completeAgentRunInState(
   }
 
   return { run: located.run, agent };
+}
+
+function extractPrimaryPatchPath(patch: string): string {
+  const match = patch.match(/^diff --git a\/(.+?) b\//m);
+  return match?.[1] ?? "workspace.diff";
 }
 
 export function recordTerminalSessionInState(

@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 import type { AgentSnapshot } from "../shared/contracts";
 import { ClaudeAdapter } from "./providers/claude-adapter";
 import { CodexAdapter } from "./providers/codex-adapter";
+import { LocalAdapter } from "./providers/local-adapter";
 import type {
   BaseProviderAdapter,
   ProviderExecutionResult,
@@ -34,12 +36,14 @@ export class ExecutionService implements ExecutionController {
       ({
         claude: new ClaudeAdapter(),
         codex: new CodexAdapter(),
+        local: new LocalAdapter(),
       } satisfies ProviderAdapterRegistry);
     this.terminalSessionService =
       options?.terminalSessionService ?? new TerminalSessionService();
     this.providerLimits = {
       claude: options?.providerLimits?.claude ?? 1,
       codex: options?.providerLimits?.codex ?? 1,
+      local: options?.providerLimits?.local ?? 2,
     };
   }
 
@@ -49,7 +53,9 @@ export class ExecutionService implements ExecutionController {
       return false;
     }
 
-    const provider = this.resolveProvider(input.providerPreference);
+    const provider = input.workspaceCommand?.trim()
+      ? "local"
+      : this.resolveProvider(input.providerPreference);
     const activeProviderCount = this.activeProviderCounts.get(provider) ?? 0;
     if (activeProviderCount >= this.providerLimits[provider]) {
       return false;
@@ -102,11 +108,20 @@ export class ExecutionService implements ExecutionController {
     runId: string;
     agentId: string;
     summary: string;
-    source: "provider";
+    source: "provider" | "local";
     outcome: "completed" | "blocked" | "needs_review";
     stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
   }> {
+    if (input.workspaceCommand?.trim()) {
+      return this.executeLocalWorkspaceCommand(input);
+    }
+
     const provider = this.resolveProvider(input.providerPreference);
+    if (provider === "local") {
+      throw new Error("local provider is reserved for workspace commands");
+    }
     const adapter = this.providerAdapters[provider];
     const prompt = this.buildPrompt(input);
     const cwd = this.resolveCwd(input.workspacePath);
@@ -143,9 +158,50 @@ export class ExecutionService implements ExecutionController {
     };
   }
 
+  private async executeLocalWorkspaceCommand(
+    input: SpawnAgentRunInput,
+  ): Promise<{
+    missionId: string;
+    runId: string;
+    agentId: string;
+    summary: string;
+    source: "local";
+    outcome: "completed" | "blocked" | "needs_review";
+    stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
+  }> {
+    const cwd = this.resolveCwd(input.workspacePath);
+    const command = input.workspaceCommand?.trim();
+    if (!command) {
+      throw new Error("workspace command is required");
+    }
+
+    const output = await this.executeShellCommand({
+      command,
+      cwd,
+      onData: (chunk) => {
+        input.onTerminalData?.(chunk);
+      },
+    });
+    const generatedPatch = this.captureGitDiff(cwd);
+
+    return {
+      missionId: input.missionId,
+      runId: input.runId,
+      agentId: input.agent.id,
+      summary: this.summarizeLocalCommand(command, output.stdout, output.stderr),
+      source: "local",
+      outcome: output.exitCode === 0 ? "completed" : "blocked",
+      stderr: output.stderr || undefined,
+      stdout: output.stdout || undefined,
+      generatedPatch: generatedPatch || undefined,
+    };
+  }
+
   private executeWithTerminalSession(input: {
     adapter: BaseProviderAdapter;
-    provider: ProviderName;
+    provider: Exclude<ProviderName, "local">;
     prompt: string;
     cwd: string;
     input: SpawnAgentRunInput;
@@ -239,7 +295,64 @@ export class ExecutionService implements ExecutionController {
     }, 150);
   }
 
+  private executeShellCommand(input: {
+    command: string;
+    cwd: string;
+    onData?: (chunk: string) => void;
+  }): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(input.command, {
+        cwd: input.cwd,
+        env: { ...process.env },
+        shell: true,
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout.on("data", (chunk) => {
+        const text = chunk.toString();
+        stdout += text;
+        input.onData?.(text);
+      });
+      child.stderr.on("data", (chunk) => {
+        const text = chunk.toString();
+        stderr += text;
+        input.onData?.(text);
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (exitCode) => {
+        resolve({
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          exitCode,
+        });
+      });
+    });
+  }
+
+  private captureGitDiff(cwd: string): string {
+    try {
+      const result = spawnSync(
+        "git",
+        ["diff", "--no-ext-diff", "--", "."],
+        { cwd, encoding: "utf8" },
+      );
+      if (result.status !== 0) {
+        return "";
+      }
+      return result.stdout.trim();
+    } catch {
+      return "";
+    }
+  }
+
   private resolveProvider(preferred?: ProviderName): ProviderName {
+    if (preferred === "local") {
+      return "local";
+    }
     if (preferred && this.providerAdapters[preferred]) {
       return preferred;
     }
@@ -252,10 +365,24 @@ export class ExecutionService implements ExecutionController {
   }
 
   private defaultModelFor(provider: ProviderName): string | undefined {
+    if (provider === "local") {
+      return undefined;
+    }
     if (provider === "claude") {
       return "sonnet";
     }
     return "medium";
+  }
+
+  private summarizeLocalCommand(
+    command: string,
+    stdout: string,
+    stderr: string,
+  ): string {
+    const firstLine =
+      stdout.split(/\r?\n/).find((line) => line.trim()) ||
+      stderr.split(/\r?\n/).find((line) => line.trim());
+    return firstLine || `Local command completed: ${command}`;
   }
 
   private resolveCwd(workspacePath?: string): string {
