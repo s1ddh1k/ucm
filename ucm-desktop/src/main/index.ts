@@ -120,6 +120,7 @@ function registerIpc() {
   });
   ipcMain.handle("mission:list", () => runtime.listMissions());
   ipcMain.handle("mission:get-active", () => runtime.getActiveMission());
+  ipcMain.handle("mission:set-active", (_, input) => runtime.setActiveMission(input));
   ipcMain.handle("mission:create", (_, input) => runtime.createMission(input));
   ipcMain.handle("run:get-active", () => runtime.getActiveRun());
   ipcMain.handle("run:list-for-active-mission", () => runtime.listRunsForActiveMission());

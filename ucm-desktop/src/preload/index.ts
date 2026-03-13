@@ -17,6 +17,7 @@ const api: UcmDesktopApi = {
   mission: {
     list: () => ipcRenderer.invoke("mission:list"),
     getActive: () => ipcRenderer.invoke("mission:get-active"),
+    setActive: (input) => ipcRenderer.invoke("mission:set-active", input),
     create: (input) => ipcRenderer.invoke("mission:create", input),
   },
   run: {

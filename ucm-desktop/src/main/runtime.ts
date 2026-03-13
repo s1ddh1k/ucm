@@ -149,10 +149,35 @@ export class RuntimeService {
 
   listMissions(): MissionSnapshot[] {
     const state = this.readState();
-    return state.missions.filter(
-      (mission) =>
-        state.workspaceIdByMissionId[mission.id] === state.activeWorkspaceId,
-    );
+    return state.missions
+      .filter(
+        (mission) =>
+          state.workspaceIdByMissionId[mission.id] === state.activeWorkspaceId,
+      )
+      .map((mission) => this.summarizeMission(state, mission));
+  }
+
+  private summarizeMission(
+    state: RuntimeState,
+    mission: MissionSnapshot,
+  ): MissionSnapshot {
+    const runs = state.runsByMissionId[mission.id] ?? [];
+    const focusRun =
+      runs.find(
+        (run) => run.status === "blocked" || run.status === "needs_review",
+      ) ??
+      runs.find((run) => run.status === "running" || run.status === "queued") ??
+      runs.at(-1) ??
+      null;
+
+    return {
+      ...mission,
+      lineStatus: focusRun?.status,
+      latestResult: focusRun?.summary,
+      artifactCount: focusRun?.artifacts.length ?? 0,
+      attentionRequired:
+        focusRun?.status === "blocked" || focusRun?.status === "needs_review",
+    };
   }
 
   setActiveWorkspace(input: { workspaceId: string }): WorkspaceSummary[] {
@@ -194,6 +219,32 @@ export class RuntimeService {
     return state.activeMissionId
       ? (state.missionDetailsById[state.activeMissionId] ?? null)
       : null;
+  }
+
+  setActiveMission(input: { missionId: string }): MissionDetail | null {
+    const state = this.readState();
+    const mission = state.missions.find((item) => item.id === input.missionId);
+    if (!mission) {
+      return this.getActiveMission();
+    }
+
+    const workspaceId = state.workspaceIdByMissionId[mission.id];
+    state.activeMissionId = mission.id;
+    const missionRuns = state.runsByMissionId[mission.id] ?? [];
+    state.activeRunId =
+      missionRuns.find((run) => run.id === state.activeRunId)?.id ??
+      missionRuns[0]?.id ??
+      "";
+    if (workspaceId) {
+      state.activeWorkspaceId = workspaceId;
+      state.workspaces = state.workspaces.map((workspace) => ({
+        ...workspace,
+        active: workspace.id === workspaceId,
+      }));
+    }
+
+    this.writeState(state);
+    return state.missionDetailsById[mission.id] ?? null;
   }
 
   createMission(input: {
@@ -583,7 +634,7 @@ export class RuntimeService {
       lifecycleEvents: (
         state.lifecycleEventsByMissionId[mission?.id ?? ""] ?? []
       ).slice(-6).reverse(),
-      missions: workspaceMissions.slice(0, 6),
+      missions: workspaceMissions.slice(0, 6).map((item) => this.summarizeMission(state, item)),
     };
   }
 

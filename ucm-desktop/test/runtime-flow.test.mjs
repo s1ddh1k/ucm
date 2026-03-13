@@ -929,6 +929,29 @@ test("creating a mission with a workspace command immediately starts execution",
   assert.equal(executionCalls[0].workspaceCommand, "npm test");
 });
 
+test("setting the active mission also selects its workspace and run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const runtime = new runtimeServiceModule.RuntimeService({ store });
+
+  const mission = runtime.createMission({
+    workspaceId: runtime.listWorkspaces()[0].id,
+    title: "Plan release review",
+    goal: "Collect the remaining release checks.",
+  });
+
+  const detail = runtime.setActiveMission({ missionId: mission.id });
+  assert.ok(detail);
+  assert.equal(detail.id, mission.id);
+
+  const activeMission = runtime.getActiveMission();
+  const activeRun = runtime.getActiveRun();
+  const activeWorkspace = runtime.listWorkspaces().find((workspace) => workspace.active);
+
+  assert.equal(activeMission?.id, mission.id);
+  assert.equal(activeRun?.missionId, mission.id);
+  assert.equal(activeWorkspace?.id, runtime.listWorkspaces()[0].id);
+});
+
 test("retrying a workspace command run starts a fresh execution record", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
   const executionCalls = [];

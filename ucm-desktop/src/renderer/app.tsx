@@ -262,6 +262,55 @@ const messages = {
 
 type UiMessages = (typeof messages)[Locale];
 
+const missionTemplates = {
+  ko: [
+    {
+      id: "bugfix",
+      label: "버그 수정",
+      title: "결제 회귀 오류 수정",
+      goal: "최근 변경 이후 깨진 결제 흐름을 복구하고 영향 범위를 확인합니다.",
+      command: "npm test",
+    },
+    {
+      id: "verify",
+      label: "검증 실행",
+      title: "현재 상태 검증",
+      goal: "선택한 워크스페이스의 현재 상태를 빠르게 확인하고 실패 지점을 수집합니다.",
+      command: "npm run build",
+    },
+    {
+      id: "plan",
+      label: "계획만 시작",
+      title: "배포 전 정리",
+      goal: "배포 전에 남은 위험과 확인 항목을 정리합니다.",
+      command: "",
+    },
+  ],
+  en: [
+    {
+      id: "bugfix",
+      label: "Bug Fix",
+      title: "Fix checkout regression",
+      goal: "Restore the broken checkout path and confirm the blast radius.",
+      command: "npm test",
+    },
+    {
+      id: "verify",
+      label: "Verify",
+      title: "Verify current state",
+      goal: "Check the selected workspace and collect the first failing signal.",
+      command: "npm run build",
+    },
+    {
+      id: "plan",
+      label: "Plan Only",
+      title: "Prepare release review",
+      goal: "Organize the remaining risks and review items before release.",
+      command: "",
+    },
+  ],
+} as const;
+
 function App() {
   const [version, setVersion] = useState("...");
   const [navigation, setNavigation] = useState<NavigationItem[]>([]);
@@ -375,6 +424,18 @@ function App() {
     await refresh();
   }
 
+  function applyMissionTemplate(
+    templateId: (typeof missionTemplates)["ko"][number]["id"],
+  ) {
+    const template = missionTemplates[locale].find((item) => item.id === templateId);
+    if (!template) {
+      return;
+    }
+    setTitle(template.title);
+    setGoal(template.goal);
+    setCommand(template.command);
+  }
+
   async function handleSelectWorkspace(workspaceId: string) {
     await window.ucm.workspace.setActive({ workspaceId });
     await refresh();
@@ -432,10 +493,25 @@ function App() {
     await refresh();
   }
 
+  async function handleOpenMission(missionId: string) {
+    await window.ucm.mission.setActive({ missionId });
+    const refreshedRun = await window.ucm.run.getActive();
+    setActiveScreen(refreshedRun ? "execute" : "plan");
+    await refresh();
+  }
+
   const current = messages[locale].screen[activeScreen];
   const navCopy = messages[locale].nav;
   const ui = messages[locale];
   const activeWorkspace = workspaces.find((workspace) => workspace.active) ?? null;
+  const canCreateMission = Boolean(activeWorkspace && title.trim() && goal.trim());
+  const missionModeSummary = command.trim()
+    ? locale === "ko"
+      ? `입력한 명령을 바로 실행합니다: ${command.trim()}`
+      : `Run this command immediately: ${command.trim()}`
+    : locale === "ko"
+      ? "명령 없이 미션만 만들고 계획 단계에서 시작합니다."
+      : "Create the mission without a command and start from planning.";
   const selectedMissionTitle = activeMission?.title ?? snapshot?.missionName ?? (locale === "ko" ? "선택된 미션 없음" : "No mission");
   const recentRunEvents = [...(activeRun?.runEvents ?? [])].reverse();
   const latestEventByAgentId = new Map(
@@ -643,76 +719,129 @@ function App() {
               ) : null}
               {activeScreen === "home" ? (
                 <div className="launcher-grid">
-                  <form className="mission-form" onSubmit={handleCreateMission}>
-                    <label>
-                      {locale === "ko" ? "현재 워크스페이스" : "Current workspace"}
-                      <input
-                        disabled
-                        value={
-                          activeWorkspace?.rootPath ??
-                          (locale === "ko"
-                            ? "먼저 워크스페이스를 추가하세요."
-                            : "Add a workspace first.")
-                        }
-                      />
-                    </label>
-                    <label>
-                      {locale === "ko" ? "미션 제목" : "Mission title"}
-                      <input
-                        onChange={(event) => setTitle(event.target.value)}
-                        placeholder={locale === "ko" ? "예: 결제 인증 회귀 오류 수정" : "Checkout auth regression fix"}
-                        value={title}
-                      />
-                    </label>
-                    <label>
-                      {locale === "ko" ? "목표" : "Goal"}
-                      <textarea
-                        onChange={(event) => setGoal(event.target.value)}
-                        placeholder={locale === "ko" ? "예: 인증 흐름을 깨지 않고 결제 안정성 복구" : "Restore checkout stability without breaking auth flow."}
-                        rows={4}
-                        value={goal}
-                      />
-                    </label>
-                    <label>
-                      {locale === "ko" ? "작업 명령" : "Workspace command"}
-                      <input
-                        onChange={(event) => setCommand(event.target.value)}
-                        placeholder={
-                          locale === "ko"
-                            ? "예: npm test 또는 npm run build"
-                            : "Example: npm test or npm run build"
-                        }
-                        value={command}
-                      />
-                    </label>
-                    <button className="primary-button" disabled={!activeWorkspace} type="submit">
-                      {ui.actions.createMission}
-                    </button>
-                  </form>
-
-                  <div className="stack-list">
-                    {missions.map((mission) => (
-                      <div className="stack-card" key={mission.id}>
-                        <strong>{mission.title}</strong>
-                        <span className={`status status-${mission.status}`}>
-                          {formatStatusLabel(mission.status, locale)}
-                        </span>
-                        {mission.goal ? <p className="stack-copy">{mission.goal}</p> : null}
-                        {mission.command ? <p className="stack-copy">$ {mission.command}</p> : null}
-                        {mission.command && mission.id === activeMission?.id && activeRun?.workspaceCommand ? (
-                          <div className="button-row">
-                            <button
-                              className="secondary-button"
-                              onClick={() => {
-                                void handleRetryRun(activeRun.id);
-                              }}
-                              type="button"
-                            >
-                              {ui.actions.retryRun}
-                            </button>
-                          </div>
-                        ) : null}
+                  <section className="detail-block mission-compose">
+                    <div className="detail-header mission-compose-header">
+                      <div>
+                        <p className="section-label">{ui.sections.missionLauncher}</p>
+                        <h4>{locale === "ko" ? "새 미션 시작" : "Start a new mission"}</h4>
                       </div>
+                      <span className={`status ${activeWorkspace ? "status-running" : "status-blocked"}`}>
+                        {activeWorkspace ? activeWorkspace.name : (locale === "ko" ? "워크스페이스 없음" : "No workspace")}
+                      </span>
+                    </div>
+                    <p className="stack-copy mission-compose-copy">
+                      {activeWorkspace?.rootPath ??
+                        (locale === "ko"
+                          ? "먼저 왼쪽에서 워크스페이스를 추가하고 선택하세요."
+                          : "Add and select a workspace from the left rail first.")}
+                    </p>
+                    <div className="mission-template-strip">
+                      {missionTemplates[locale].map((template) => (
+                        <button
+                          className="template-chip"
+                          key={template.id}
+                          onClick={() => applyMissionTemplate(template.id)}
+                          type="button"
+                        >
+                          {template.label}
+                        </button>
+                      ))}
+                    </div>
+                    <form className="mission-form" onSubmit={handleCreateMission}>
+                      <label>
+                        {locale === "ko" ? "미션 제목" : "Mission title"}
+                        <input
+                          onChange={(event) => setTitle(event.target.value)}
+                          placeholder={locale === "ko" ? "예: 결제 인증 회귀 오류 수정" : "Checkout auth regression fix"}
+                          value={title}
+                        />
+                      </label>
+                      <label>
+                        {locale === "ko" ? "목표" : "Goal"}
+                        <textarea
+                          onChange={(event) => setGoal(event.target.value)}
+                          placeholder={locale === "ko" ? "예: 인증 흐름을 깨지 않고 결제 안정성 복구" : "Restore checkout stability without breaking auth flow."}
+                          rows={4}
+                          value={goal}
+                        />
+                      </label>
+                      <label>
+                        {locale === "ko" ? "작업 명령" : "Workspace command"}
+                        <input
+                          onChange={(event) => setCommand(event.target.value)}
+                          placeholder={
+                            locale === "ko"
+                              ? "예: npm test 또는 npm run build"
+                              : "Example: npm test or npm run build"
+                          }
+                          value={command}
+                        />
+                      </label>
+                      <div className="mission-submit-bar">
+                        <div className="stack-card mission-launch-summary">
+                          <strong>{locale === "ko" ? "실행 방식" : "Launch mode"}</strong>
+                          <p className="stack-copy">{missionModeSummary}</p>
+                        </div>
+                        <button className="primary-button" disabled={!canCreateMission} type="submit">
+                          {ui.actions.createMission}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+
+                  <div className="stack-list mission-history-list">
+                    {missions.map((mission) => (
+                      <button
+                        className={`stack-card mission-history-card${
+                          mission.id === activeMission?.id ? " active" : ""
+                        }`}
+                        key={mission.id}
+                        onClick={() => {
+                          void handleOpenMission(mission.id);
+                        }}
+                        type="button"
+                      >
+                        <div className="mission-history-head">
+                          <strong>{mission.title}</strong>
+                          <div className="mission-history-status">
+                            {mission.id === activeMission?.id ? (
+                              <span className="status status-running">
+                                {locale === "ko" ? "선택됨" : "Selected"}
+                              </span>
+                            ) : null}
+                            <span className={`status status-${mission.status}`}>
+                              {formatStatusLabel(mission.status, locale)}
+                            </span>
+                            {mission.attentionRequired ? (
+                              <span className="status status-blocked">
+                                {locale === "ko" ? "확인 필요" : "Attention"}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <p className="stack-copy">
+                          {locale === "ko" ? "요청" : "Request"}: {mission.goal ?? mission.title}
+                        </p>
+                        {mission.command ? (
+                          <p className="stack-copy">
+                            {locale === "ko" ? "입력" : "Input"}: ${mission.command}
+                          </p>
+                        ) : null}
+                        <p className="stack-copy">
+                          {locale === "ko" ? "최근 결과" : "Latest Result"}:{" "}
+                          {mission.latestResult ??
+                            (locale === "ko"
+                              ? "아직 결과가 없습니다."
+                              : "No result yet.")}
+                        </p>
+                        <p className="stack-copy mission-history-meta">
+                          {formatStatusLabel(mission.lineStatus ?? mission.status, locale)}
+                          {" • "}
+                          {locale === "ko"
+                            ? `산출물 ${mission.artifactCount ?? 0}개`
+                            : `${mission.artifactCount ?? 0} artifacts`}
+                        </p>
+                      </button>
                     ))}
                   </div>
                 </div>

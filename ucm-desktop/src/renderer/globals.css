@@ -604,6 +604,41 @@ select:focus-visible {
   gap: 10px;
 }
 
+.mission-compose {
+  display: grid;
+  gap: 10px;
+}
+
+.mission-compose-header {
+  align-items: start;
+}
+
+.mission-compose-copy {
+  margin: -2px 0 0;
+}
+
+.mission-template-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-chip {
+  border: 1px solid rgba(142, 174, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(10, 20, 26, 0.92);
+  color: var(--text-muted);
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.template-chip:hover {
+  border-color: rgba(103, 193, 190, 0.32);
+  color: var(--text);
+}
+
 .mission-form label,
 .action-stack label {
   display: grid;
@@ -636,6 +671,62 @@ select:focus-visible {
 .mission-form textarea,
 .action-stack textarea {
   resize: vertical;
+}
+
+.mission-submit-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.mission-launch-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mission-launch-summary .stack-copy {
+  margin: 0;
+}
+
+.mission-history-list {
+  min-width: 0;
+}
+
+.mission-history-card {
+  display: grid;
+  gap: 4px;
+}
+
+.mission-history-card.active {
+  border-color: rgba(103, 193, 190, 0.34);
+  background: rgba(13, 24, 30, 0.96);
+}
+
+.mission-history-card.active::before {
+  border-color: rgba(103, 193, 190, 0.12);
+}
+
+.mission-history-head,
+.mission-history-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mission-history-head {
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.mission-history-status {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mission-history-meta {
+  color: var(--text-dim);
 }
 
 .button-row {

@@ -42,6 +42,10 @@ export type MissionSnapshot = {
   status: "running" | "queued" | "review" | "blocked" | "completed";
   goal?: string;
   command?: string;
+  lineStatus?: RunDetail["status"];
+  latestResult?: string;
+  artifactCount?: number;
+  attentionRequired?: boolean;
 };
 
 export type MissionDetail = {
@@ -256,6 +260,7 @@ export type UcmDesktopApi = {
   mission: {
     list: () => Promise<MissionSnapshot[]>;
     getActive: () => Promise<MissionDetail | null>;
+    setActive: (input: { missionId: string }) => Promise<MissionDetail | null>;
     create: (input: {
       workspaceId: string;
       title: string;
