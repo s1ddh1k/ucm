@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { GitWorktreeManager } from "../../packages/execution/git-worktree-manager.js";
 import { ExecutionService } from "../dist-electron/main/execution-service.js";
 
 function createAgent(overrides = {}) {
@@ -111,11 +112,14 @@ test("execution service prefers terminal-backed provider output when session suc
   assert.equal(sessionStarts.length, 1);
   assert.equal(sessionStarts[0].sessionId, "term-test-1");
   assert.equal(sessions[0].provider, "claude");
+  assert.equal(sessionStarts[0].transport, "provider_terminal");
+  assert.equal(sessionStarts[0].workspaceMode, "process");
   assert.match(sessions[0].prompt, /Recent human steering:/);
   assert.equal(terminalChunks.length, 2);
   assert.equal(result.source, "provider");
   assert.equal(result.outcome, "needs_review");
   assert.equal(result.summary, "Patched checkout auth flow");
+  assert.equal(result.session?.transport, "provider_terminal");
 });
 
 test("execution service falls back to pipe execution when terminal session does not yield output", async () => {
@@ -254,6 +258,7 @@ test("execution service blocks provider spawn when the budget bucket is saturate
 
 test("execution service can run a local workspace command and capture git diff", async () => {
   const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-desktop-local-"));
+  const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-desktop-worktrees-"));
   spawnSync("git", ["init"], { cwd: workspacePath, encoding: "utf8" });
   fs.writeFileSync(path.join(workspacePath, "note.txt"), "before\n", "utf8");
   spawnSync("git", ["add", "."], { cwd: workspacePath, encoding: "utf8" });
@@ -271,6 +276,7 @@ test("execution service can run a local workspace command and capture git diff",
 
   const service = new ExecutionService({
     providerAdapters: createProviderRegistry(),
+    worktreeManager: new GitWorktreeManager({ rootPath: worktreeRoot }),
     terminalSessionService: {
       startSession() {
         throw new Error("local commands should not create provider terminal sessions");
@@ -294,6 +300,10 @@ test("execution service can run a local workspace command and capture git diff",
       budgetClass: "standard",
       workspacePath,
       workspaceCommand: "printf 'after\\n' > note.txt && printf 'workspace run complete\\n'",
+      onSessionStart(session) {
+        assert.equal(session.transport, "local_shell");
+        assert.equal(session.workspaceMode, "git_worktree");
+      },
       onComplete,
     });
   });
@@ -302,4 +312,17 @@ test("execution service can run a local workspace command and capture git diff",
   assert.equal(result.outcome, "completed");
   assert.match(result.summary, /workspace run complete/);
   assert.match(result.generatedPatch || "", /diff --git a\/note.txt b\/note.txt/);
+  assert.equal(result.session?.transport, "local_shell");
+  assert.equal(result.session?.workspaceMode, "git_worktree");
+  assert.ok(result.session?.worktreePath);
+  assert.equal(
+    fs.readFileSync(path.join(workspacePath, "note.txt"), "utf8"),
+    "before\n",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(result.session.worktreePath, "note.txt"), "utf8"),
+    "after\n",
+  );
+
+  fs.rmSync(worktreeRoot, { recursive: true, force: true });
 });

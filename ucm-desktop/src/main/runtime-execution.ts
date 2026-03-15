@@ -1,25 +1,21 @@
 import type {
   AgentSnapshot,
-  BudgetClass,
   MissionSnapshot,
+  RunExecutionSession,
   RunDetail,
   RunEvent,
 } from "../shared/contracts";
 import type { ExecutionController } from "./execution-types";
-import {
-  appendLifecycleEvent,
-  appendRunEvent,
-  findRun,
-  markSteeringStatus,
-  setAgentStatus,
-} from "./runtime-run-helpers";
 import type { RuntimeState } from "./runtime-state";
 
+const impl: any = require("../../../packages/application/runtime-execution.js");
+
 type ExecutionCallbacks = {
-  onSessionStart: (missionId: string, runId: string, session: {
-    sessionId: string;
-    provider: "claude" | "codex";
-  }) => void;
+  onSessionStart: (
+    missionId: string,
+    runId: string,
+    session: RunExecutionSession,
+  ) => void;
   onTerminalData: (missionId: string, runId: string, chunk: string) => void;
   onComplete: (result: {
     missionId: string;
@@ -31,132 +27,25 @@ type ExecutionCallbacks = {
     stderr?: string;
     stdout?: string;
     generatedPatch?: string;
+    session?: RunExecutionSession;
   }) => void;
 };
 
-export function collectSteeringContext(
+export const collectSteeringContext = (
   state: RuntimeState,
   runId: string,
-): string {
-  return [...(state.runEventsByRunId[runId] ?? [])]
-    .filter(
-      (event) =>
-        event.kind === "steering_submitted" &&
-        event.metadata?.status !== "superseded" &&
-        event.metadata?.status !== "resolved",
-    )
-    .slice(-3)
-    .map(
-      (event, index) =>
-        `- S${index + 1}: ${event.metadata?.steering ?? event.summary}`,
-    )
-    .join("\n");
-}
+): string => impl.collectSteeringContext(state, runId);
 
-export function maybeStartAgentExecutionInState(input: {
+export const maybeStartAgentExecutionInState = (input: {
   state: RuntimeState;
   missionId: string;
   runId: string;
   agentId: string;
   executionService: ExecutionController;
   callbacks: ExecutionCallbacks;
-}) {
-  const { state, missionId, runId, agentId, executionService, callbacks } = input;
-  const agent = (state.agentsByMissionId[missionId] ?? []).find(
-    (item) => item.id === agentId,
-  );
-  const run = (state.runsByMissionId[missionId] ?? []).find(
-    (item) => item.id === runId,
-  );
-  if (!agent || !run) {
-    return;
-  }
+}): void => impl.maybeStartAgentExecutionInState(input);
 
-  if (
-    (agent.role !== "verification" &&
-      agent.role !== "implementation" &&
-      agent.role !== "research") ||
-    agent.status !== "running"
-  ) {
-    return;
-  }
-
-  const workspaceId =
-    state.workspaceIdByMissionId[missionId] ?? state.activeWorkspaceId;
-  const workspacePath = state.workspaces.find(
-    (item) => item.id === workspaceId,
-  )?.rootPath;
-  const steeringContext = collectSteeringContext(state, runId);
-  const budgetClass = run.budgetClass ?? inferBudgetClassForAgent(agent);
-  const providerPreference =
-    run.providerPreference ?? inferProviderPreferenceForAgent(agent);
-  const executionBudgetLimit =
-    state.missionBudgetById[missionId]?.[budgetClass]?.limit;
-
-  const started = executionService.spawnAgentRun({
-    missionId,
-    runId,
-    agent,
-    objective: agent.objective,
-    budgetClass,
-    providerPreference,
-    executionBudgetLimit,
-    workspacePath,
-    workspaceCommand: run.workspaceCommand,
-    steeringContext,
-    onSessionStart: (session) => {
-      callbacks.onSessionStart(missionId, runId, session);
-    },
-    onTerminalData: (chunk) => {
-      callbacks.onTerminalData(missionId, runId, chunk);
-    },
-    onComplete: callbacks.onComplete,
-  });
-
-  if (started === false) {
-    run.status = "queued";
-    run.providerPreference = providerPreference;
-    setAgentStatus(state, missionId, agent.id, "queued");
-    appendRunEvent(state, runId, {
-      kind: "agent_status_changed",
-      agentId: agent.id,
-      summary: `${agent.name} is queued for the ${providerPreference} window and will resume when capacity returns.`,
-      createdAtLabel: "just now",
-      metadata: {
-        source: "provider_queue",
-        budgetClass,
-        provider: providerPreference,
-      },
-    });
-    appendLifecycleEvent(state, missionId, {
-      agentId: agent.id,
-      kind: "queued",
-      summary: `${agent.name} is waiting for the ${providerPreference} provider window to reopen.`,
-      createdAtLabel: "just now",
-    });
-  }
-}
-
-function inferBudgetClassForAgent(agent: AgentSnapshot): BudgetClass {
-  if (agent.role === "research") {
-    return "light";
-  }
-  if (agent.role === "design") {
-    return "heavy";
-  }
-  return "standard";
-}
-
-function inferProviderPreferenceForAgent(
-  agent: AgentSnapshot,
-): "claude" | "codex" {
-  if (agent.role === "implementation") {
-    return "codex";
-  }
-  return "claude";
-}
-
-export function completeAgentRunInState(
+export const completeAgentRunInState = (
   state: RuntimeState,
   input: {
     missionId: string;
@@ -168,205 +57,32 @@ export function completeAgentRunInState(
     stderr?: string;
     stdout?: string;
     generatedPatch?: string;
+    session?: RunExecutionSession;
   },
-): { run: RunDetail; agent: AgentSnapshot } | null {
-  const located = findRun(state, input.runId);
-  if (!located) {
-    return null;
-  }
-  const agent = (state.agentsByMissionId[input.missionId] ?? []).find(
-    (item) => item.id === input.agentId,
-  );
-  if (!agent) {
-    return null;
-  }
+): { run: RunDetail; agent: AgentSnapshot } | null =>
+  impl.completeAgentRunInState(state, input);
 
-  const nextArtifact =
-    agent.role === "implementation"
-      ? {
-          id: `art-builder-${Date.now()}`,
-          type: "diff" as const,
-          title:
-            input.source === "provider"
-              ? "Provider builder diff note"
-              : input.source === "local"
-                ? "Local workspace diff"
-              : "Mock builder diff",
-          preview: input.generatedPatch
-            ? "Workspace changes were captured from git diff."
-            : input.summary,
-          filePatches: [
-            {
-              path:
-                input.generatedPatch && input.generatedPatch.includes("diff --git")
-                  ? extractPrimaryPatchPath(input.generatedPatch)
-                  : "command-output.txt",
-              summary: "Generated implementation patch surface",
-              patch:
-                input.generatedPatch ||
-                `diff --git a/command-output.txt b/command-output.txt
-@@
-+${input.summary}`,
-            },
-          ],
-        }
-      : {
-          id: `art-verifier-${Date.now()}`,
-          type: "test_result" as const,
-          title:
-            input.source === "provider"
-              ? "Provider verifier completion report"
-              : input.source === "local"
-                ? "Local workspace command report"
-              : "Mock verifier completion report",
-          preview: input.stdout || input.summary,
-        };
-
-  located.run.artifacts = [...located.run.artifacts, nextArtifact];
-  located.run.timeline = [
-    ...located.run.timeline,
-    {
-      id: `tl-verifier-${Date.now()}`,
-      kind:
-        input.outcome === "blocked"
-          ? "blocked"
-          : input.outcome === "needs_review"
-            ? "needs_review"
-            : agent.role === "implementation"
-              ? "artifact_created"
-              : "completed",
-      summary:
-        input.source === "provider"
-          ? `${input.summary}${input.stderr ? " (stderr captured)" : ""}`
-          : input.source === "local"
-            ? `${input.summary}${input.stderr ? " (command exited with stderr)" : ""}`
-          : input.summary,
-      timestampLabel: "just now",
-    },
-  ];
-  setAgentStatus(
-    state,
-    input.missionId,
-    input.agentId,
-    input.outcome === "blocked"
-      ? "blocked"
-      : input.outcome === "needs_review"
-        ? "needs_review"
-        : "idle",
-  );
-  appendRunEvent(state, input.runId, {
-    kind:
-      input.outcome === "blocked"
-        ? "blocked"
-        : input.outcome === "needs_review"
-          ? "needs_review"
-          : agent.role === "implementation"
-            ? "artifact_created"
-            : "completed",
-    agentId: input.agentId,
-    summary: input.summary,
-    createdAtLabel: "just now",
-    metadata: {
-      source:
-        input.source === "provider"
-          ? "provider_execution_service"
-          : input.source === "local"
-            ? "local_workspace_command"
-          : "mock_execution_service",
-    },
-  });
-  appendLifecycleEvent(state, input.missionId, {
-    agentId: input.agentId,
-    kind:
-      input.outcome === "blocked"
-        ? "blocked"
-        : input.outcome === "needs_review"
-          ? "reviewing"
-          : "parked",
-    summary:
-      input.outcome === "blocked"
-        ? `${agent.name} completed a ${input.source} pass and stayed blocked on unresolved input.`
-        : input.outcome === "needs_review"
-          ? `${agent.name} completed a ${input.source} pass and is waiting for review.`
-          : `${agent.name} completed a ${input.source} pass and parked after emitting an artifact.`,
-    createdAtLabel: "just now",
-  });
-  if (input.outcome === "completed" || input.outcome === "needs_review") {
-    markSteeringStatus(state, input.runId, "active", "resolved");
-  }
-
-  return { run: located.run, agent };
-}
-
-function extractPrimaryPatchPath(patch: string): string {
-  const match = patch.match(/^diff --git a\/(.+?) b\//m);
-  return match?.[1] ?? "workspace.diff";
-}
-
-export function recordTerminalSessionInState(
+export const recordTerminalSessionInState = (
   state: RuntimeState,
   missionId: string,
   runId: string,
-  session: { sessionId: string; provider: "claude" | "codex" },
-): boolean {
-  const run = (state.runsByMissionId[missionId] ?? []).find(
-    (item) => item.id === runId,
-  );
-  if (!run) {
-    return false;
-  }
+  session: RunExecutionSession,
+): boolean => impl.recordTerminalSessionInState(state, missionId, runId, session);
 
-  run.terminalSessionId = session.sessionId;
-  run.terminalProvider = session.provider;
-  run.activeSurface = "terminal";
-  return true;
-}
-
-export function appendTerminalPreviewInState(
+export const appendTerminalPreviewInState = (
   state: RuntimeState,
   missionId: string,
   runId: string,
   chunk: string,
-): boolean {
-  const normalized = chunk
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter(Boolean);
-  if (normalized.length === 0) {
-    return false;
-  }
+): boolean => impl.appendTerminalPreviewInState(state, missionId, runId, chunk);
 
-  const run = (state.runsByMissionId[missionId] ?? []).find(
-    (item) => item.id === runId,
-  );
-  if (!run) {
-    return false;
-  }
-
-  run.terminalPreview = [...run.terminalPreview, ...normalized].slice(-24);
-  return true;
-}
-
-export function updateMissionStatusInState(
+export const updateMissionStatusInState = (
   state: RuntimeState,
   missionId: string,
   nextStatus: MissionSnapshot["status"],
-) {
-  state.missions = state.missions.map((mission) =>
-    mission.id === missionId ? { ...mission, status: nextStatus } : mission,
-  );
+): void => impl.updateMissionStatusInState(state, missionId, nextStatus);
 
-  const missionDetail = state.missionDetailsById[missionId];
-  if (missionDetail) {
-    state.missionDetailsById[missionId] = {
-      ...missionDetail,
-      status: nextStatus,
-    };
-  }
-}
-
-export function advanceMissionStatusInState(
+export const advanceMissionStatusInState = (
   state: RuntimeState,
   missionId: string,
   eventKind: RunEvent["kind"],
@@ -374,12 +90,4 @@ export function advanceMissionStatusInState(
     current: MissionSnapshot["status"],
     eventKind: RunEvent["kind"],
   ) => MissionSnapshot["status"],
-) {
-  const currentMission = state.missions.find((mission) => mission.id === missionId);
-  const nextStatus = deriveMissionStatus(
-    currentMission?.status ?? "queued",
-    eventKind,
-  );
-
-  updateMissionStatusInState(state, missionId, nextStatus);
-}
+): void => impl.advanceMissionStatusInState(state, missionId, eventKind, deriveMissionStatus);

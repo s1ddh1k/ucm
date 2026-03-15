@@ -17,6 +17,25 @@ export type AgentRunCompletion = {
   stderr?: string;
   stdout?: string;
   generatedPatch?: string;
+  session?: ExecutionSessionSnapshot;
+};
+
+export type WorkspaceExecutionMode = "process" | "workspace" | "git_worktree";
+
+export type SessionTransport =
+  | "provider_terminal"
+  | "provider_pipe"
+  | "local_shell";
+
+export type ExecutionSessionSnapshot = {
+  sessionId: string;
+  provider: ProviderName;
+  transport: SessionTransport;
+  cwd: string;
+  workspaceMode: WorkspaceExecutionMode;
+  workspaceRootPath?: string;
+  worktreePath?: string;
+  interactive: boolean;
 };
 
 export type SpawnAgentRunInput = {
@@ -30,10 +49,7 @@ export type SpawnAgentRunInput = {
   workspacePath?: string;
   workspaceCommand?: string;
   steeringContext?: string;
-  onSessionStart?: (session: {
-    sessionId: string;
-    provider: Exclude<ProviderName, "local">;
-  }) => void;
+  onSessionStart?: (session: ExecutionSessionSnapshot) => void;
   onTerminalData?: (chunk: string) => void;
   onComplete: (result: AgentRunCompletion) => void;
 };

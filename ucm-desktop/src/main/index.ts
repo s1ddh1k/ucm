@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import type {
-  NavigationItem,
-  RuntimeUpdateEvent,
-  UcmDesktopApi,
-} from "../shared/contracts";
+import { app, BrowserWindow, ipcMain } from "electron";
+import type { RuntimeUpdateEvent, UcmDesktopApi } from "../shared/contracts";
 import { RuntimeService } from "./runtime";
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -31,39 +27,6 @@ runtime = new RuntimeService({
     broadcastRuntimeUpdate({ reason });
   },
 });
-
-const navigation: NavigationItem[] = [
-  {
-    id: "home",
-    label: "Home",
-    description: "Open a workspace and start or resume a mission.",
-  },
-  {
-    id: "monitor",
-    label: "Monitor",
-    description: "Watch agents, bottlenecks, review alerts, and live runs.",
-  },
-  {
-    id: "plan",
-    label: "Plan",
-    description: "Define goals, constraints, phases, and team structure.",
-  },
-  {
-    id: "execute",
-    label: "Execute",
-    description: "Inspect diffs, traces, runtime state, and interventions.",
-  },
-  {
-    id: "review",
-    label: "Review",
-    description: "Verify results, approve packets, and inspect deliverables.",
-  },
-  {
-    id: "settings",
-    label: "Settings",
-    description: "Configure language, providers, defaults, and app behavior.",
-  },
-];
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -105,19 +68,13 @@ function broadcastRuntimeUpdate(event: RuntimeUpdateEvent) {
 
 function registerIpc() {
   ipcMain.handle("app:get-version", () => app.getVersion());
-  ipcMain.handle("navigation:list-screens", () => navigation);
   ipcMain.handle("workspace:list", () => runtime.listWorkspaces());
   ipcMain.handle("workspace:set-active", (_, input) => runtime.setActiveWorkspace(input));
   ipcMain.handle("workspace:add", (_, input) => runtime.addWorkspace(input));
-  ipcMain.handle("workspace:pick-directory", async () => {
-    const parentWindow =
-      BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    const result = await dialog.showOpenDialog(parentWindow, {
-      properties: ["openDirectory"],
-      title: "Select workspace folder",
-    });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  });
+  ipcMain.handle("workspace:browse", (_, input) => runtime.browseWorkspaceDirectories(input));
+  ipcMain.handle("workspace:create-directory", (_, input) =>
+    runtime.createWorkspaceDirectory(input),
+  );
   ipcMain.handle("mission:list", () => runtime.listMissions());
   ipcMain.handle("mission:get-active", () => runtime.getActiveMission());
   ipcMain.handle("mission:set-active", (_, input) => runtime.setActiveMission(input));
@@ -134,14 +91,14 @@ function registerIpc() {
     runtime.resizeTerminal(input),
   );
   ipcMain.handle("run:terminal-kill", (_, input) => runtime.killTerminal(input));
-  ipcMain.handle("deliverable:generate", (_, input) =>
-    runtime.generateDeliverableRevision(input),
+  ipcMain.handle("release:generate", (_, input) =>
+    runtime.generateReleaseRevision(input),
   );
-  ipcMain.handle("deliverable:handoff", (_, input) =>
-    runtime.handoffDeliverable(input),
+  ipcMain.handle("release:handoff", (_, input) =>
+    runtime.handoffRelease(input),
   );
-  ipcMain.handle("deliverable:approve", (_, input) =>
-    runtime.approveDeliverableRevision(input),
+  ipcMain.handle("release:approve", (_, input) =>
+    runtime.approveReleaseRevision(input),
   );
   ipcMain.handle("shell:get-snapshot", () => runtime.getShellSnapshot());
 }

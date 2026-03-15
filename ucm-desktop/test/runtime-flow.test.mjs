@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import * as runtimeState from "../dist-electron/main/runtime-state.js";
+import * as runtimeState from "../dist-electron/main/runtime-state-fixture.js";
 import * as runtimeMutations from "../dist-electron/main/runtime-mutations.js";
 import * as runtimeConductor from "../dist-electron/main/runtime-conductor.js";
 import * as runtimeExecution from "../dist-electron/main/runtime-execution.js";
@@ -13,20 +13,20 @@ import * as runtimeHelpers from "../dist-electron/main/runtime-run-helpers.js";
 import * as runtimeStore from "../dist-electron/main/runtime-store.js";
 import * as runtimeServiceModule from "../dist-electron/main/runtime.js";
 
-test("deliverable approval completes the mission", () => {
+test("release approval completes the mission", () => {
   const state = runtimeState.cloneSeed();
 
-  const nextRun = runtimeMutations.generateDeliverableRevisionInState(state, {
+  const nextRun = runtimeMutations.generateReleaseRevisionInState(state, {
     runId: "r-1",
-    deliverableId: "del-1",
+    releaseId: "del-1",
     summary: "Prepared a fresh approval packet from the latest artifacts.",
   });
 
   assert.ok(nextRun);
-  const deliverable = nextRun.deliverables[0];
-  const approved = runtimeMutations.approveDeliverableRevisionInState(state, {
+  const release = nextRun.releases[0];
+  const approved = runtimeMutations.approveReleaseRevisionInState(state, {
     runId: "r-1",
-    deliverableRevisionId: deliverable.latestRevisionId,
+    releaseRevisionId: release.latestRevisionId,
   });
 
   assert.ok(approved);
@@ -36,9 +36,9 @@ test("deliverable approval completes the mission", () => {
     "completed",
   );
 
-  const approvedDeliverable = approved.run.deliverables[0];
-  const latestRevision = approvedDeliverable.revisions.find(
-    (revision) => revision.id === approvedDeliverable.latestRevisionId,
+  const approvedRelease = approved.run.releases[0];
+  const latestRevision = approvedRelease.revisions.find(
+    (revision) => revision.id === approvedRelease.latestRevisionId,
   );
   const mission = state.missions.find((item) => item.id === approved.missionId);
 
@@ -69,7 +69,7 @@ test("blocked event produces a steering packet via conductor", () => {
     run: located.run,
     event: blockedEvent,
     latestArtifactType: located.run.artifacts.at(-1)?.type,
-    hasDeliverable: located.run.deliverables.length > 0,
+    hasRelease: located.run.releases.length > 0,
   });
 
   runtimeConductor.applyConductorDecision(state, located.run, decision);
@@ -271,7 +271,7 @@ test("runtime service autopilot step can run with injected store and execution c
   assert.equal(result.decision, "prepare_revision");
   assert.equal(result.eventKind, "artifact_created");
   assert.ok(activeRun);
-  assert.ok(activeRun.deliverables[0].revisions.length >= 3);
+  assert.ok(activeRun.releases[0].revisions.length >= 3);
   assert.equal(latestDecision?.category, "orchestration");
   assert.ok(changeReasons.includes("state_changed"));
   assert.equal(state.autopilotHandledEventIdsByRunId["r-1"]?.length, 1);
@@ -368,7 +368,7 @@ test("runtime service autopilot can select pending work from a non-active run", 
         },
       ],
       runEvents: [],
-      deliverables: [
+      releases: [
         {
           id: "del-release-1",
           kind: "review_packet",
@@ -680,7 +680,7 @@ test("scheduler respects maxOpenRuns for verification follow-up runs", () => {
     decisions: [],
     artifacts: [],
     runEvents: [],
-    deliverables: [],
+    releases: [],
     handoffs: [],
   });
   seededState.runsByMissionId["m-1"][0].artifacts = [
@@ -761,7 +761,7 @@ test("scheduler respects exclusiveWith by blocking verification when a review ru
     decisions: [],
     artifacts: [],
     runEvents: [],
-    deliverables: [],
+    releases: [],
     handoffs: [],
   });
   seededState.runsByMissionId["m-1"][0].artifacts = [

@@ -18,6 +18,26 @@ function directoryExists(targetPath: string): boolean {
   }
 }
 
+export function normalizeWorkspacePathInput(
+  inputPath: string,
+  cwd = process.cwd(),
+): string {
+  const trimmedPath = inputPath.trim();
+  if (!trimmedPath) {
+    return "";
+  }
+
+  if (trimmedPath === "~") {
+    return os.homedir();
+  }
+
+  if (trimmedPath.startsWith(`~${path.sep}`) || trimmedPath.startsWith("~/")) {
+    return path.join(os.homedir(), trimmedPath.slice(2));
+  }
+
+  return path.resolve(cwd, trimmedPath);
+}
+
 function hasGitMarker(targetPath: string): boolean {
   return (
     fs.existsSync(path.join(targetPath, ".git")) ||

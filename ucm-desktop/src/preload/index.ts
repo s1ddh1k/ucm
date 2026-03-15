@@ -5,14 +5,13 @@ const api: UcmDesktopApi = {
   app: {
     getVersion: () => ipcRenderer.invoke("app:get-version"),
   },
-  navigation: {
-    listScreens: () => ipcRenderer.invoke("navigation:list-screens"),
-  },
   workspace: {
     list: () => ipcRenderer.invoke("workspace:list"),
     setActive: (input) => ipcRenderer.invoke("workspace:set-active", input),
     add: (input) => ipcRenderer.invoke("workspace:add", input),
-    pickDirectory: () => ipcRenderer.invoke("workspace:pick-directory"),
+    browse: (input) => ipcRenderer.invoke("workspace:browse", input),
+    createDirectory: (input) =>
+      ipcRenderer.invoke("workspace:create-directory", input),
   },
   mission: {
     list: () => ipcRenderer.invoke("mission:list"),
@@ -33,10 +32,10 @@ const api: UcmDesktopApi = {
       ipcRenderer.invoke("run:terminal-resize", input),
     terminalKill: (input) => ipcRenderer.invoke("run:terminal-kill", input),
   },
-  deliverable: {
-    generate: (input) => ipcRenderer.invoke("deliverable:generate", input),
-    handoff: (input) => ipcRenderer.invoke("deliverable:handoff", input),
-    approve: (input) => ipcRenderer.invoke("deliverable:approve", input),
+  release: {
+    generate: (input) => ipcRenderer.invoke("release:generate", input),
+    handoff: (input) => ipcRenderer.invoke("release:handoff", input),
+    approve: (input) => ipcRenderer.invoke("release:approve", input),
   },
   shell: {
     getSnapshot: () => ipcRenderer.invoke("shell:get-snapshot"),
