@@ -1,0 +1,3 @@
+#!/bin/sh
+
+node tacit/src/cli.js prepare-commit-msg "$1" "$2" --root .

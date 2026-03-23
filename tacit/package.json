@@ -1,0 +1,13 @@
+{
+  "name": "tacit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive commit authoring toolkit for coding sessions",
+  "main": "./src/index.js",
+  "bin": {
+    "tacit": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
