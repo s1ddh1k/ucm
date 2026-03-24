@@ -65,12 +65,12 @@ function hasNewArtifactOfType(
     return nextCount > 0;
   }
   if (type === "diff") {
-    return nextCount > baseline.diffArtifactCount;
+    return nextCount > (baseline.diffArtifactCount ?? 0);
   }
   if (type === "test_result") {
-    return nextCount > baseline.testArtifactCount;
+    return nextCount > (baseline.testArtifactCount ?? 0);
   }
-  return nextCount > baseline.reportArtifactCount;
+  return nextCount > (baseline.reportArtifactCount ?? 0);
 }
 
 function hasNewDecisionRecord(run: RunDetail): boolean {

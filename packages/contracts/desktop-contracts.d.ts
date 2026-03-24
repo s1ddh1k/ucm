@@ -1,5 +1,4 @@
 import type {
-  EngineName,
   HandoffChannel,
   MissionRecord as CoreMissionRecord,
   MissionStatus,
@@ -13,7 +12,116 @@ export type DesktopRunStatus = Extract<
   RunStatus,
   "queued" | "running" | "blocked" | "needs_review" | "completed"
 >;
-export type ProviderName = Extract<EngineName, "claude" | "codex">;
+export type ProviderName = "claude" | "codex" | "gemini" | "local";
+export type RuntimeProvider = ProviderName;
+export type ArtifactContractKind =
+  | "adr_record"
+  | "acceptance_checks"
+  | "alternative_set"
+  | "architecture_record"
+  | "decision_record"
+  | "deliverable_revision"
+  | "evidence_log"
+  | "evidence_pack"
+  | "handoff_record"
+  | "improvement_proposal"
+  | "incident_record"
+  | "patch_set"
+  | "provider_seat_snapshot"
+  | "project_memory"
+  | "reflection_memory"
+  | "historical_replay_result"
+  | "dependency_changes"
+  | "run_assignment"
+  | "approval_ticket"
+  | "steering_packet"
+  | "runtime_events"
+  | "telemetry_summary"
+  | "research_dossier"
+  | "release_manifest"
+  | "review_packet"
+  | "rollback_plan"
+  | "risk_register"
+  | "run_trace"
+  | "security_report"
+  | "spec_brief"
+  | "success_metrics"
+  | "task_backlog"
+  | "test_result"
+  | string;
+
+export type ArtifactPayloadValidation = {
+  enforced: boolean;
+  valid: boolean;
+  errors: string[];
+};
+
+export type DeliverableRevisionRecord = {
+  id: string;
+  revision: number;
+  summary: string;
+  createdAtLabel: string;
+  basedOnArtifactIds: string[];
+  status: "active" | "approved" | "superseded";
+};
+
+export type DeliverableRecord = {
+  kind: string;
+  revisions: DeliverableRevisionRecord[];
+};
+
+export type EvidenceCheck = {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  summary: string;
+  artifactIds?: string[];
+};
+
+export type EvidencePack = {
+  id: string;
+  decision: "promote_to_completion" | "promote_to_review" | "insufficient";
+  checks: EvidenceCheck[];
+  artifactIds: string[];
+  generatedAtLabel: string;
+};
+
+export type RoleDependency = {
+  kind: string;
+  required: boolean;
+  freshness?: "latest_phase" | "latest_run" | "approved_only";
+};
+
+export type RoleContract = {
+  id: RoleContractId;
+  allowedProviders?: RuntimeProvider[];
+  requiredInputs?: RoleDependency[];
+  requiredOutputs?: RoleDependency[];
+};
+
+export type RoleContractId =
+  | "builder_agent"
+  | "architect_agent"
+  | "conductor"
+  | "learning_agent"
+  | "ops_agent"
+  | "qa_agent"
+  | "release_agent"
+  | "reviewer_agent"
+  | "research_agent"
+  | "security_agent"
+  | "spec_agent"
+  | string;
+
+export type RuntimeOutputBaseline = {
+  artifactContractCounts?: Partial<Record<string, number>>;
+  decisionCount?: number;
+  diffArtifactCount?: number;
+  testArtifactCount?: number;
+  reportArtifactCount?: number;
+  deliverableRevisionCount?: number;
+  timelineCount?: number;
+  handoffCount?: number;
+};
 
 export type WorkspaceSummary = Pick<
   CoreWorkspaceRecord,
@@ -127,6 +235,11 @@ export type ArtifactRecord = {
   type: "diff" | "report" | "test_result" | "handoff";
   title: string;
   preview: string;
+  contractKind?: ArtifactContractKind;
+  schemaId?: string;
+  payload?: unknown;
+  payloadValidation?: ArtifactPayloadValidation;
+  relatedArtifactIds?: string[];
   filePatches?: Array<{
     path: string;
     summary?: string;
@@ -227,9 +340,12 @@ export type RunDetail = Pick<
   timeline: RunTimelineEntry[];
   decisions: DecisionRecord[];
   artifacts: ArtifactRecord[];
+  deliverables: DeliverableRecord[];
   runEvents: RunEvent[];
   releases: ReleaseRecord[];
   handoffs: HandoffRecord[];
+  roleContractId?: RoleContractId;
+  outputBaseline?: RuntimeOutputBaseline;
 };
 
 export type RunAutopilotResult = {

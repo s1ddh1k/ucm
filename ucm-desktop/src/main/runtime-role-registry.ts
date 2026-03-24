@@ -194,7 +194,7 @@ export function validateRoleContractRunStart(input: {
     errors.push(`Role contract "${contract.id}" does not allow any execution provider.`);
   }
 
-  for (const dependency of contract.requiredInputs) {
+  for (const dependency of contract.requiredInputs ?? []) {
     if (!dependency.required) {
       continue;
     }
@@ -244,7 +244,7 @@ export function validateRoleContractRunCompletion(input: {
     errors.push(`Role contract "${contract.id}" is incompatible with agent role "${agent.role}".`);
   }
 
-  for (const dependency of contract.requiredOutputs) {
+  for (const dependency of contract.requiredOutputs ?? []) {
     if (!dependency.required) {
       continue;
     }

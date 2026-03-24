@@ -309,6 +309,21 @@ const seedState: RuntimeState = {
             preview: "1 failing fixture dependency blocks resume",
           },
         ],
+        deliverables: [
+          {
+            kind: "review_packet",
+            revisions: [
+              {
+                id: "dv-1",
+                revision: 1,
+                summary: "Initial review packet draft prepared for bootstrap.",
+                createdAtLabel: "18m ago",
+                basedOnArtifactIds: ["art-1", "art-2"],
+                status: "superseded",
+              },
+            ],
+          },
+        ],
         runEvents: [],
         releases: [
           {

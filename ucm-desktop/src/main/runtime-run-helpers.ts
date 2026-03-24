@@ -1,4 +1,5 @@
 import type {
+  ArtifactRecord,
   AgentLifecycleEvent,
   AgentSnapshot,
   DeliverableRevisionRecord,
@@ -84,13 +85,8 @@ export function ensureRunOutputBaseline(run: RunDetail): RunDetail {
 
 export function findLatestActionableArtifact(
   run: Pick<RunDetail, "artifacts">,
-): RunDetail["artifacts"][number] | undefined {
-  return [...run.artifacts].reverse().find((artifact) => {
-    if (!artifact.contractKind) {
-      return true;
-    }
-    return !NON_ACTIONABLE_ARTIFACT_CONTRACT_KINDS.has(artifact.contractKind);
-  });
+): ArtifactRecord | undefined {
+  return run.artifacts.at(-1);
 }
 
 export function findLatestActionableArtifactType(
