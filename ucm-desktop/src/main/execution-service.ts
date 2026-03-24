@@ -1,63 +1,520 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import type { AgentSnapshot } from "../shared/contracts";
 import { ClaudeAdapter } from "./providers/claude-adapter";
 import { CodexAdapter } from "./providers/codex-adapter";
+import { GeminiAdapter } from "./providers/gemini-adapter";
 import { LocalAdapter } from "./providers/local-adapter";
-import type { ProviderName } from "./provider-adapter";
+import type {
+  BaseProviderAdapter,
+  ProviderExecutionResult,
+  ProviderName,
+} from "./provider-adapter";
+import { TerminalSessionService } from "./terminal-session-service";
 import type {
   ExecutionController,
   ProviderAdapterRegistry,
+  SpawnAgentRunInput,
   TerminalSessionController,
 } from "./execution-types";
 
-function createDefaultTerminalSessionService(): TerminalSessionController {
-  const module = require("./terminal-session-service") as typeof import("./terminal-session-service");
-  return new module.TerminalSessionService();
-}
-
-function createDefaultWorktreeManager() {
-  const module = require("../../../packages/execution/git-worktree-manager.js");
-  return new module.GitWorktreeManager();
-}
-
 export class ExecutionService implements ExecutionController {
-  private readonly engine: any;
+  private activeRuns = new Set<string>();
+  private activeBudgetCounts = new Map<string, number>();
+  private activeProviderCounts = new Map<ProviderName, number>();
+  private providerAdapters: ProviderAdapterRegistry;
+  private terminalSessionService: TerminalSessionController;
+  private providerLimits: Record<ProviderName, number>;
 
   constructor(options?: {
     providerAdapters?: ProviderAdapterRegistry;
     terminalSessionService?: TerminalSessionController;
     providerLimits?: Partial<Record<ProviderName, number>>;
-    worktreeManager?: unknown;
   }) {
-    const executionModule = require("../../../packages/execution/runtime-engine.js");
-    const providerAdapters =
+    this.providerAdapters =
       options?.providerAdapters ??
       ({
         claude: new ClaudeAdapter(),
         codex: new CodexAdapter(),
+        gemini: new GeminiAdapter(),
         local: new LocalAdapter(),
       } satisfies ProviderAdapterRegistry);
+    this.terminalSessionService =
+      options?.terminalSessionService ?? new TerminalSessionService();
+    this.providerLimits = {
+      claude: options?.providerLimits?.claude ?? 1,
+      codex: options?.providerLimits?.codex ?? 1,
+      gemini: options?.providerLimits?.gemini ?? 1,
+      local: options?.providerLimits?.local ?? 2,
+    };
+  }
 
-    this.engine = new executionModule.RuntimeExecutionEngine({
-      providerAdapters,
-      terminalSessionController:
-        options?.terminalSessionService ?? createDefaultTerminalSessionService(),
-      providerLimits: options?.providerLimits,
-      worktreeManager: options?.worktreeManager ?? createDefaultWorktreeManager(),
+  spawnAgentRun(input: SpawnAgentRunInput) {
+    const executionKey = `${input.runId}:${input.agent.id}`;
+    if (this.activeRuns.has(executionKey)) {
+      return false;
+    }
+
+    const provider = input.workspaceCommand?.trim()
+      ? "local"
+      : this.resolveProvider(input.providerPreference);
+    const activeProviderCount = this.activeProviderCounts.get(provider) ?? 0;
+    if (activeProviderCount >= this.providerLimits[provider]) {
+      return false;
+    }
+
+    const budgetKey = `${input.missionId}:${input.budgetClass}`;
+    const currentBudgetCount = this.activeBudgetCounts.get(budgetKey) ?? 0;
+    if (
+      typeof input.executionBudgetLimit === "number" &&
+      input.executionBudgetLimit >= 0 &&
+      currentBudgetCount >= input.executionBudgetLimit
+    ) {
+      return false;
+    }
+
+    this.activeRuns.add(executionKey);
+    this.activeBudgetCounts.set(budgetKey, currentBudgetCount + 1);
+    this.activeProviderCounts.set(provider, activeProviderCount + 1);
+
+    void this.executeWithProvider(input)
+      .then((result) => {
+        input.onComplete(result);
+      })
+      .catch(() => {
+        this.spawnMockFallback(input);
+      })
+      .finally(() => {
+        this.activeRuns.delete(executionKey);
+        const nextBudgetCount = (this.activeBudgetCounts.get(budgetKey) ?? 1) - 1;
+        if (nextBudgetCount <= 0) {
+          this.activeBudgetCounts.delete(budgetKey);
+        } else {
+          this.activeBudgetCounts.set(budgetKey, nextBudgetCount);
+        }
+        const nextProviderCount = (this.activeProviderCounts.get(provider) ?? 1) - 1;
+        if (nextProviderCount <= 0) {
+          this.activeProviderCounts.delete(provider);
+        } else {
+          this.activeProviderCounts.set(provider, nextProviderCount);
+        }
+      });
+
+    return true;
+  }
+
+  private async executeWithProvider(
+    input: SpawnAgentRunInput,
+  ): Promise<{
+    missionId: string;
+    runId: string;
+    agentId: string;
+    summary: string;
+    source: "provider" | "local";
+    outcome: "completed" | "blocked" | "needs_review";
+    stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
+  }> {
+    if (input.workspaceCommand?.trim()) {
+      return this.executeLocalWorkspaceCommand(input);
+    }
+
+    const provider = this.resolveProvider(input.providerPreference);
+    if (provider === "local") {
+      throw new Error("local provider is reserved for workspace commands");
+    }
+    const adapter = this.providerAdapters[provider];
+    const prompt = this.buildPrompt(input);
+    const cwd = this.resolveCwd(input.workspacePath);
+    if (this.supportsTerminalSession(provider)) {
+      const terminalResult = await this.executeWithTerminalSession({
+        adapter,
+        provider,
+        prompt,
+        cwd,
+        input,
+      });
+      if (terminalResult) {
+        return terminalResult;
+      }
+    }
+
+    const result = await adapter.execute({
+      prompt,
+      cwd,
+      model: this.defaultModelFor(provider),
+      timeoutMs: 45000,
+    });
+
+    if (result.status !== "done" || !result.stdout.trim()) {
+      throw new Error(this.describeFailure(provider, result));
+    }
+
+    return {
+      missionId: input.missionId,
+      runId: input.runId,
+      agentId: input.agent.id,
+      summary: this.summarizeProviderOutput(input.agent, input.objective, result),
+      source: "provider",
+      outcome: this.parseOutcome(result.stdout, input.agent),
+      stderr: result.stderr || undefined,
+    };
+  }
+
+  private async executeLocalWorkspaceCommand(
+    input: SpawnAgentRunInput,
+  ): Promise<{
+    missionId: string;
+    runId: string;
+    agentId: string;
+    summary: string;
+    source: "local";
+    outcome: "completed" | "blocked" | "needs_review";
+    stderr?: string;
+    stdout?: string;
+    generatedPatch?: string;
+  }> {
+    const cwd = this.resolveCwd(input.workspacePath);
+    const command = input.workspaceCommand?.trim();
+    if (!command) {
+      throw new Error("workspace command is required");
+    }
+
+    const output = await this.executeShellCommand({
+      command,
+      cwd,
+      onData: (chunk) => {
+        input.onTerminalData?.(chunk);
+      },
+    });
+    const generatedPatch = this.captureGitDiff(cwd);
+
+    return {
+      missionId: input.missionId,
+      runId: input.runId,
+      agentId: input.agent.id,
+      summary: this.summarizeLocalCommand(command, output.stdout, output.stderr),
+      source: "local",
+      outcome: output.exitCode === 0 ? "completed" : "blocked",
+      stderr: output.stderr || undefined,
+      stdout: output.stdout || undefined,
+      generatedPatch: generatedPatch || undefined,
+    };
+  }
+
+  private executeWithTerminalSession(input: {
+    adapter: BaseProviderAdapter;
+    provider: Exclude<ProviderName, "local">;
+    prompt: string;
+    cwd: string;
+    input: SpawnAgentRunInput;
+  }): Promise<{
+    missionId: string;
+    runId: string;
+    agentId: string;
+    summary: string;
+    source: "provider";
+    outcome: "completed" | "blocked" | "needs_review";
+    stderr?: string;
+  } | null> {
+    return new Promise((resolve) => {
+      let output = "";
+      let settled = false;
+      let sessionId = "";
+
+      const finish = (
+        result: {
+          missionId: string;
+          runId: string;
+          agentId: string;
+          summary: string;
+          source: "provider";
+          outcome: "completed" | "blocked" | "needs_review";
+          stderr?: string;
+        } | null,
+      ) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+
+      try {
+        sessionId = this.terminalSessionService.startSession({
+          command: input.adapter.createCommand({
+            prompt: input.prompt,
+            cwd: input.cwd,
+            model: this.defaultModelFor(input.provider),
+            timeoutMs: 45000,
+          }),
+          prompt: input.prompt,
+          provider: input.provider,
+          onData: (chunk) => {
+            output += chunk;
+            input.input.onTerminalData?.(chunk);
+          },
+          onExit: ({ exitCode }) => {
+            if (exitCode !== 0 || !output.trim()) {
+              finish(null);
+              return;
+            }
+            finish({
+              missionId: input.input.missionId,
+              runId: input.input.runId,
+              agentId: input.input.agent.id,
+              summary: this.summarizeTerminalOutput(
+                input.input.agent,
+                input.input.objective,
+                output,
+              ),
+              source: "provider",
+              outcome: this.parseOutcome(output, input.input.agent),
+            });
+          },
+        });
+        input.input.onSessionStart?.({
+          sessionId,
+          provider: input.provider,
+        });
+      } catch {
+        if (sessionId) {
+          this.terminalSessionService.killSession(sessionId);
+        }
+        finish(null);
+      }
     });
   }
 
-  spawnAgentRun(input: Parameters<ExecutionController["spawnAgentRun"]>[0]) {
-    return this.engine.spawnAgentRun(input);
+  private spawnMockFallback(input: SpawnAgentRunInput) {
+    setTimeout(() => {
+      input.onComplete({
+        missionId: input.missionId,
+        runId: input.runId,
+        agentId: input.agent.id,
+        summary: `${input.agent.name} finished a mock pass for "${input.objective}".`,
+        source: "mock",
+        outcome:
+          input.agent.role === "verification" ? "needs_review" : "completed",
+      });
+    }, 150);
+  }
+
+  private executeShellCommand(input: {
+    command: string;
+    cwd: string;
+    onData?: (chunk: string) => void;
+  }): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(input.command, {
+        cwd: input.cwd,
+        env: { ...process.env },
+        shell: true,
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout.on("data", (chunk) => {
+        const text = chunk.toString();
+        stdout += text;
+        input.onData?.(text);
+      });
+      child.stderr.on("data", (chunk) => {
+        const text = chunk.toString();
+        stderr += text;
+        input.onData?.(text);
+      });
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (exitCode) => {
+        resolve({
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          exitCode,
+        });
+      });
+    });
+  }
+
+  private captureGitDiff(cwd: string): string {
+    try {
+      const result = spawnSync(
+        "git",
+        ["diff", "--no-ext-diff", "--", "."],
+        { cwd, encoding: "utf8" },
+      );
+      if (result.status !== 0) {
+        return "";
+      }
+      return result.stdout.trim();
+    } catch {
+      return "";
+    }
+  }
+
+  private resolveProvider(preferred?: ProviderName): ProviderName {
+    if (preferred === "local") {
+      return "local";
+    }
+    if (preferred && this.providerAdapters[preferred]) {
+      return preferred;
+    }
+    const raw = (
+      process.env.UCM_PROVIDER ||
+      process.env.LLM_PROVIDER ||
+      "claude"
+    ).toLowerCase();
+    if (raw === "codex") {
+      return "codex";
+    }
+    if (raw === "gemini") {
+      return "gemini";
+    }
+    return "claude";
+  }
+
+  private defaultModelFor(provider: ProviderName): string | undefined {
+    if (provider === "local") {
+      return undefined;
+    }
+    if (provider === "claude") {
+      return "sonnet";
+    }
+    if (provider === "codex") {
+      return "medium";
+    }
+    return undefined;
+  }
+
+  private supportsTerminalSession(
+    provider: Exclude<ProviderName, "local">,
+  ): boolean {
+    return provider !== "gemini";
+  }
+
+  private summarizeLocalCommand(
+    command: string,
+    stdout: string,
+    stderr: string,
+  ): string {
+    const firstLine =
+      stdout.split(/\r?\n/).find((line) => line.trim()) ||
+      stderr.split(/\r?\n/).find((line) => line.trim());
+    return firstLine || `Local command completed: ${command}`;
+  }
+
+  private resolveCwd(workspacePath?: string): string {
+    if (workspacePath) {
+      const resolved = path.resolve(workspacePath);
+      if (fs.existsSync(resolved)) {
+        return resolved;
+      }
+    }
+    return process.cwd();
+  }
+
+  private buildPrompt(input: SpawnAgentRunInput): string {
+    const steeringSection = input.steeringContext
+      ? `Recent human steering:\n${input.steeringContext}`
+      : "Recent human steering:\n- none";
+    const roleInstruction =
+      input.agent.role === "implementation"
+        ? "Produce a concise implementation update. Describe the likely patch shape, touched areas, and immediate risk."
+        : "Produce a concise verification update. Describe the test posture, failure signal, and next review concern.";
+    return [
+      `You are ${input.agent.name}, acting in role ${input.agent.role}.`,
+      `Objective: ${input.objective}`,
+      steeringSection,
+      roleInstruction,
+      "Respond in plain text with 3 short sections:",
+      "1. What changed",
+      "2. What remains risky",
+      "3. What the next agent should do",
+      "End with exactly one status line in this format:",
+      "Status: completed | blocked | needs_review",
+      "Keep the response under 140 words.",
+    ].join("\n");
+  }
+
+  private summarizeProviderOutput(
+    agent: AgentSnapshot,
+    objective: string,
+    result: ProviderExecutionResult,
+  ): string {
+    const firstLine = result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => Boolean(line) && !/^status:/i.test(line));
+    return (
+      firstLine ||
+      `${agent.name} completed a provider-backed pass for "${objective}".`
+    );
+  }
+
+  private summarizeTerminalOutput(
+    agent: AgentSnapshot,
+    objective: string,
+    output: string,
+  ): string {
+    const line = output
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .find(
+        (value) =>
+          !value.startsWith(">") &&
+          !value.startsWith("$") &&
+          !/^status:/i.test(value),
+      );
+    return line || `${agent.name} completed a terminal-backed pass for "${objective}".`;
+  }
+
+  private parseOutcome(
+    output: string,
+    agent: AgentSnapshot,
+  ): "completed" | "blocked" | "needs_review" {
+    const statusLine = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^status:/i.test(line));
+    const normalized = statusLine?.split(":")[1]?.trim().toLowerCase();
+    if (normalized === "blocked") {
+      return "blocked";
+    }
+    if (normalized === "needs_review") {
+      return "needs_review";
+    }
+    if (normalized === "completed") {
+      return "completed";
+    }
+    return agent.role === "verification" ? "needs_review" : "completed";
+  }
+
+  private describeFailure(
+    provider: ProviderName,
+    result: ProviderExecutionResult,
+  ): string {
+    return [
+      `${provider} execution failed`,
+      result.status,
+      result.stderr,
+      result.stdout,
+    ]
+      .filter(Boolean)
+      .join(": ");
   }
 
   writeTerminalSession(sessionId: string, data: string) {
-    return this.engine.writeTerminalSession(sessionId, data);
+    return this.terminalSessionService.writeToSession(sessionId, data);
   }
 
   resizeTerminalSession(sessionId: string, cols: number, rows: number) {
-    return this.engine.resizeTerminalSession(sessionId, cols, rows);
+    return this.terminalSessionService.resizeSession(sessionId, cols, rows);
   }
 
   killTerminalSession(sessionId: string) {
-    this.engine.killTerminalSession(sessionId);
+    this.terminalSessionService.killSession(sessionId);
   }
 }

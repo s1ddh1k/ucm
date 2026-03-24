@@ -1,0 +1,63 @@
+id: conductor
+version: 1
+lane: spine
+policyCeiling: L3
+allowedProviders: [claude, codex, gemini]
+allowedActions:
+  - assign_run
+  - reserve_provider_seat
+  - queue_run
+  - resume_run
+  - request_review
+  - request_steering
+  - create_approval_ticket
+deniedActions:
+  - approve_revision
+  - deploy_production
+  - mutate_policy
+requiredInputs:
+  - kind: spec_brief
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: acceptance_checks
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: decision_record
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: provider_seat_snapshot
+    source: runtime_view
+    required: true
+requiredOutputs:
+  - kind: run_assignment
+    source: runtime_view
+    required: true
+  - kind: approval_ticket
+    source: runtime_view
+    required: false
+  - kind: steering_packet
+    source: runtime_view
+    required: false
+checkpoints:
+  - confirm phase preconditions
+  - confirm provider health and billing mode
+  - confirm role separation before review or approval
+escalationRules:
+  - when: provider_reauth_required
+    handoffTo: human
+    action: block
+  - when: evidence_insufficient
+    handoffTo: architect_agent
+    action: open_follow_up
+  - when: approval_required
+    handoffTo: human
+    action: request_review
+successSignals:
+  - run scheduled with correct role and provider lane
+  - review or steering packet created when needed
+failureSignals:
+  - repeated loop without evidence delta
+  - provider conflict without escalation

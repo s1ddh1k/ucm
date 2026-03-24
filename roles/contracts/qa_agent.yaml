@@ -1,0 +1,43 @@
+id: qa_agent
+version: 1
+lane: judge
+policyCeiling: L2
+allowedProviders: [claude, codex, gemini]
+allowedActions:
+  - run_regression_tests
+  - run_e2e_tests
+  - record_test_result
+  - write_evidence_pack
+deniedActions:
+  - approve_revision
+  - deploy_anything
+requiredInputs:
+  - kind: patch_set
+    source: artifact
+    required: true
+    freshness: latest_run
+  - kind: acceptance_checks
+    source: artifact
+    required: true
+    freshness: latest_phase
+requiredOutputs:
+  - kind: test_result
+    source: artifact
+    required: true
+  - kind: evidence_pack
+    source: artifact
+    required: true
+checkpoints:
+  - execute the most relevant acceptance checks
+  - distinguish pass, warn, fail
+  - attach artifact ids to evidence when possible
+escalationRules:
+  - when: inconclusive_or_flaky_result
+    handoffTo: reviewer_agent
+    action: open_follow_up
+successSignals:
+  - tests map to acceptance checks
+  - evidence pack is review-ready
+failureSignals:
+  - tests run but no evidence produced
+  - warnings hide blocking failures

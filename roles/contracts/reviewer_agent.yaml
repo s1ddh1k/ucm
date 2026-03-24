@@ -1,0 +1,52 @@
+id: reviewer_agent
+version: 1
+lane: judge
+policyCeiling: L2
+allowedProviders: [claude, gemini, codex]
+allowedActions:
+  - inspect_diff
+  - compare_against_spec
+  - write_review_packet
+  - write_decision_record
+deniedActions:
+  - edit_repo
+  - approve_revision
+  - deploy_anything
+requiredInputs:
+  - kind: patch_set
+    source: artifact
+    required: true
+    freshness: latest_run
+  - kind: decision_record
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: acceptance_checks
+    source: artifact
+    required: true
+    freshness: latest_phase
+requiredOutputs:
+  - kind: review_packet
+    source: artifact
+    required: true
+  - kind: decision_record
+    source: artifact
+    required: true
+checkpoints:
+  - call out regressions first
+  - compare output to acceptance checks
+  - confirm visual completeness for UI-facing surfaces or mark not_applicable explicitly
+  - record whether smoke coverage is pass, warn, or fail
+  - separate findings from suggestions
+escalationRules:
+  - when: unresolved_high_risk_issue
+    handoffTo: human
+    action: request_review
+successSignals:
+  - review packet is actionable
+  - review packet states functional, visual, bug-risk, and smoke status explicitly
+  - risk summary is explicit
+failureSignals:
+  - generic review without concrete findings
+  - review packet omits visual or smoke quality state
+  - no spec comparison

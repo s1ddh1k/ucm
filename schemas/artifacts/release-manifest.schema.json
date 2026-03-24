@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ucm.local/schemas/artifacts/release-manifest.schema.json",
+  "title": "Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "summary": { "type": "string", "minLength": 1 },
+    "approvedRevisionId": { "type": "string", "minLength": 1 },
+    "artifactIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "evidencePackIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "qualityGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "functionalStatus": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"]
+        },
+        "visualStatus": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail", "not_applicable"]
+        },
+        "bugRiskStatus": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"]
+        },
+        "smokeStatus": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail", "not_applicable"]
+        },
+        "knownIssues": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "required": [
+        "functionalStatus",
+        "visualStatus",
+        "bugRiskStatus",
+        "smokeStatus",
+        "knownIssues"
+      ]
+    },
+    "releaseChecklist": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "required": [
+    "summary",
+    "approvedRevisionId",
+    "artifactIds",
+    "evidencePackIds",
+    "qualityGates",
+    "releaseChecklist"
+  ]
+}

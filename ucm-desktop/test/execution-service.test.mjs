@@ -43,6 +43,7 @@ function createProviderRegistry(overrides = {}) {
   return {
     claude: { ...baseAdapter, ...overrides.claude },
     codex: { ...baseAdapter, name: "codex", ...overrides.codex },
+    gemini: { ...baseAdapter, name: "gemini", ...overrides.gemini },
   };
 }
 
@@ -174,6 +175,58 @@ test("execution service falls back to pipe execution when terminal session does 
   assert.equal(result.source, "provider");
   assert.equal(result.outcome, "completed");
   assert.equal(result.summary, "Verification packet is ready");
+});
+
+test("execution service can run a gemini-backed pass without opening a terminal session", async () => {
+  let terminalStarts = 0;
+  const terminalController = {
+    startSession() {
+      terminalStarts += 1;
+      return "term-gemini";
+    },
+    killSession() {},
+    writeToSession() {
+      return false;
+    },
+    resizeSession() {
+      return false;
+    },
+  };
+
+  const providerRegistry = createProviderRegistry({
+    gemini: {
+      async execute() {
+        return {
+          status: "done",
+          stdout: "Collected broader alternatives\nStatus: completed",
+          stderr: "",
+          exitCode: 0,
+          durationMs: 6,
+        };
+      },
+    },
+  });
+
+  const service = new ExecutionService({
+    providerAdapters: providerRegistry,
+    terminalSessionService: terminalController,
+  });
+
+  const result = await waitForCompletion((onComplete) => {
+    service.spawnAgentRun({
+      missionId: "m-test",
+      runId: "r-gemini",
+      agent: createAgent({ role: "research", name: "Researcher-Test" }),
+      objective: "Broaden the solution space before implementation.",
+      providerPreference: "gemini",
+      onComplete,
+    });
+  });
+
+  assert.equal(terminalStarts, 0);
+  assert.equal(result.source, "provider");
+  assert.equal(result.outcome, "completed");
+  assert.equal(result.summary, "Collected broader alternatives");
 });
 
 test("execution service delegates terminal controls to the terminal controller", () => {

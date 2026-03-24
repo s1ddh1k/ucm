@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ucm.local/schemas/role-contract.schema.json",
+  "title": "Role Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": [
+        "conductor",
+        "spec_agent",
+        "research_agent",
+        "architect_agent",
+        "builder_agent",
+        "reviewer_agent",
+        "qa_agent",
+        "security_agent",
+        "release_agent",
+        "ops_agent",
+        "learning_agent"
+      ]
+    },
+    "version": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "lane": {
+      "type": "string",
+      "enum": ["compass", "atlas", "forge", "judge", "harbor", "pulse", "mirror", "spine"]
+    },
+    "policyCeiling": {
+      "type": "string",
+      "enum": ["L0", "L1", "L2", "L3", "L4"]
+    },
+    "allowedProviders": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["claude", "codex", "gemini"] },
+      "uniqueItems": true
+    },
+    "allowedActions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "deniedActions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "requiredInputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "requiredOutputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "checkpoints": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "escalationRules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/escalationRule" }
+    },
+    "successSignals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "failureSignals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "lane",
+    "policyCeiling",
+    "allowedActions",
+    "deniedActions",
+    "requiredInputs",
+    "requiredOutputs",
+    "checkpoints",
+    "escalationRules",
+    "successSignals",
+    "failureSignals"
+  ],
+  "$defs": {
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "source": {
+          "type": "string",
+          "enum": ["artifact", "runtime_view", "policy_view", "memory_view"]
+        },
+        "required": { "type": "boolean" },
+        "freshness": {
+          "type": "string",
+          "enum": ["latest_phase", "latest_run", "approved_only"]
+        }
+      },
+      "required": ["kind", "source", "required"]
+    },
+    "escalationRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "when": { "type": "string", "minLength": 1 },
+        "handoffTo": {
+          "type": "string",
+          "enum": [
+            "conductor",
+            "spec_agent",
+            "research_agent",
+            "architect_agent",
+            "builder_agent",
+            "reviewer_agent",
+            "qa_agent",
+            "security_agent",
+            "release_agent",
+            "ops_agent",
+            "learning_agent",
+            "human"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": ["block", "request_review", "request_steering", "open_follow_up"]
+        }
+      },
+      "required": ["when", "handoffTo", "action"]
+    }
+  }
+}

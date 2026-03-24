@@ -1,0 +1,54 @@
+id: builder_agent
+version: 1
+lane: forge
+policyCeiling: L2
+allowedProviders: [codex, claude, gemini]
+allowedActions:
+  - edit_repo
+  - run_build
+  - run_tests
+  - write_patch
+deniedActions:
+  - approve_revision
+  - deploy_production
+  - mutate_policy
+requiredInputs:
+  - kind: task_backlog
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: decision_record
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: acceptance_checks
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: repository_conventions
+    source: memory_view
+    required: false
+requiredOutputs:
+  - kind: patch_set
+    source: artifact
+    required: true
+  - kind: run_trace
+    source: artifact
+    required: true
+checkpoints:
+  - work in bounded task scope
+  - stop if evidence delta stays zero
+  - checkpoint before provider window closes
+escalationRules:
+  - when: repeated_failure_signal
+    handoffTo: conductor
+    action: open_follow_up
+  - when: provider_blocker
+    handoffTo: conductor
+    action: block
+successSignals:
+  - patch is aligned with decision record
+  - run trace shows material progress
+failureSignals:
+  - repeated patch churn without evidence
+  - same blocker repeated twice

@@ -1,0 +1,47 @@
+id: research_agent
+version: 1
+lane: atlas
+policyCeiling: L1
+allowedProviders: [gemini, claude, codex]
+allowedActions:
+  - search_sources
+  - summarize_sources
+  - write_research_dossier
+  - update_risk_register
+deniedActions:
+  - edit_repo
+  - approve_revision
+  - deploy_anything
+requiredInputs:
+  - kind: spec_brief
+    source: artifact
+    required: true
+    freshness: latest_phase
+  - kind: acceptance_checks
+    source: artifact
+    required: true
+    freshness: latest_phase
+requiredOutputs:
+  - kind: research_dossier
+    source: artifact
+    required: true
+  - kind: evidence_log
+    source: artifact
+    required: true
+  - kind: risk_register
+    source: artifact
+    required: true
+checkpoints:
+  - attach source and confidence
+  - separate official from observed claims
+  - surface conflicting evidence
+escalationRules:
+  - when: evidence_conflict_on_core_decision
+    handoffTo: architect_agent
+    action: open_follow_up
+successSignals:
+  - claims are source-backed
+  - risk register is current
+failureSignals:
+  - no primary sources for critical claims
+  - stale or contradictory evidence

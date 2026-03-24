@@ -1,0 +1,46 @@
+id: security_agent
+version: 1
+lane: judge
+policyCeiling: L2
+allowedProviders: [claude, gemini, codex]
+allowedActions:
+  - inspect_dependency_changes
+  - inspect_secret_handling
+  - write_security_report
+  - write_evidence_pack
+deniedActions:
+  - approve_revision
+  - deploy_anything
+  - read_secret_values
+requiredInputs:
+  - kind: patch_set
+    source: artifact
+    required: true
+    freshness: latest_run
+  - kind: tool_access_policy
+    source: policy_view
+    required: true
+  - kind: dependency_changes
+    source: runtime_view
+    required: false
+requiredOutputs:
+  - kind: security_report
+    source: artifact
+    required: true
+  - kind: evidence_pack
+    source: artifact
+    required: false
+checkpoints:
+  - check secret exposure risk
+  - check sandbox or permission boundary changes
+  - check supply-chain risk on dependency updates
+escalationRules:
+  - when: destructive_or_data_sensitive_risk
+    handoffTo: human
+    action: request_review
+successSignals:
+  - findings are explicit and scoped
+  - security status is attached to evidence
+failureSignals:
+  - sensitive change without review
+  - secrets handled outside broker

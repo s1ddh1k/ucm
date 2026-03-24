@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ucm.local/schemas/artifacts/patch-set.schema.json",
+  "title": "Patch Set",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "inheritedFromRunId": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "patchLength": { "type": "integer", "minimum": 1 }
+  },
+  "required": ["summary"],
+  "anyOf": [
+    { "required": ["runId", "patchLength"] },
+    { "required": ["inheritedFromRunId"] }
+  ]
+}

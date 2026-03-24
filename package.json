@@ -7,6 +7,7 @@
     "desktop:dev": "cd ucm-desktop && npm run dev",
     "desktop:build": "cd ucm-desktop && npm run build",
     "desktop:typecheck": "cd ucm-desktop && npm run typecheck",
+    "desktop:validate:role-contracts": "cd ucm-desktop && npm run validate:role-contracts",
     "desktop:test:runtime": "cd ucm-desktop && npm run test:runtime",
     "desktop:test:smoke": "cd ucm-desktop && npm run test:smoke"
   }

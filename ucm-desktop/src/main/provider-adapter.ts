@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
+import type { RuntimeProvider } from "../shared/contracts";
 
-export type ProviderName = "claude" | "codex" | "local";
+export type ProviderName = RuntimeProvider | "local";
 
 export type ProviderExecutionInput = {
   prompt: string;

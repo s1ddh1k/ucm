@@ -8,6 +8,7 @@ import * as runtimeState from "../dist-electron/main/runtime-state-fixture.js";
 import * as runtimeMutations from "../dist-electron/main/runtime-mutations.js";
 import * as runtimeConductor from "../dist-electron/main/runtime-conductor.js";
 import * as runtimeExecution from "../dist-electron/main/runtime-execution.js";
+import * as runtimeArtifacts from "../dist-electron/main/runtime-artifacts.js";
 import * as runtimePolicy from "../dist-electron/main/runtime-policy.js";
 import * as runtimeHelpers from "../dist-electron/main/runtime-run-helpers.js";
 import * as runtimeStore from "../dist-electron/main/runtime-store.js";
@@ -41,10 +42,175 @@ test("release approval completes the mission", () => {
     (revision) => revision.id === approvedRelease.latestRevisionId,
   );
   const mission = state.missions.find((item) => item.id === approved.missionId);
+  const deliverableArtifacts = approved.run.artifacts.filter(
+    (artifact) => artifact.contractKind === "deliverable_revision",
+  );
 
   assert.equal(latestRevision?.status, "approved");
   assert.equal(approved.run.status, "completed");
   assert.equal(mission?.status, "completed");
+  assert.ok(deliverableArtifacts.some((artifact) => artifact.payload?.status === "approved"));
+});
+
+test("handoffDeliverableInState emits an explicit handoff artifact", () => {
+  const state = runtimeState.cloneSeed();
+  const nextRun = runtimeMutations.generateDeliverableRevisionInState(state, {
+    runId: "r-1",
+    deliverableId: "del-1",
+    summary: "Prepared a fresh approval packet from the latest artifacts.",
+  });
+  assert.ok(nextRun);
+
+  const handedOff = runtimeMutations.handoffDeliverableInState(state, {
+    runId: "r-1",
+    deliverableRevisionId: nextRun.deliverables[0].latestRevisionId,
+    channel: "inbox",
+    target: "human reviewer",
+  });
+
+  assert.ok(handedOff);
+  assert.ok(
+    handedOff.artifacts.some((artifact) => artifact.contractKind === "handoff_record"),
+  );
+});
+
+test("approval keeps the mission completed and branches into a dedicated release follow-up run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-verifier" ? { ...agent, status: "idle" } : agent,
+  );
+  const sourceRun = seededState.runsByMissionId["m-1"][0];
+  sourceRun.deliverables = [
+    {
+      id: "del-release-ready",
+      kind: "review_packet",
+      title: "Release-ready review packet",
+      latestRevisionId: "del-release-ready-r1",
+      revisions: [
+        {
+          id: "del-release-ready-r1",
+          revision: 1,
+          summary: "Approved review packet for release packaging.",
+          createdAtLabel: "just now",
+          basedOnArtifactIds: [
+            "art-release-review",
+            "art-release-evidence",
+            "art-release-rollback",
+          ],
+          status: "active",
+        },
+      ],
+    },
+  ];
+  sourceRun.handoffs = [
+    {
+      id: "handoff-release-ready",
+      deliverableRevisionId: "del-release-ready-r1",
+      channel: "inbox",
+      target: "human reviewer",
+      createdAtLabel: "just now",
+      status: "active",
+    },
+  ];
+  sourceRun.artifacts = [
+    runtimeArtifacts.createArtifactRecord({
+      id: "art-release-review",
+      type: "report",
+      title: "Review packet artifact",
+      preview: "Review packet is ready for release packaging.",
+      contractKind: "review_packet",
+      payload: {
+        summary: "Approved review packet.",
+        selectedApproach: "Keep the checkout patch narrow and rollback-safe.",
+        artifactIds: ["art-release-review", "art-release-evidence", "art-release-rollback"],
+        evidencePackIds: ["art-release-evidence"],
+        functionalStatus: "pass",
+        visualStatus: "not_applicable",
+        bugRiskStatus: "pass",
+        smokeStatus: "pass",
+        surfacesReviewed: [],
+        knownIssues: [],
+        openRisks: [],
+        requestedAction: "review",
+      },
+    }),
+    runtimeArtifacts.createArtifactRecord({
+      id: "art-release-evidence",
+      type: "report",
+      title: "Evidence pack artifact",
+      preview: "Evidence pack supports completion.",
+      contractKind: "evidence_pack",
+      payload: {
+        id: "evp-r-1-release",
+        decision: "promote_to_completion",
+        checks: [
+          {
+            name: "verification_signal_present",
+            status: "pass",
+            summary: "Verification artifacts exist.",
+          },
+        ],
+        artifactIds: ["art-release-review"],
+        generatedAtLabel: "just now",
+      },
+    }),
+    runtimeArtifacts.createArtifactRecord({
+      id: "art-release-rollback",
+      type: "report",
+      title: "Rollback plan artifact",
+      preview: "Rollback plan is attached.",
+      contractKind: "rollback_plan",
+      payload: {
+        summary: "Rollback to the previously approved checkout flow.",
+        triggerConditions: ["Regression appears after release packaging."],
+        rollbackSteps: ["Revert the checkout auth patch."],
+        verificationSteps: ["Re-run the checkout regression suite."],
+      },
+    }),
+  ];
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.approveDeliverableRevision({
+    runId: "r-1",
+    deliverableRevisionId: "del-release-ready-r1",
+  });
+  const result = runtime.autopilotStep();
+  const state = store.read();
+  const mission = state.missions.find((item) => item.id === "m-1");
+  const releaseRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "release_from_approved_revision",
+  );
+
+  assert.equal(result.eventKind, "completed");
+  assert.equal(result.decision, "observe");
+  assert.equal(mission?.status, "completed");
+  assert.equal(state.runsByMissionId["m-1"][0].status, "completed");
+  assert.equal(releaseRuns.length, 1);
+  assert.equal(releaseRuns[0].roleContractId, "release_agent");
+  assert.equal(releaseRuns[0].deliverables[0].kind, "release_brief");
+  assert.ok(
+    executionCalls.some(
+      (call) => call.runId === releaseRuns[0].id && call.agentId === "a-verifier",
+    ),
+  );
 });
 
 test("blocked event produces a steering packet via conductor", () => {
@@ -98,19 +264,83 @@ test("completed agent run resolves active steering and emits an artifact", () =>
     summary: "Builder resumed with the supplied fixture path and produced a patch.",
     source: "mock",
     outcome: "completed",
+    generatedPatch: `diff --git a/src/checkout/session.ts b/src/checkout/session.ts
+@@
+-return oldFixturePath;
++return resolveCheckoutFixture();`,
   });
 
   assert.ok(completed);
 
-  const latestArtifact = completed.run.artifacts.at(-1);
+  const patchArtifact = completed.run.artifacts.find(
+    (artifact) => artifact.contractKind === "patch_set",
+  );
+  const traceArtifact = completed.run.artifacts.find(
+    (artifact) => artifact.contractKind === "run_trace",
+  );
   const steeringEvents = (state.runEventsByRunId["r-1"] ?? []).filter(
     (event) => event.kind === "steering_submitted",
   );
   const latestRunEvent = (state.runEventsByRunId["r-1"] ?? []).at(-1);
 
-  assert.equal(latestArtifact?.type, "diff");
+  assert.equal(patchArtifact?.type, "diff");
+  assert.equal(traceArtifact?.type, "report");
+  assert.equal(completed.run.status, "completed");
   assert.equal(latestRunEvent?.kind, "artifact_created");
   assert.equal(steeringEvents.at(-1)?.metadata?.status, "resolved");
+});
+
+test("builder completion still triggers verification follow-up after trace artifacts are appended", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.runsByMissionId["m-1"][0].status = "running";
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-builder-2"
+      ? { ...agent, status: "running" }
+      : agent.id === "a-verifier"
+        ? { ...agent, status: "idle" }
+        : agent,
+  );
+  runtimeExecution.completeAgentRunInState(seededState, {
+    missionId: "m-1",
+    runId: "r-1",
+    agentId: "a-builder-2",
+    summary: "Builder completed the auth patch and captured a real diff.",
+    source: "mock",
+    outcome: "completed",
+    generatedPatch: `diff --git a/src/checkout/session.ts b/src/checkout/session.ts
+@@
+-return oldFixturePath;
++return resolveCheckoutFixture();`,
+  });
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.agentId === "a-verifier" && run.id !== "r-1",
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].origin?.schedulerRuleId, "verification_from_diff_artifact");
+  assert.ok(executionCalls.some((call) => call.runId === followupRuns[0].id));
 });
 
 test("execution handoff can be driven through an injected execution controller", () => {
@@ -201,6 +431,69 @@ test("provider queue gate defers spawn and records a queued event", () => {
   assert.equal(latestEvent?.kind, "agent_status_changed");
   assert.equal(latestEvent?.metadata?.source, "provider_queue");
   assert.equal(latestLifecycle?.kind, "queued");
+});
+
+test("local workspace execution blocks instead of entering an orphaned queue", () => {
+  const state = runtimeState.cloneSeed();
+  const mission = runtimeMutations.createMissionInState(state, {
+    workspaceId: state.activeWorkspaceId,
+    title: "Run local command",
+    goal: "Exercise the local execution lane.",
+    command: "npm test",
+  });
+  const runId = `r-${mission.id}`;
+  const builderId = `a-builder-${mission.id}`;
+
+  runtimeExecution.maybeStartAgentExecutionInState({
+    state,
+    missionId: mission.id,
+    runId,
+    agentId: builderId,
+    executionService: {
+      spawnAgentRun() {
+        return false;
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+    callbacks: {
+      onSessionStart() {},
+      onTerminalData() {},
+      onComplete() {},
+    },
+  });
+
+  const run = state.runsByMissionId[mission.id].find((item) => item.id === runId);
+  const agent = state.agentsByMissionId[mission.id].find((item) => item.id === builderId);
+  const latestEvent = (state.runEventsByRunId[runId] ?? []).at(-1);
+
+  assert.equal(run?.status, "blocked");
+  assert.equal(agent?.status, "blocked");
+  assert.equal(latestEvent?.kind, "blocked");
+  assert.equal(latestEvent?.metadata?.source, "local_lane_busy");
+});
+
+test("createMissionInState seeds planning missions with research and design agents", () => {
+  const state = runtimeState.cloneSeed();
+  const mission = runtimeMutations.createMissionInState(state, {
+    workspaceId: state.activeWorkspaceId,
+    title: "Plan shipping lane",
+    goal: "Shape the next release and incident workflow.",
+  });
+
+  const agents = state.agentsByMissionId[mission.id] ?? [];
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const missionDetail = state.missionDetailsById[mission.id];
+
+  assert.ok(agentIds.has(`a-researcher-${mission.id}`));
+  assert.ok(agentIds.has(`a-architect-${mission.id}`));
+  assert.ok(missionDetail.agentIds.includes(`a-researcher-${mission.id}`));
+  assert.ok(missionDetail.agentIds.includes(`a-architect-${mission.id}`));
 });
 
 test("runtime service autopilot step can run with injected store and execution controller", () => {
@@ -477,6 +770,88 @@ test("runtime service resumes a queued run when the provider window becomes free
   assert.equal(latestEvent?.metadata?.source, "provider_resume");
 });
 
+test("shell snapshot lists gemini alongside existing provider windows", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const runtime = new runtimeServiceModule.RuntimeService({ store });
+
+  const snapshot = runtime.getShellSnapshot();
+  const providers = snapshot.providerWindows.map((item) => item.provider);
+
+  assert.deepEqual(providers, ["claude", "codex", "gemini"]);
+  assert.equal(snapshot.providerWindows.find((item) => item.provider === "gemini")?.status, "ready");
+});
+
+test("hydrateRunDetail derives a review-ready evidence pack from artifacts and revisions", () => {
+  const state = runtimeState.cloneSeed();
+  const run = state.runsByMissionId["m-1"][0];
+
+  run.artifacts = [
+    ...run.artifacts,
+    {
+      id: "art-evidence-diff",
+      type: "diff",
+      title: "Checkout auth patch",
+      preview: "checkout/session.ts patched for review",
+    },
+    {
+      id: "art-evidence-test",
+      type: "test_result",
+      title: "Regression verification",
+      preview: "Regression suite is green.",
+    },
+  ];
+
+  const hydrated = runtimeHelpers.hydrateRunDetail(state, run);
+  const evidence = hydrated.evidencePacks?.[0];
+
+  assert.ok(evidence);
+  assert.equal(evidence?.decision, "promote_to_review");
+  assert.equal(
+    evidence?.checks.find((check) => check.name === "verification_signal_present")?.status,
+    "pass",
+  );
+});
+
+test("hydrateRunDetail treats explicit review packet artifacts as review evidence", () => {
+  const state = runtimeState.cloneSeed();
+  const run = state.runsByMissionId["m-1"][0];
+
+  run.deliverables = [];
+  run.artifacts = [
+    ...run.artifacts,
+    runtimeArtifacts.createArtifactRecord({
+      id: "art-explicit-review-packet",
+      type: "report",
+      title: "Explicit review packet",
+      preview: "Review packet was captured as an artifact.",
+      contractKind: "review_packet",
+      payload: {
+        summary: "Ready for review.",
+        selectedApproach: "Patch the checkout fallback flow.",
+        artifactIds: ["art-explicit-review-packet"],
+        evidencePackIds: ["evp-r-1-latest"],
+        functionalStatus: "pass",
+        visualStatus: "not_applicable",
+        bugRiskStatus: "pass",
+        smokeStatus: "pass",
+        surfacesReviewed: [],
+        knownIssues: [],
+        openRisks: [],
+        requestedAction: "review",
+      },
+    }),
+  ];
+
+  const hydrated = runtimeHelpers.hydrateRunDetail(state, run);
+  const evidence = hydrated.evidencePacks?.[0];
+
+  assert.ok(evidence);
+  assert.equal(
+    evidence?.checks.find((check) => check.name === "review_packet_present")?.status,
+    "pass",
+  );
+});
+
 test("artifact-created verification work branches into a dedicated follow-up run", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
   const seededState = store.read();
@@ -539,6 +914,15 @@ test("artifact-created verification work branches into a dedicated follow-up run
   assert.equal(followupRuns[0].origin?.spawnMode, "execute");
   assert.equal(followupRuns[0].origin?.budgetClass, "standard");
   assert.equal(state.missionBudgetById["m-1"].standard.used, 1);
+  assert.equal(
+    followupRuns[0].artifacts.find((artifact) => artifact.contractKind === "patch_set")
+      ?.payloadValidation?.valid,
+    true,
+  );
+  assert.deepEqual(
+    followupRuns[0].deliverables[0].revisions[0].basedOnArtifactIds,
+    followupRuns[0].artifacts.map((artifact) => artifact.id),
+  );
   assert.ok(executionCalls.some((call) => call.runId === followupRuns[0].id && call.agentId === "a-verifier"));
 });
 
@@ -594,6 +978,574 @@ test("blocked work branches into a dedicated research follow-up run", () => {
   assert.equal(followupRuns[0].origin?.spawnMode, "execute");
   assert.equal(followupRuns[0].origin?.budgetClass, "light");
   assert.equal(state.missionBudgetById["m-1"].light.used, 2);
+  assert.ok(
+    executionCalls.some(
+      (call) => call.runId === followupRuns[0].id && call.agentId === "a-researcher",
+    ),
+  );
+});
+
+test("mission bootstrap branches into a dedicated spec follow-up run without waking a phantom builder", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  const mission = runtime.createMission({
+    workspaceId: runtime.listWorkspaces()[0].id,
+    title: "Plan release review",
+    goal: "Collect the remaining release checks.",
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId[mission.id] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "spec_from_conductor_bootstrap",
+  );
+  const builder = (state.agentsByMissionId[mission.id] ?? []).find(
+    (agent) => agent.id === `a-builder-${mission.id}`,
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].roleContractId, "spec_agent");
+  assert.equal(followupRuns[0].status, "running");
+  assert.equal(builder?.status, "idle");
+  assert.ok(
+    executionCalls.some(
+      (call) =>
+        call.runId === followupRuns[0].id && call.agentId === `a-architect-${mission.id}`,
+    ),
+  );
+});
+
+test("completed research branches into a dedicated architecture follow-up run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.activeMissionId = "m-1";
+  seededState.activeRunId = "r-research-complete";
+  seededState.autopilotHandledEventIdsByRunId["r-1"] = [
+    ...(seededState.runEventsByRunId["r-1"] ?? []).map((event) => event.id),
+  ];
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-architect" ? { ...agent, status: "idle" } : agent,
+  );
+  seededState.runsByMissionId["m-1"].push({
+    id: "r-research-complete",
+    missionId: "m-1",
+    agentId: "a-researcher",
+    roleContractId: "research_agent",
+    title: "Research checkout rollback paths",
+    status: "completed",
+    summary: "Research gathered rollback constraints and prior incidents.",
+    budgetClass: "light",
+    providerPreference: "gemini",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [
+      {
+        id: "tl-research-start",
+        kind: "started",
+        summary: "Research run started.",
+        timestampLabel: "2m ago",
+      },
+      {
+        id: "tl-research-complete",
+        kind: "completed",
+        summary: "Research run completed.",
+        timestampLabel: "just now",
+      },
+    ],
+    decisions: [
+      {
+        id: "d-research-1",
+        category: "planning",
+        summary: "Capture rollback-sensitive constraints before architecture work resumes.",
+        rationale: "Architecture depends on the latest risk framing.",
+      },
+    ],
+    artifacts: [
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-research-spec",
+        type: "report",
+        title: "Inherited spec brief",
+        preview: "Checkout rollback scope.",
+        contractKind: "spec_brief",
+        payload: {
+          title: "Checkout rollback",
+          problem: "Restore checkout stability.",
+          targetUsers: [],
+          jobsToBeDone: [],
+          goals: ["Restore checkout stability."],
+          nonGoals: [],
+          constraints: [],
+          openQuestions: [],
+        },
+      }),
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-research-dossier",
+        type: "report",
+        title: "Research dossier",
+        preview: "Rollback constraints are attached.",
+        contractKind: "research_dossier",
+        payload: {
+          question: "What rollback path keeps auth intact?",
+          findings: ["Reuse the narrow recovery path."],
+          sourceIds: [],
+          confidence: "observed",
+          updatedAt: "just now",
+        },
+      }),
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-risk-register-complete",
+        type: "report",
+        title: "Risk register",
+        preview: "Auth coupling risk is attached.",
+        contractKind: "risk_register",
+        payload: {
+          risks: [
+            {
+              id: "risk-auth-coupling",
+              summary: "Auth helper coupling remains the main design risk.",
+              severity: "high",
+            },
+          ],
+        },
+      }),
+    ],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+  });
+  seededState.runEventsByRunId["r-research-complete"] = [
+    {
+      id: "ev-research-complete",
+      runId: "r-research-complete",
+      agentId: "a-researcher",
+      kind: "completed",
+      summary: "Research pass completed and is ready for architecture.",
+      createdAtLabel: "just now",
+      metadata: {
+        source: "mock",
+      },
+    },
+  ];
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "architecture_from_research_completion",
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].roleContractId, "architect_agent");
+  assert.equal(followupRuns[0].status, "running");
+  assert.equal(state.missionBudgetById["m-1"].heavy.used, 1);
+  assert.ok(
+    executionCalls.some(
+      (call) => call.runId === followupRuns[0].id && call.agentId === "a-architect",
+    ),
+  );
+});
+
+test("completed verification branches into a dedicated security follow-up run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.activeMissionId = "m-1";
+  seededState.activeRunId = "r-qa-complete";
+  seededState.autopilotHandledEventIdsByRunId["r-1"] = [
+    ...(seededState.runEventsByRunId["r-1"] ?? []).map((event) => event.id),
+  ];
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-verifier" ? { ...agent, status: "idle" } : agent,
+  );
+  seededState.runsByMissionId["m-1"].push({
+    id: "r-qa-complete",
+    missionId: "m-1",
+    agentId: "a-verifier",
+    roleContractId: "qa_agent",
+    title: "Verify checkout auth patch",
+    status: "completed",
+    summary: "Verification completed with enough evidence for the next gate.",
+    budgetClass: "standard",
+    providerPreference: "claude",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [
+      {
+        id: "tl-qa-start",
+        kind: "started",
+        summary: "QA run started.",
+        timestampLabel: "2m ago",
+      },
+      {
+        id: "tl-qa-complete",
+        kind: "completed",
+        summary: "QA run completed.",
+        timestampLabel: "just now",
+      },
+    ],
+    decisions: [],
+    artifacts: [
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-qa-patch",
+        type: "diff",
+        title: "Patch set",
+        preview: "Verified checkout patch.",
+        contractKind: "patch_set",
+        payload: {
+          runId: "r-qa-complete",
+          summary: "Verified checkout patch",
+          patchLength: 42,
+        },
+      }),
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-qa-evidence",
+        type: "report",
+        title: "Evidence pack",
+        preview: "Verification evidence is attached.",
+        contractKind: "evidence_pack",
+        payload: {
+          id: "evp-r-qa-complete",
+          decision: "promote_to_review",
+          checks: [
+            {
+              name: "verification_signal_present",
+              status: "pass",
+              summary: "Verification artifacts exist.",
+            },
+          ],
+          artifactIds: ["art-qa-patch"],
+          generatedAtLabel: "just now",
+        },
+      }),
+    ],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+  });
+  seededState.runEventsByRunId["r-qa-complete"] = [
+    {
+      id: "ev-qa-complete",
+      runId: "r-qa-complete",
+      agentId: "a-verifier",
+      kind: "completed",
+      summary: "Verification is complete.",
+      createdAtLabel: "just now",
+      metadata: {
+        source: "mock",
+      },
+    },
+  ];
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "security_from_verification_completion",
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].roleContractId, "security_agent");
+  assert.equal(followupRuns[0].providerPreference, "claude");
+  assert.ok(
+    executionCalls.some(
+      (call) => call.runId === followupRuns[0].id && call.agentId === "a-verifier",
+    ),
+  );
+});
+
+test("completed release branches into a dedicated ops follow-up run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.activeMissionId = "m-1";
+  seededState.activeRunId = "r-release-complete";
+  seededState.autopilotHandledEventIdsByRunId["r-1"] = [
+    ...(seededState.runEventsByRunId["r-1"] ?? []).map((event) => event.id),
+  ];
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-researcher" ? { ...agent, status: "idle" } : agent,
+  );
+  seededState.runsByMissionId["m-1"].push({
+    id: "r-release-complete",
+    missionId: "m-1",
+    agentId: "a-verifier",
+    roleContractId: "release_agent",
+    title: "Release checkout auth patch",
+    status: "completed",
+    summary: "Release package was assembled and handed off.",
+    budgetClass: "light",
+    providerPreference: "claude",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [
+      {
+        id: "tl-release-start",
+        kind: "started",
+        summary: "Release run started.",
+        timestampLabel: "3m ago",
+      },
+      {
+        id: "tl-release-complete",
+        kind: "completed",
+        summary: "Release run completed.",
+        timestampLabel: "just now",
+      },
+    ],
+    decisions: [],
+    artifacts: [
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-release-manifest-complete",
+        type: "report",
+        title: "Release manifest",
+        preview: "Manifest is attached.",
+        contractKind: "release_manifest",
+        payload: {
+          summary: "Release manifest for checkout auth patch.",
+          approvedRevisionId: "del-release-ready-r1",
+          artifactIds: ["art-release-manifest-complete"],
+          evidencePackIds: ["art-release-evidence-complete"],
+          qualityGates: {
+            functionalStatus: "pass",
+            visualStatus: "not_applicable",
+            bugRiskStatus: "pass",
+            smokeStatus: "pass",
+            knownIssues: [],
+          },
+          releaseChecklist: ["Approved revision is attached."],
+        },
+      }),
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-release-handoff-complete",
+        type: "handoff",
+        title: "Release handoff",
+        preview: "Release package was handed off.",
+        contractKind: "handoff_record",
+        payload: {
+          deliverableRevisionId: "del-release-ready-r1",
+          channel: "inbox",
+          target: "human reviewer",
+          status: "active",
+          relatedArtifactIds: ["art-release-manifest-complete"],
+        },
+      }),
+    ],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+  });
+  seededState.runEventsByRunId["r-release-complete"] = [
+    {
+      id: "ev-release-complete",
+      runId: "r-release-complete",
+      agentId: "a-verifier",
+      kind: "completed",
+      summary: "Release pass completed.",
+      createdAtLabel: "just now",
+      metadata: {
+        source: "mock",
+      },
+    },
+  ];
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "ops_from_release_completion",
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].roleContractId, "ops_agent");
+  assert.equal(followupRuns[0].providerPreference, "gemini");
+  assert.equal(followupRuns[0].deliverables[0].kind, "deployment_note");
+  assert.match(followupRuns[0].deliverables[0].title, /deployment note/i);
+  assert.ok(
+    executionCalls.some(
+      (call) => call.runId === followupRuns[0].id && call.agentId === "a-researcher",
+    ),
+  );
+});
+
+test("completed ops branches into a dedicated learning follow-up run", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.activeMissionId = "m-1";
+  seededState.activeRunId = "r-ops-complete";
+  seededState.autopilotHandledEventIdsByRunId["r-1"] = [
+    ...(seededState.runEventsByRunId["r-1"] ?? []).map((event) => event.id),
+  ];
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-researcher" ? { ...agent, status: "idle" } : agent,
+  );
+  seededState.runsByMissionId["m-1"].push({
+    id: "r-ops-complete",
+    missionId: "m-1",
+    agentId: "a-researcher",
+    roleContractId: "ops_agent",
+    title: "Operate checkout auth release",
+    status: "completed",
+    summary: "Operational follow-up classified the latest release signal.",
+    budgetClass: "light",
+    providerPreference: "gemini",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [
+      {
+        id: "tl-ops-start",
+        kind: "started",
+        summary: "Ops run started.",
+        timestampLabel: "4m ago",
+      },
+      {
+        id: "tl-ops-complete",
+        kind: "completed",
+        summary: "Ops run completed.",
+        timestampLabel: "just now",
+      },
+    ],
+    decisions: [],
+    artifacts: [
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-ops-incident",
+        type: "report",
+        title: "Incident record",
+        preview: "Operational incident is attached.",
+        contractKind: "incident_record",
+        payload: {
+          summary: "Intermittent checkout retries were observed after rollout.",
+          severity: "medium",
+          affectedMissionId: "m-1",
+          affectedRunId: "r-ops-complete",
+          symptoms: ["Checkout retries spike under load."],
+          nextActions: ["Codify the retry pattern in a learning pass."],
+        },
+      }),
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-ops-improvement",
+        type: "report",
+        title: "Improvement proposal",
+        preview: "Operational improvement proposal is attached.",
+        contractKind: "improvement_proposal",
+        payload: {
+          title: "Capture retry spikes earlier",
+          summary: "Classify retry spikes before they become human tickets.",
+          hypothesis: "Earlier classification reduces noisy escalations.",
+          expectedImpact: "Cleaner operations routing.",
+          requiredEvals: ["Replay the incident classifier against the latest release log."],
+          relatedArtifactIds: ["art-ops-incident"],
+        },
+      }),
+    ],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+  });
+  seededState.runEventsByRunId["r-ops-complete"] = [
+    {
+      id: "ev-ops-complete",
+      runId: "r-ops-complete",
+      agentId: "a-researcher",
+      kind: "completed",
+      summary: "Ops pass completed.",
+      createdAtLabel: "just now",
+      metadata: {
+        source: "mock",
+      },
+    },
+  ];
+  store.write(seededState);
+
+  const executionCalls = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({ runId: input.runId, agentId: input.agent.id });
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession() {},
+    },
+  });
+
+  runtime.autopilotStep();
+  const state = store.read();
+  const followupRuns = (state.runsByMissionId["m-1"] ?? []).filter(
+    (run) => run.origin?.schedulerRuleId === "learning_from_ops_completion",
+  );
+
+  assert.equal(followupRuns.length, 1);
+  assert.equal(followupRuns[0].roleContractId, "learning_agent");
+  assert.equal(followupRuns[0].providerPreference, "gemini");
   assert.ok(
     executionCalls.some(
       (call) => call.runId === followupRuns[0].id && call.agentId === "a-researcher",
@@ -927,6 +1879,15 @@ test("creating a mission with a workspace command immediately starts execution",
   assert.ok(mission.id);
   assert.equal(executionCalls.length, 1);
   assert.equal(executionCalls[0].workspaceCommand, "npm test");
+
+  const activeRun = runtime.getActiveRun();
+  assert.ok(activeRun);
+  assert.ok(
+    activeRun.artifacts.some((artifact) => artifact.contractKind === "acceptance_checks"),
+  );
+  assert.equal(activeRun.deliverables.length, 0);
+  assert.equal(activeRun.handoffs.length, 0);
+  assert.deepEqual(activeRun.runEvents, []);
 });
 
 test("setting the active mission also selects its workspace and run", () => {

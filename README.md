@@ -15,3 +15,19 @@
 ```bash
 npm run desktop:dev
 ```
+
+설계 문서:
+
+- [system-architecture.md](./system-architecture.md)
+- [workflow-spec.md](./workflow-spec.md)
+- [runtime-state-machine.md](./runtime-state-machine.md)
+- [policy-model.md](./policy-model.md)
+- [evidence-and-release.md](./evidence-and-release.md)
+- [storage-and-provenance.md](./storage-and-provenance.md)
+- [role-contracts.md](./role-contracts.md)
+- [artifact-schema.md](./artifact-schema.md)
+
+머신 리더블 자산:
+
+- [roles](/home/eugene/git/ucm/roles)
+- [schemas](/home/eugene/git/ucm/schemas)
