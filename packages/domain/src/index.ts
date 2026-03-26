@@ -1,2 +1,2 @@
-export * from "./release";
-export * from "./run";
+// Domain logic removed during simplification.
+// State transitions are handled directly in the runtime.

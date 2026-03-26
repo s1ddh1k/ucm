@@ -57,29 +57,20 @@ export function createMissionInState(
     command: normalizedCommand || undefined,
     successCriteria: [
       "Mission has a clear execution path.",
-      "Team has enough context to begin.",
     ],
     constraints: ["Keep scope tight until the first run succeeds."],
-    risks: ["Mission needs a richer plan before large changes begin."],
+    risks: [],
     phases: [
       {
-        id: `p-discover-${mission.id}`,
-        title: "Discover and scope",
-        objective: `Understand the boundary of ${mission.title}.`,
-        status: "done",
-      },
-      {
         id: `p-execute-${mission.id}`,
-        title: "Execute first pass",
-        objective: `Prepare the first execution pass for ${mission.title}.`,
+        title: "Execute",
+        objective: `Execute ${mission.title}.`,
         status: "active",
       },
     ],
     agentIds: [
-      `a-conductor-${mission.id}`,
+      ...(normalizedCommand ? [] : [`a-planner-${mission.id}`]),
       `a-builder-${mission.id}`,
-      `a-researcher-${mission.id}`,
-      `a-architect-${mission.id}`,
       `a-verifier-${mission.id}`,
     ],
   };
@@ -87,126 +78,82 @@ export function createMissionInState(
   state.missionDetailsById[mission.id] = missionDetail;
   state.workspaceIdByMissionId[mission.id] = input.workspaceId;
   state.agentsByMissionId[mission.id] = [
-    {
-      id: `a-conductor-${mission.id}`,
-      name: "Conductor",
-      role: "coordination",
-      status: normalizedCommand ? "idle" : "running",
-      objective: normalizedCommand
-        ? `Coordinate local workspace command for ${mission.title}.`
-        : `Shape execution plan for ${mission.title}.`,
-    },
+    ...(normalizedCommand
+      ? []
+      : [
+          {
+            id: `a-planner-${mission.id}`,
+            name: "Planner",
+            role: "coordination" as const,
+            status: "running" as const,
+            objective: `Expand the goal "${mission.goal}" into a concrete spec with scope, acceptance criteria, and constraints.`,
+          },
+        ]),
     {
       id: `a-builder-${mission.id}`,
       name: "Builder",
-      role: "implementation",
-      status: normalizedCommand ? "running" : "idle",
+      role: "implementation" as const,
+      status: normalizedCommand ? "running" as const : "idle" as const,
       objective: normalizedCommand
         ? `Run "${normalizedCommand}" in the selected workspace.`
-        : `Prepare implementation path for ${mission.title}.`,
-    },
-    {
-      id: `a-researcher-${mission.id}`,
-      name: "Researcher",
-      role: "research",
-      status: "idle",
-      objective: `Collect missing context and external evidence for ${mission.title}.`,
-    },
-    {
-      id: `a-architect-${mission.id}`,
-      name: "Architect",
-      role: "design",
-      status: "idle",
-      objective: `Refine the execution plan and architecture for ${mission.title}.`,
+        : `Execute ${mission.title}.`,
     },
     {
       id: `a-verifier-${mission.id}`,
       name: "Verifier",
-      role: "verification",
-      status: "idle",
-      objective: `Prepare verification checklist for ${mission.title}.`,
+      role: "verification" as const,
+      status: "idle" as const,
+      objective: `Verify the output of ${mission.title}.`,
     },
   ];
+  const usePlanner = !normalizedCommand;
   const initialRun: RunDetail = {
     id: `r-${mission.id}`,
     missionId: mission.id,
-    agentId: normalizedCommand
-      ? `a-builder-${mission.id}`
-      : `a-conductor-${mission.id}`,
-    roleContractId: normalizedCommand ? "builder_agent" : "conductor",
-    title: normalizedCommand ? `Run ${mission.title}` : `Plan ${mission.title}`,
+    agentId: usePlanner
+      ? `a-planner-${mission.id}`
+      : `a-builder-${mission.id}`,
+    roleContractId: usePlanner ? "conductor" : "builder_agent",
+    title: usePlanner ? `Plan ${mission.title}` : `Build ${mission.title}`,
     status: "running",
-    summary: normalizedCommand
-      ? `Builder is executing "${normalizedCommand}" in the selected workspace.`
-      : "Conductor is shaping the first execution plan for the new mission.",
-    budgetClass: "standard",
+    summary: usePlanner
+      ? `Planner is expanding the goal into a concrete spec.`
+      : `Builder is executing "${normalizedCommand}" in the selected workspace.`,
+    budgetClass: usePlanner ? "light" : "standard",
     providerPreference: normalizedCommand ? undefined : "claude",
     workspaceCommand: normalizedCommand || undefined,
     terminalSessionId: undefined,
     terminalProvider: undefined,
     activeSurface: "artifacts",
-    terminalPreview: [
-      normalizedCommand ? `$ ${normalizedCommand}` : "$ collect-context",
-      normalizedCommand
-        ? "Local workspace command is ready to run."
-        : "Reviewing workspace history and recent mission notes...",
-    ],
+    terminalPreview: normalizedCommand
+      ? [`$ ${normalizedCommand}`, "Local workspace command is ready to run."]
+      : [],
     timeline: [
       {
         id: `tl-start-${mission.id}`,
         kind: "started",
-        summary: normalizedCommand
-          ? "Mission bootstrapped and builder execution started."
-          : "Mission bootstrapped and conductor run started.",
+        summary: usePlanner
+          ? "Mission bootstrapped and planner started."
+          : "Mission bootstrapped and builder execution started.",
         timestampLabel: "just now",
       },
     ],
-      decisions: [
-        {
-          id: `d-plan-${mission.id}`,
-          category: "planning",
-        summary: normalizedCommand
-          ? "Execute the supplied workspace command as the first run."
-          : "Begin with a conductor-led discovery pass.",
-        rationale: normalizedCommand
-          ? "A direct workspace command should start immediately without a separate planning-only run."
-          : "New missions should tighten scope before implementation begins.",
+    decisions: [
+      {
+        id: `d-plan-${mission.id}`,
+        category: "planning",
+        summary: usePlanner
+          ? "Expand the mission goal into a concrete spec before building."
+          : "Execute the workspace command directly.",
+        rationale: usePlanner
+          ? "A planner pass prevents under-scoping by turning a brief goal into explicit scope and criteria."
+          : "A direct workspace command should start immediately.",
       },
     ],
     artifacts: [],
     runEvents: [],
-    deliverables: normalizedCommand
-      ? []
-      : [
-          {
-            id: `del-${mission.id}`,
-            kind: "review_packet",
-            title: `${mission.title} review packet`,
-            latestRevisionId: `del-${mission.id}-r1`,
-            revisions: [
-              {
-                id: `del-${mission.id}-r1`,
-                revision: 1,
-                summary:
-                  "Initial review packet created from mission bootstrap artifacts.",
-                createdAtLabel: "just now",
-                basedOnArtifactIds: [`art-plan-${mission.id}`],
-                status: "active",
-              },
-            ],
-          },
-        ],
-    handoffs: normalizedCommand
-      ? []
-      : [
-          {
-            id: `handoff-${mission.id}-r1`,
-            deliverableRevisionId: `del-${mission.id}-r1`,
-            channel: "inbox",
-            createdAtLabel: "just now",
-            status: "active",
-          },
-      ],
+    deliverables: [],
+    handoffs: [],
   };
   const contextArtifacts = buildMissionContextArtifacts({
     missionId: mission.id,
@@ -216,83 +163,46 @@ export function createMissionInState(
     missionDetail,
     decisions: initialRun.decisions,
   });
-  initialRun.artifacts = normalizedCommand
-    ? contextArtifacts
-    : [
-        ...contextArtifacts,
-        {
-          id: `art-plan-${mission.id}`,
-          type: "report",
-          title: "Bootstrap planning note",
-          preview: "Mission created and awaiting richer planning detail.",
-        },
-      ];
-  if (!normalizedCommand) {
-    const bootstrapDeliverable = initialRun.deliverables[0];
-    const bootstrapRevision = bootstrapDeliverable?.revisions.find(
-      (revision) => revision.id === bootstrapDeliverable.latestRevisionId,
-    );
-    if (bootstrapRevision) {
-      bootstrapRevision.basedOnArtifactIds = initialRun.artifacts.map((artifact) => artifact.id);
-    }
-  }
+  initialRun.artifacts = contextArtifacts;
   initialRun.outputBaseline = captureRunOutputBaseline(initialRun);
   state.runsByMissionId[mission.id] = [initialRun];
-  state.runEventsByRunId[`r-${mission.id}`] = normalizedCommand
-    ? []
-    : [
-        {
-          id: `ev-start-${mission.id}`,
-          runId: `r-${mission.id}`,
-          agentId: `a-conductor-${mission.id}`,
-          kind: "artifact_created",
-          summary: "Mission bootstrap artifacts are ready for the first conductor pass.",
-          createdAtLabel: "just now",
-        },
-      ];
+  state.runEventsByRunId[`r-${mission.id}`] = [];
   state.lifecycleEventsByMissionId[mission.id] = [
-    {
-      id: `lc-conductor-${mission.id}`,
-      missionId: mission.id,
-      agentId: `a-conductor-${mission.id}`,
-      kind: normalizedCommand ? "parked" : "spawned",
-      summary: normalizedCommand
-        ? "Conductor is parked while the first local workspace command runs."
-        : "Conductor started automatically to scope the new mission.",
-      createdAtLabel: "just now",
-    },
-    {
-      id: `lc-builder-${mission.id}`,
-      missionId: mission.id,
-      agentId: `a-builder-${mission.id}`,
-      kind: normalizedCommand ? "spawned" : "parked",
-      summary: normalizedCommand
-        ? "Builder started immediately with the supplied workspace command."
-        : "Builder is parked until the first executable plan is ready.",
-      createdAtLabel: "just now",
-    },
+    ...(usePlanner
+      ? [
+          {
+            id: `lc-planner-${mission.id}`,
+            missionId: mission.id,
+            agentId: `a-planner-${mission.id}`,
+            kind: "spawned" as const,
+            summary: "Planner started to expand the goal into a spec.",
+            createdAtLabel: "just now",
+          },
+          {
+            id: `lc-builder-${mission.id}`,
+            missionId: mission.id,
+            agentId: `a-builder-${mission.id}`,
+            kind: "parked" as const,
+            summary: "Builder is parked until the planner finishes.",
+            createdAtLabel: "just now",
+          },
+        ]
+      : [
+          {
+            id: `lc-builder-${mission.id}`,
+            missionId: mission.id,
+            agentId: `a-builder-${mission.id}`,
+            kind: "spawned" as const,
+            summary: "Builder started for the new mission.",
+            createdAtLabel: "just now",
+          },
+        ]),
     {
       id: `lc-verifier-${mission.id}`,
       missionId: mission.id,
       agentId: `a-verifier-${mission.id}`,
       kind: "parked",
-      summary: "Verifier is parked until a diff or review packet appears.",
-      createdAtLabel: "just now",
-    },
-    {
-      id: `lc-researcher-${mission.id}`,
-      missionId: mission.id,
-      agentId: `a-researcher-${mission.id}`,
-      kind: "parked",
-      summary: "Researcher is parked until a blocker or discovery pass needs extra context.",
-      createdAtLabel: "just now",
-    },
-    {
-      id: `lc-architect-${mission.id}`,
-      missionId: mission.id,
-      agentId: `a-architect-${mission.id}`,
-      kind: "parked",
-      summary: "Architect is parked until the bootstrap artifacts justify a spec or design pass.",
+      summary: "Verifier is parked until builder produces output.",
       createdAtLabel: "just now",
     },
   ];

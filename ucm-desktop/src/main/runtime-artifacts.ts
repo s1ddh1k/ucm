@@ -1,7 +1,6 @@
 export {
   buildDecisionArtifact,
   createArtifactRecord,
-  SCHEMA_ID_BY_CONTRACT_KIND,
 } from "./runtime-artifact-records";
 export {
   buildFollowupInputArtifacts,

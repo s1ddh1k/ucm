@@ -1,16 +1,11 @@
 import type {
   AgentLifecycleEvent,
   AgentSnapshot,
-  ArtifactRecord,
   MissionDetail,
   MissionSnapshot,
   RunDetail,
   RunEvent,
 } from "../shared/contracts";
-import {
-  hasApprovedReviewProvenance,
-  hasValidContractArtifact,
-} from "./runtime-artifact-queries";
 import { findLatestActionableArtifactType } from "./runtime-run-helpers";
 
 type MissionRuntimeStatus = MissionSnapshot["status"];
@@ -54,51 +49,9 @@ export function deriveLifecycleKindFromDecision(
   return null;
 }
 
-function phaseRequiresRole(
-  phaseObjective: string,
-  role: AgentSnapshot["role"],
-): boolean {
-  if (role === "verification") {
-    return phaseObjective.includes("verify") || phaseObjective.includes("review");
-  }
-  if (role === "research") {
-    return phaseObjective.includes("collect") || phaseObjective.includes("incident");
-  }
-  if (role === "implementation") {
-    return (
-      phaseObjective.includes("patch") ||
-      phaseObjective.includes("execute") ||
-      phaseObjective.includes("apply") ||
-      phaseObjective.includes("implement")
-    );
-  }
-  return false;
-}
-
-function artifactRequiresRole(
-  artifactType: ArtifactRecord["type"] | undefined,
-  role: AgentSnapshot["role"],
-): boolean {
-  if (role === "verification") {
-    return artifactType === "diff" || artifactType === "test_result";
-  }
-  if (role === "implementation") {
-    return artifactType === "report";
-  }
-  return false;
-}
-
-function blockerRequiresRole(
-  requestedInput: string | undefined,
-  role: AgentSnapshot["role"],
-): boolean {
-  if (role !== "research") return false;
-  return requestedInput === "fixture_path" || requestedInput === "external_context";
-}
-
 export function deriveLifecycleTransitions(
   agents: AgentSnapshot[],
-  missionDetail: MissionDetail | null,
+  _missionDetail: MissionDetail | null,
   run: RunDetail,
   event: RunEvent,
 ): Array<{
@@ -113,50 +66,24 @@ export function deriveLifecycleTransitions(
     lifecycleKind: AgentLifecycleEvent["kind"];
     summary: string;
   }> = [];
-  const activePhase = missionDetail?.phases.find((phase) => phase.status === "active");
-  const phaseObjective = activePhase?.objective.toLowerCase() ?? "";
-  const requestedInput = event.metadata?.requestedInput;
+
+  const planner = agents.find((agent) => agent.role === "coordination");
+  const builder = agents.find((agent) => agent.role === "implementation");
+  const verifier = agents.find((agent) => agent.role === "verification");
   const latestArtifactType = findLatestActionableArtifactType(run);
 
   if (event.kind === "artifact_created") {
-    const builder = agents.find((agent) => agent.role === "implementation");
-    if (builder && builder.status === "idle" && phaseRequiresRole(phaseObjective, builder.role)) {
-      transitions.push({
-        agentId: builder.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${builder.name} resumed because the active phase now has executable work.`,
-      });
-    }
-
-    const verifier = agents.find((agent) => agent.role === "verification");
+    // Builder produced a diff → wake verifier
     if (
       verifier &&
-      (verifier.status === "idle" || verifier.status === "needs_review") &&
-      (artifactRequiresRole(latestArtifactType, verifier.role) ||
-        phaseRequiresRole(phaseObjective, verifier.role))
+      verifier.status === "idle" &&
+      latestArtifactType === "diff"
     ) {
       transitions.push({
         agentId: verifier.id,
         status: "running",
         lifecycleKind: "resumed",
-        summary: `${verifier.name} resumed because a new artifact is ready for verification.`,
-      });
-    }
-
-    const designer = agents.find((agent) => agent.role === "design");
-    if (
-      designer &&
-      designer.status === "idle" &&
-      run.roleContractId === "conductor" &&
-      hasValidContractArtifact(run, "spec_brief") &&
-      hasValidContractArtifact(run, "acceptance_checks")
-    ) {
-      transitions.push({
-        agentId: designer.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${designer.name} resumed because the mission bootstrap now has enough context for a spec pass.`,
+        summary: `${verifier.name} resumed because a diff is ready for verification.`,
       });
     }
   }
@@ -170,33 +97,7 @@ export function deriveLifecycleTransitions(
         agentId: blockedAgent.id,
         status: "blocked",
         lifecycleKind: "blocked",
-        summary: `${blockedAgent.name} moved to blocked after the latest run event.`,
-      });
-    }
-
-    const researcher = agents.find((agent) => agent.role === "research");
-    if (
-      researcher &&
-      researcher.status === "idle" &&
-      blockerRequiresRole(requestedInput, researcher.role)
-    ) {
-      transitions.push({
-        agentId: researcher.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${researcher.name} resumed because the blocker may need extra context.`,
-      });
-    }
-  }
-
-  if (event.kind === "review_requested" || event.kind === "needs_review") {
-    const verifier = agents.find((agent) => agent.role === "verification");
-    if (verifier && verifier.status !== "needs_review" && verifier.status !== "running") {
-      transitions.push({
-        agentId: verifier.id,
-        status: "needs_review",
-        lifecycleKind: "reviewing",
-        summary: `${verifier.name} moved into review because a reviewer-facing packet is ready.`,
+        summary: `${blockedAgent.name} moved to blocked.`,
       });
     }
   }
@@ -205,121 +106,55 @@ export function deriveLifecycleTransitions(
     const completedAgent = event.agentId
       ? agents.find((agent) => agent.id === event.agentId)
       : null;
-    const builder = agents.find((agent) => agent.role === "implementation");
 
-    if (
-      builder &&
-      builder.status === "idle" &&
-      completedAgent?.role === "coordination" &&
-      (run.roleContractId === "conductor" || run.roleContractId === "spec_agent")
-    ) {
+    // Planner completed → park planner, wake builder
+    if (planner && completedAgent?.id === planner.id) {
       transitions.push({
-        agentId: builder.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${builder.name} resumed because the planning pass is complete and implementation can begin.`,
+        agentId: planner.id,
+        status: "idle",
+        lifecycleKind: "parked",
+        summary: `${planner.name} parked after producing the spec.`,
       });
-    } else if (builder && builder.status !== "idle" && completedAgent?.id === builder.id) {
+      if (builder && builder.status === "idle") {
+        transitions.push({
+          agentId: builder.id,
+          status: "running",
+          lifecycleKind: "resumed",
+          summary: `${builder.name} resumed because the planner produced a spec.`,
+        });
+      }
+    }
+
+    // Builder completed → park it
+    if (builder && completedAgent?.id === builder.id && builder.status !== "idle") {
       transitions.push({
         agentId: builder.id,
         status: "idle",
         lifecycleKind: "parked",
-        summary: `${builder.name} parked after the active run reported completion.`,
+        summary: `${builder.name} parked after completion.`,
       });
     }
 
-    const securityVerifier = agents.find((agent) => agent.role === "verification");
-    if (
-      securityVerifier &&
-      (securityVerifier.status === "idle" || securityVerifier.id === event.agentId) &&
-      run.roleContractId === "qa_agent" &&
-      hasValidContractArtifact(run, "patch_set") &&
-      hasValidContractArtifact(run, "evidence_pack")
-    ) {
-      transitions.push({
-        agentId: securityVerifier.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${securityVerifier.name} resumed because verification produced enough evidence for a security pass.`,
-      });
-    }
-
-    const designer = agents.find((agent) => agent.role === "design");
-    if (
-      designer &&
-      designer.status === "idle" &&
-      run.roleContractId === "research_agent" &&
-      hasValidContractArtifact(run, "research_dossier") &&
-      hasValidContractArtifact(run, "risk_register")
-    ) {
-      transitions.push({
-        agentId: designer.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${designer.name} resumed because the research pass produced architecture-ready context.`,
-      });
-    }
-
-    const operator = agents.find((agent) => agent.role === "research");
-    if (
-      operator &&
-      operator.status === "idle" &&
-      run.roleContractId === "release_agent" &&
-      hasValidContractArtifact(run, "release_manifest") &&
-      hasValidContractArtifact(run, "handoff_record")
-    ) {
-      transitions.push({
-        agentId: operator.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${operator.name} resumed because the release lane emitted enough signal for an operational pass.`,
-      });
-    }
-
-    const learner = agents.find((agent) => agent.role === "research");
-    if (
-      learner &&
-      (learner.status === "idle" || learner.id === event.agentId) &&
-      run.roleContractId === "ops_agent" &&
-      (hasValidContractArtifact(run, "incident_record") ||
-        hasValidContractArtifact(run, "improvement_proposal"))
-    ) {
-      transitions.push({
-        agentId: learner.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${learner.name} resumed because the latest ops pass produced incident evidence worth codifying.`,
-      });
-    }
-
-    const verifier = agents.find((agent) => agent.role === "verification");
-    if (
-      verifier &&
-      verifier.status === "idle" &&
-      event.metadata?.source === "approval" &&
-      hasApprovedReviewProvenance(run)
-    ) {
+    // Verifier completed → park it
+    if (verifier && completedAgent?.id === verifier.id && verifier.status !== "idle") {
       transitions.push({
         agentId: verifier.id,
-        status: "running",
-        lifecycleKind: "resumed",
-        summary: `${verifier.name} resumed because an approved review packet is ready for release packaging.`,
+        status: "idle",
+        lifecycleKind: "parked",
+        summary: `${verifier.name} parked after completion.`,
       });
     }
   }
 
   if (event.kind === "steering_submitted") {
-    const blockedImplementation =
-      agents.find(
-        (agent) => agent.role === "implementation" && agent.status === "blocked",
-      ) ??
-      (event.agentId ? agents.find((agent) => agent.id === event.agentId) : null);
-    if (blockedImplementation) {
+    // Resume blocked planner or builder on steering
+    const blocked = planner?.status === "blocked" ? planner : builder?.status === "blocked" ? builder : null;
+    if (blocked) {
       transitions.push({
-        agentId: blockedImplementation.id,
+        agentId: blocked.id,
         status: "running",
         lifecycleKind: "resumed",
-        summary: `${blockedImplementation.name} resumed after human steering was attached to the run.`,
+        summary: `${blocked.name} resumed after human steering.`,
       });
     }
   }

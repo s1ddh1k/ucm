@@ -9,7 +9,6 @@ import type {
   RunOutputBaseline,
 } from "../shared/contracts";
 import type { RuntimeState } from "./runtime-state";
-import { deriveEvidencePacks } from "./runtime-evidence";
 import { createArtifactRecord } from "./runtime-artifact-records";
 
 const MAX_RUN_EVENTS_PER_RUN = 200;
@@ -42,7 +41,7 @@ export function findRun(
 export function hydrateRunDetail(state: RuntimeState, run: RunDetail): RunDetail {
   return {
     ...run,
-    evidencePacks: deriveEvidencePacks(run),
+    evidencePacks: [],
     runEvents: state.runEventsByRunId[run.id] ?? [],
   };
 }

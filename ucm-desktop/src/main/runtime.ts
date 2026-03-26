@@ -90,7 +90,6 @@ export class RuntimeService {
   private store: RuntimeStoreLike<RuntimeState>;
   private executionService: ExecutionController;
   private roleRegistry: RuntimeRoleRegistry | null;
-  private didLogRoleRegistryDiagnostics = false;
   private state!: RuntimeState;
   private lastWorkspaceDiscoveryAt = 0;
   private pendingTerminalPreviews = new Map<string, PendingTerminalPreview>();
@@ -142,14 +141,6 @@ export class RuntimeService {
   private getRoleRegistry(): RuntimeRoleRegistry {
     const roleRegistry = this.roleRegistry ?? loadRuntimeRoleRegistry();
     this.roleRegistry = roleRegistry;
-
-    if (!this.didLogRoleRegistryDiagnostics) {
-      this.didLogRoleRegistryDiagnostics = true;
-      for (const diagnostic of roleRegistry.diagnostics) {
-        console.warn(`[ucm-runtime] ${diagnostic}`);
-      }
-    }
-
     return roleRegistry;
   }
 
@@ -412,19 +403,14 @@ export class RuntimeService {
     const mission = createMissionInState(state, input);
     this.writeState(state);
     const runId = `r-${mission.id}`;
-    if (input.command?.trim()) {
-      this.startAgentExecution({
-        missionId: mission.id,
-        runId,
-        agentId: `a-builder-${mission.id}`,
-      });
-    } else {
-      this.startAgentExecution({
-        missionId: mission.id,
-        runId,
-        agentId: `a-conductor-${mission.id}`,
-      });
-    }
+    const agentId = input.command?.trim()
+      ? `a-builder-${mission.id}`
+      : `a-planner-${mission.id}`;
+    this.startAgentExecution({
+      missionId: mission.id,
+      runId,
+      agentId,
+    });
     return mission;
   }
 
@@ -1224,22 +1210,13 @@ export class RuntimeService {
     run: RunDetail,
     agent: { role: string },
   ) {
-    if (agent.role !== "verification" || run.status !== "completed") {
+    if (run.status !== "completed") {
       return;
     }
-    const activeRevision = (run.deliverables ?? [])
-      .flatMap((deliverable) =>
-        deliverable.revisions.map((revision) => ({ deliverable, revision })),
-      )
-      .find(({ revision }) => revision.status === "active");
-    if (!activeRevision) {
-      return;
+    // Auto-complete mission when builder or verifier finishes
+    if (agent.role === "implementation" || agent.role === "verification") {
+      updateMissionStatusInState(state, run.missionId, "completed");
     }
-    approveDeliverableRevisionInState(state, {
-      runId: run.id,
-      deliverableRevisionId: activeRevision.revision.id,
-    });
-    updateMissionStatusInState(state, run.missionId, "completed");
   }
 
   private startAgentExecution(input: {
