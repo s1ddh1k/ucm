@@ -48,10 +48,10 @@ test("runtime index repository exposes normalized workspace, mission, run, relea
   assert.equal(missions.length, 3);
   assert.equal(activeMission?.missionId, "m-1");
   assert.equal(runs[0]?.runId, "r-1");
-  assert.equal(runs[0]?.releaseCount, 1);
-  assert.equal(runs[0]?.sessionTransport, "provider_terminal");
-  assert.equal(runs[0]?.workspaceMode, "git_worktree");
-  assert.equal(runs[0]?.worktreePath, "/tmp/storefront-r-1");
+  assert.equal(runs[0]?.releaseCount, 2);
+  assert.equal(runs[0]?.sessionTransport, null);
+  assert.equal(runs[0]?.workspaceMode, null);
+  assert.equal(runs[0]?.worktreePath, null);
   assert.equal(activeRun?.runId, "r-1");
   assert.equal(releases[0]?.latestRevisionId, "del-1-r2");
   assert.equal(handoffs[0]?.releaseRevisionId, "del-1-r2");

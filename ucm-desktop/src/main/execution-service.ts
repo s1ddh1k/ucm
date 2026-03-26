@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { AgentSnapshot } from "../shared/contracts";
 import { ClaudeAdapter } from "./providers/claude-adapter";
 import { CodexAdapter } from "./providers/codex-adapter";
@@ -14,10 +14,16 @@ import type {
 import { TerminalSessionService } from "./terminal-session-service";
 import type {
   ExecutionController,
+  ExecutionSessionSnapshot,
   ProviderAdapterRegistry,
   SpawnAgentRunInput,
   TerminalSessionController,
 } from "./execution-types";
+
+const MAX_CAPTURED_PROVIDER_OUTPUT_CHARS = 24_000;
+const MAX_CAPTURED_LOCAL_OUTPUT_CHARS = 32_000;
+const MAX_CAPTURED_STDERR_CHARS = 12_000;
+const MAX_GENERATED_PATCH_CHARS = 80_000;
 
 export class ExecutionService implements ExecutionController {
   private activeRuns = new Set<string>();
@@ -82,8 +88,18 @@ export class ExecutionService implements ExecutionController {
       .then((result) => {
         input.onComplete(result);
       })
-      .catch(() => {
-        this.spawnMockFallback(input);
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        input.onComplete({
+          missionId: input.missionId,
+          runId: input.runId,
+          agentId: input.agent.id,
+          summary: `Provider execution failed: ${message}`,
+          source: "provider",
+          outcome: "blocked",
+          stderr: message,
+        });
       })
       .finally(() => {
         this.activeRuns.delete(executionKey);
@@ -145,21 +161,31 @@ export class ExecutionService implements ExecutionController {
       prompt,
       cwd,
       model: this.defaultModelFor(provider),
-      timeoutMs: 45000,
+      timeoutMs: 300000,
     });
+    const stdout = clampCapturedText(
+      result.stdout,
+      MAX_CAPTURED_PROVIDER_OUTPUT_CHARS,
+    );
+    const stderr = clampCapturedText(result.stderr, MAX_CAPTURED_STDERR_CHARS);
 
-    if (result.status !== "done" || !result.stdout.trim()) {
-      throw new Error(this.describeFailure(provider, result));
+    if (result.status !== "done" || !stdout.trim()) {
+      throw new Error(this.describeFailure(provider, { ...result, stdout, stderr }));
     }
 
     return {
       missionId: input.missionId,
       runId: input.runId,
       agentId: input.agent.id,
-      summary: this.summarizeProviderOutput(input.agent, input.objective, result),
+      summary: this.summarizeProviderOutput(input.agent, input.objective, {
+        ...result,
+        stdout,
+        stderr,
+      }),
       source: "provider",
-      outcome: this.parseOutcome(result.stdout, input.agent),
-      stderr: result.stderr || undefined,
+      outcome: this.parseOutcome(stdout, input.agent),
+      stderr: stderr || undefined,
+      stdout: stdout || undefined,
     };
   }
 
@@ -189,7 +215,7 @@ export class ExecutionService implements ExecutionController {
         input.onTerminalData?.(chunk);
       },
     });
-    const generatedPatch = this.captureGitDiff(cwd);
+    const generatedPatch = await this.captureGitDiff(cwd);
 
     return {
       missionId: input.missionId,
@@ -218,6 +244,7 @@ export class ExecutionService implements ExecutionController {
     source: "provider";
     outcome: "completed" | "blocked" | "needs_review";
     stderr?: string;
+    session?: ExecutionSessionSnapshot;
   } | null> {
     return new Promise((resolve) => {
       let output = "";
@@ -233,11 +260,21 @@ export class ExecutionService implements ExecutionController {
           source: "provider";
           outcome: "completed" | "blocked" | "needs_review";
           stderr?: string;
+          session?: ExecutionSessionSnapshot;
         } | null,
       ) => {
         if (settled) return;
         settled = true;
         resolve(result);
+      };
+
+      const sessionSnapshot: ExecutionSessionSnapshot = {
+        sessionId: "",
+        provider: input.provider,
+        transport: "provider_terminal",
+        cwd: input.cwd,
+        workspaceMode: "process",
+        interactive: true,
       };
 
       try {
@@ -246,12 +283,16 @@ export class ExecutionService implements ExecutionController {
             prompt: input.prompt,
             cwd: input.cwd,
             model: this.defaultModelFor(input.provider),
-            timeoutMs: 45000,
+            timeoutMs: 300000,
           }),
           prompt: input.prompt,
           provider: input.provider,
           onData: (chunk) => {
-            output += chunk;
+            output = appendCapturedText(
+              output,
+              chunk,
+              MAX_CAPTURED_PROVIDER_OUTPUT_CHARS,
+            );
             input.input.onTerminalData?.(chunk);
           },
           onExit: ({ exitCode }) => {
@@ -270,13 +311,12 @@ export class ExecutionService implements ExecutionController {
               ),
               source: "provider",
               outcome: this.parseOutcome(output, input.input.agent),
+              session: { ...sessionSnapshot, sessionId },
             });
           },
         });
-        input.input.onSessionStart?.({
-          sessionId,
-          provider: input.provider,
-        });
+        sessionSnapshot.sessionId = sessionId;
+        input.input.onSessionStart?.({ ...sessionSnapshot, sessionId });
       } catch {
         if (sessionId) {
           this.terminalSessionService.killSession(sessionId);
@@ -284,20 +324,6 @@ export class ExecutionService implements ExecutionController {
         finish(null);
       }
     });
-  }
-
-  private spawnMockFallback(input: SpawnAgentRunInput) {
-    setTimeout(() => {
-      input.onComplete({
-        missionId: input.missionId,
-        runId: input.runId,
-        agentId: input.agent.id,
-        summary: `${input.agent.name} finished a mock pass for "${input.objective}".`,
-        source: "mock",
-        outcome:
-          input.agent.role === "verification" ? "needs_review" : "completed",
-      });
-    }, 150);
   }
 
   private executeShellCommand(input: {
@@ -317,12 +343,12 @@ export class ExecutionService implements ExecutionController {
 
       child.stdout.on("data", (chunk) => {
         const text = chunk.toString();
-        stdout += text;
+        stdout = appendCapturedText(stdout, text, MAX_CAPTURED_LOCAL_OUTPUT_CHARS);
         input.onData?.(text);
       });
       child.stderr.on("data", (chunk) => {
         const text = chunk.toString();
-        stderr += text;
+        stderr = appendCapturedText(stderr, text, MAX_CAPTURED_STDERR_CHARS);
         input.onData?.(text);
       });
       child.on("error", (error) => {
@@ -338,20 +364,42 @@ export class ExecutionService implements ExecutionController {
     });
   }
 
-  private captureGitDiff(cwd: string): string {
-    try {
-      const result = spawnSync(
-        "git",
-        ["diff", "--no-ext-diff", "--", "."],
-        { cwd, encoding: "utf8" },
-      );
-      if (result.status !== 0) {
-        return "";
+  private captureGitDiff(cwd: string): Promise<string> {
+    return new Promise((resolve) => {
+      try {
+        const child = spawn(
+          "git",
+          ["diff", "--no-ext-diff", "--", "."],
+          {
+            cwd,
+            env: { ...process.env },
+            stdio: ["ignore", "pipe", "ignore"],
+          },
+        );
+
+        let stdout = "";
+
+        child.stdout.on("data", (chunk) => {
+          stdout = appendCapturedText(
+            stdout,
+            chunk.toString(),
+            MAX_GENERATED_PATCH_CHARS,
+          );
+        });
+        child.on("error", () => {
+          resolve("");
+        });
+        child.on("close", (exitCode) => {
+          if (exitCode !== 0) {
+            resolve("");
+            return;
+          }
+          resolve(stdout.trim());
+        });
+      } catch {
+        resolve("");
       }
-      return result.stdout.trim();
-    } catch {
-      return "";
-    }
+    });
   }
 
   private resolveProvider(preferred?: ProviderName): ProviderName {
@@ -419,22 +467,14 @@ export class ExecutionService implements ExecutionController {
     const steeringSection = input.steeringContext
       ? `Recent human steering:\n${input.steeringContext}`
       : "Recent human steering:\n- none";
-    const roleInstruction =
-      input.agent.role === "implementation"
-        ? "Produce a concise implementation update. Describe the likely patch shape, touched areas, and immediate risk."
-        : "Produce a concise verification update. Describe the test posture, failure signal, and next review concern.";
+    const roleInstruction = this.buildRoleInstruction(input.agent.role);
     return [
       `You are ${input.agent.name}, acting in role ${input.agent.role}.`,
       `Objective: ${input.objective}`,
       steeringSection,
       roleInstruction,
-      "Respond in plain text with 3 short sections:",
-      "1. What changed",
-      "2. What remains risky",
-      "3. What the next agent should do",
-      "End with exactly one status line in this format:",
+      "When done, end with exactly one status line:",
       "Status: completed | blocked | needs_review",
-      "Keep the response under 140 words.",
     ].join("\n");
   }
 
@@ -506,6 +546,23 @@ export class ExecutionService implements ExecutionController {
       .join(": ");
   }
 
+  private buildRoleInstruction(role: string): string {
+    switch (role) {
+      case "implementation":
+        return "Implement the objective. Read the relevant code, make the changes, and run tests if available.";
+      case "verification":
+        return "Verify the objective. Read the code, run tests, and report pass/fail results with evidence.";
+      case "design":
+        return "Analyze the objective. Read the relevant code and produce a design recommendation with trade-offs.";
+      case "research":
+        return "Research the objective. Gather context from the codebase and summarize findings with references.";
+      case "coordination":
+        return "Assess the current state of the mission. Identify blockers, risks, and the next action needed.";
+      default:
+        return "Complete the objective and report what changed, what remains risky, and what should happen next.";
+    }
+  }
+
   writeTerminalSession(sessionId: string, data: string) {
     return this.terminalSessionService.writeToSession(sessionId, data);
   }
@@ -517,4 +574,23 @@ export class ExecutionService implements ExecutionController {
   killTerminalSession(sessionId: string) {
     this.terminalSessionService.killSession(sessionId);
   }
+}
+
+function appendCapturedText(
+  current: string,
+  chunk: string,
+  maxChars: number,
+): string {
+  return clampCapturedText(`${current}${chunk}`, maxChars);
+}
+
+function clampCapturedText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const separator = "\n...[truncated output]...\n";
+  const headLength = Math.max(0, Math.floor((maxChars - separator.length) * 0.4));
+  const tailLength = Math.max(0, maxChars - separator.length - headLength);
+  return `${value.slice(0, headLength)}${separator}${value.slice(-tailLength)}`;
 }

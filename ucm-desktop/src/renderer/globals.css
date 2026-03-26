@@ -26,9 +26,11 @@
   background:
     linear-gradient(180deg, #f6f1e8 0%, #eee6da 100%);
   font-family:
-    "Noto Sans KR",
     "Apple SD Gothic Neo",
     "Malgun Gothic",
+    "Segoe UI",
+    "Helvetica Neue",
+    Arial,
     sans-serif;
   line-height: 1.4;
   font-weight: 400;

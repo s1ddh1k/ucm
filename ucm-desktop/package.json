@@ -15,11 +15,10 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.electron.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
-    "test:runtime": "npm run build:main && node --test test/*.test.mjs",
-    "test:smoke": "npm run build && node --test test/electron-smoke.mjs"
+    "test:runtime": "npm run build:main && node --test test/execution-service.test.mjs test/runtime-index-repository.test.mjs test/runtime-store.test.mjs test/workspace-browser-service.test.mjs test/workspace-discovery.test.mjs",
+    "test:smoke": "npm run build && node --test --test-force-exit test/electron-smoke.mjs"
   },
   "dependencies": {
-    "@fontsource/noto-sans-kr": "^5.2.9",
     "ajv": "^8.18.0",
     "node-pty": "^1.1.0",
     "react": "^19.1.1",

@@ -14,20 +14,36 @@ import * as runtimeHelpers from "../dist-electron/main/runtime-run-helpers.js";
 import * as runtimeStore from "../dist-electron/main/runtime-store.js";
 import * as runtimeServiceModule from "../dist-electron/main/runtime.js";
 
+function createNoopExecutionService(overrides = {}) {
+  return {
+    spawnAgentRun() {
+      return true;
+    },
+    writeTerminalSession() {
+      return false;
+    },
+    resizeTerminalSession() {
+      return false;
+    },
+    killTerminalSession() {},
+    ...overrides,
+  };
+}
+
 test("release approval completes the mission", () => {
   const state = runtimeState.cloneSeed();
 
-  const nextRun = runtimeMutations.generateReleaseRevisionInState(state, {
+  const nextRun = runtimeMutations.generateDeliverableRevisionInState(state, {
     runId: "r-1",
-    releaseId: "del-1",
+    deliverableId: "del-1",
     summary: "Prepared a fresh approval packet from the latest artifacts.",
   });
 
   assert.ok(nextRun);
-  const release = nextRun.releases[0];
-  const approved = runtimeMutations.approveReleaseRevisionInState(state, {
+  const deliverable = nextRun.deliverables.find((d) => d.id === "del-1");
+  const approved = runtimeMutations.approveDeliverableRevisionInState(state, {
     runId: "r-1",
-    releaseRevisionId: release.latestRevisionId,
+    deliverableRevisionId: deliverable.latestRevisionId,
   });
 
   assert.ok(approved);
@@ -37,9 +53,9 @@ test("release approval completes the mission", () => {
     "completed",
   );
 
-  const approvedRelease = approved.run.releases[0];
-  const latestRevision = approvedRelease.revisions.find(
-    (revision) => revision.id === approvedRelease.latestRevisionId,
+  const approvedDeliverable = approved.run.deliverables.find((d) => d.id === "del-1");
+  const latestRevision = approvedDeliverable.revisions.find(
+    (revision) => revision.id === approvedDeliverable.latestRevisionId,
   );
   const mission = state.missions.find((item) => item.id === approved.missionId);
   const deliverableArtifacts = approved.run.artifacts.filter(
@@ -235,7 +251,7 @@ test("blocked event produces a steering packet via conductor", () => {
     run: located.run,
     event: blockedEvent,
     latestArtifactType: located.run.artifacts.at(-1)?.type,
-    hasRelease: located.run.releases.length > 0,
+    hasDeliverable: located.run.deliverables.length > 0,
   });
 
   runtimeConductor.applyConductorDecision(state, located.run, decision);
@@ -564,7 +580,7 @@ test("runtime service autopilot step can run with injected store and execution c
   assert.equal(result.decision, "prepare_revision");
   assert.equal(result.eventKind, "artifact_created");
   assert.ok(activeRun);
-  assert.ok(activeRun.releases[0].revisions.length >= 3);
+  assert.ok(activeRun.deliverables.find((d) => d.id === "del-1").revisions.length >= 3);
   assert.equal(latestDecision?.category, "orchestration");
   assert.ok(changeReasons.includes("state_changed"));
   assert.equal(state.autopilotHandledEventIdsByRunId["r-1"]?.length, 1);
@@ -645,6 +661,7 @@ test("runtime service autopilot can select pending work from a non-active run", 
       id: "r-2",
       missionId: "m-2",
       agentId: "a-release-builder",
+      roleContractId: "release_agent",
       title: "Prepare release packet",
       status: "running",
       summary: "Release prep run is waiting to be picked up.",
@@ -661,7 +678,7 @@ test("runtime service autopilot can select pending work from a non-active run", 
         },
       ],
       runEvents: [],
-      releases: [
+      deliverables: [
         {
           id: "del-release-1",
           kind: "review_packet",
@@ -772,7 +789,10 @@ test("runtime service resumes a queued run when the provider window becomes free
 
 test("shell snapshot lists gemini alongside existing provider windows", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
-  const runtime = new runtimeServiceModule.RuntimeService({ store });
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: createNoopExecutionService(),
+  });
 
   const snapshot = runtime.getShellSnapshot();
   const providers = snapshot.providerWindows.map((item) => item.provider);
@@ -1825,7 +1845,10 @@ test("scheduler blocks follow-up creation when mission budget bucket is exhauste
 
 test("runtime service can add a real workspace path and switch into an empty state", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
-  const runtime = new runtimeServiceModule.RuntimeService({ store });
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: createNoopExecutionService(),
+  });
   const tempWorkspacePath = fs.mkdtempSync(
     path.join(os.tmpdir(), "ucm-desktop-workspace-"),
   );
@@ -1892,7 +1915,10 @@ test("creating a mission with a workspace command immediately starts execution",
 
 test("setting the active mission also selects its workspace and run", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
-  const runtime = new runtimeServiceModule.RuntimeService({ store });
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: createNoopExecutionService(),
+  });
 
   const mission = runtime.createMission({
     workspaceId: runtime.listWorkspaces()[0].id,
@@ -1955,4 +1981,116 @@ test("retrying a workspace command run starts a fresh execution record", () => {
   assert.equal(retried.origin?.schedulerRuleId, "manual_retry");
   assert.equal(executionCalls.length, 2);
   assert.equal(executionCalls[1].workspaceCommand, "npm test");
+});
+
+test("end-to-end: mission creation through auto-approval to completion", {
+  skip: "Disabled by default: this flow leaves pending async work and can wedge node --test on WSL.",
+}, () => {
+  const completionCallbacks = [];
+  const executionCalls = [];
+
+  const emptyState = () => ({
+    activeWorkspaceId: "",
+    activeMissionId: "",
+    activeRunId: "",
+    missionBudgetById: {},
+    workspaces: [],
+    missions: [],
+    missionDetailsById: {},
+    workspaceIdByMissionId: {},
+    agentsByMissionId: {},
+    runsByMissionId: {},
+    runEventsByRunId: {},
+    lifecycleEventsByMissionId: {},
+    autopilotHandledEventIdsByRunId: {},
+  });
+  const store = new runtimeStore.MemoryRuntimeStore(emptyState);
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun(input) {
+        executionCalls.push({
+          runId: input.runId,
+          agentId: input.agent.id,
+          role: input.agent.role,
+          objective: input.objective,
+        });
+        completionCallbacks.push(input.onComplete);
+        return true;
+      },
+      writeTerminalSession() { return false; },
+      resizeTerminalSession() { return false; },
+      killTerminalSession() {},
+    },
+  });
+
+  const workspaceId = runtime.listWorkspaces()[0].id;
+  const mission = runtime.createMission({
+    workspaceId,
+    title: "Fix checkout bug",
+    goal: "Patch the checkout auth regression.",
+  });
+
+  // Initial conductor run should have been spawned
+  assert.ok(executionCalls.length >= 1);
+  const conductorCall = executionCalls.find((c) => c.role === "coordination");
+  assert.ok(conductorCall, "conductor should be spawned on mission creation");
+
+  // Simulate conductor completion
+  const conductorCallback = completionCallbacks.shift();
+  conductorCallback({
+    missionId: mission.id,
+    runId: conductorCall.runId,
+    agentId: conductorCall.agentId,
+    summary: "Conductor shaped the execution plan.",
+    source: "provider",
+    outcome: "completed",
+  });
+
+  // Run autopilot to process conductor completion
+  runtime.autopilotBurst({ maxSteps: 8 });
+
+  // Complete any spawned follow-up agents until a verification agent completes
+  let iterations = 0;
+  while (completionCallbacks.length > 0 && iterations < 20) {
+    const callback = completionCallbacks.shift();
+    const call = executionCalls[executionCalls.length - completionCallbacks.length - 1];
+    callback({
+      missionId: mission.id,
+      runId: call?.runId ?? "unknown",
+      agentId: call?.agentId ?? "unknown",
+      summary: `Agent completed work.`,
+      source: "provider",
+      outcome: "completed",
+      generatedPatch: call?.role === "implementation"
+        ? "diff --git a/fix.ts b/fix.ts\n@@\n-old\n+new"
+        : undefined,
+    });
+    runtime.autopilotBurst({ maxSteps: 8 });
+    iterations += 1;
+  }
+
+  const state = store.read();
+  const missionStatus = state.missions.find((m) => m.id === mission.id)?.status;
+  const runs = state.runsByMissionId[mission.id] ?? [];
+  const completedRuns = runs.filter((r) => r.status === "completed");
+  const approvedRevisions = runs.flatMap((r) =>
+    (r.deliverables ?? []).flatMap((d) =>
+      d.revisions.filter((rev) => rev.status === "approved"),
+    ),
+  );
+
+  assert.ok(
+    executionCalls.length >= 2,
+    `expected multiple agent executions, got ${executionCalls.length}`,
+  );
+  assert.ok(
+    completedRuns.length >= 1,
+    `expected at least 1 completed run, got ${completedRuns.length}`,
+  );
+  assert.ok(
+    approvedRevisions.length >= 1,
+    `expected auto-approved revision, got ${approvedRevisions.length}`,
+  );
+  assert.equal(missionStatus, "completed", "mission should be auto-completed");
 });

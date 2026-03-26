@@ -337,6 +337,34 @@ export const FOLLOWUP_RULES: FollowupRule[] = [
       }),
   },
   {
+    id: "builder_from_planning_completion",
+    priority: 88,
+    role: "implementation",
+    roleContractId: "builder_agent",
+    reuseExistingRun: false,
+    spawnMode: "execute",
+    maxOpenRuns: 1,
+    exclusiveWith: [],
+    budgetClass: "standard",
+    eventKinds: ["artifact_created", "completed"],
+    matches: ({ sourceRun }) =>
+      sourceRun.roleContractId === "conductor" ||
+      sourceRun.roleContractId === "spec_agent",
+    buildSpec: ({ sourceRun, agent }) =>
+      createFollowupSpec({
+        key: "build",
+        title: `Build ${sourceRun.title.replace(/^(Plan|Spec) /, "")}`,
+        summary: `${agent.name} is starting implementation based on the planning output.`,
+        decisionSummary:
+          "Create a dedicated builder run from the completed planning pass.",
+        rationale:
+          "Planning output should transition into a focused implementation run so code changes are isolated and verifiable.",
+        revisionSummary:
+          "Builder follow-up run initialized from the latest planning artifacts.",
+        deliverableKind: "merge_handoff",
+      }),
+  },
+  {
     id: "verification_from_diff_artifact",
     priority: 70,
     role: "verification",

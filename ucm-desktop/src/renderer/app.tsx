@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type {
   AppScreen,
   ArtifactRecord,
@@ -370,42 +370,71 @@ function App() {
   const [steeringInput, setSteeringInput] = useState("");
   const [selectedPatchPath, setSelectedPatchPath] = useState<string | null>(null);
   const [executePanel, setExecutePanel] = useState<ExecutePanel>("patch");
-  const [autopilotResult, setAutopilotResult] = useState<RunAutopilotResult>({
+  const [autopilotResult] = useState<RunAutopilotResult>({
     run: null,
     eventKind: "none",
     decision: "observe",
     summary: "다음 실행 이벤트를 기다리는 중입니다.",
   });
+  const runtimeRefreshTokenRef = useRef(0);
+  const activeRunRefreshTokenRef = useRef(0);
 
-  async function refresh() {
+  async function refreshStaticContext() {
+    const [nextNavigation, nextVersion] = await Promise.all([
+      window.ucm.navigation.listScreens(),
+      window.ucm.app.getVersion(),
+    ]);
+    startTransition(() => {
+      setNavigation(nextNavigation);
+      setVersion(nextVersion);
+    });
+  }
+
+  async function refreshRuntimeContext() {
+    const token = runtimeRefreshTokenRef.current + 1;
+    runtimeRefreshTokenRef.current = token;
+    activeRunRefreshTokenRef.current += 1;
+
     const [
-      nextNavigation,
       nextSnapshot,
       nextWorkspaces,
       nextMissions,
-      nextVersion,
       nextActiveMission,
       nextActiveRun,
       nextMissionRuns,
-    ] =
-      await Promise.all([
-        window.ucm.navigation.listScreens(),
-        window.ucm.shell.getSnapshot(),
-        window.ucm.workspace.list(),
-        window.ucm.mission.list(),
-        window.ucm.app.getVersion(),
-        window.ucm.mission.getActive(),
-        window.ucm.run.getActive(),
-        window.ucm.run.listForActiveMission(),
-      ]);
-    setNavigation(nextNavigation);
-    setSnapshot(nextSnapshot);
-    setWorkspaces(nextWorkspaces);
-    setMissions(nextMissions);
-    setVersion(nextVersion);
-    setActiveMission(nextActiveMission);
-    setActiveRun(nextActiveRun);
-    setMissionRuns(nextMissionRuns);
+    ] = await Promise.all([
+      window.ucm.shell.getSnapshot(),
+      window.ucm.workspace.list(),
+      window.ucm.mission.list(),
+      window.ucm.mission.getActive(),
+      window.ucm.run.getActive(),
+      window.ucm.run.listForActiveMission(),
+    ]);
+
+    if (runtimeRefreshTokenRef.current !== token) {
+      return;
+    }
+
+    startTransition(() => {
+      setSnapshot(nextSnapshot);
+      setWorkspaces(nextWorkspaces);
+      setMissions(nextMissions);
+      setActiveMission(nextActiveMission);
+      setActiveRun(nextActiveRun);
+      setMissionRuns(nextMissionRuns);
+    });
+  }
+
+  async function refreshActiveRunContext() {
+    const token = activeRunRefreshTokenRef.current + 1;
+    activeRunRefreshTokenRef.current = token;
+    const nextActiveRun = await window.ucm.run.getActive();
+    if (activeRunRefreshTokenRef.current !== token) {
+      return;
+    }
+    startTransition(() => {
+      setActiveRun(nextActiveRun);
+    });
   }
 
   useEffect(() => {
@@ -414,15 +443,16 @@ function App() {
   }, [locale]);
 
   useEffect(() => {
-    void refresh();
+    void Promise.all([refreshStaticContext(), refreshRuntimeContext()]);
     const unsubscribe = window.ucm.events.onRuntimeUpdate(
-      (_event: RuntimeUpdateEvent) => {
-        void refresh();
+      (event: RuntimeUpdateEvent) => {
+        if (event.reason === "terminal_updated") {
+          void refreshActiveRunContext();
+          return;
+        }
+        void refreshRuntimeContext();
       },
     );
-    void window.ucm.run.autopilotBurst({ maxSteps: 4 }).then((result) => {
-      setAutopilotResult(result.lastResult);
-    });
     return () => {
       unsubscribe();
     };
@@ -460,8 +490,7 @@ function App() {
     setCommand("");
     setSelectedTemplateId(null);
     setActiveScreen(resolveMissionLandingScreen(refreshedRun));
-    void window.ucm.app.getVersion().then(setVersion);
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   function applyMissionTemplate(
@@ -479,7 +508,7 @@ function App() {
 
   async function handleSelectWorkspace(workspaceId: string) {
     await window.ucm.workspace.setActive({ workspaceId });
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   async function handleAddWorkspace() {
@@ -488,7 +517,7 @@ function App() {
       return;
     }
     await window.ucm.workspace.add({ rootPath: selectedPath });
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   async function handleSteeringSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -525,20 +554,20 @@ function App() {
   async function handleSelectRun(runId: string) {
     await window.ucm.run.setActive({ runId });
     setActiveScreen("execute");
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   async function handleRetryRun(runId: string) {
     await window.ucm.run.retry({ runId });
     setActiveScreen("execute");
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   async function handleOpenMission(missionId: string) {
     await window.ucm.mission.setActive({ missionId });
     const refreshedRun = await window.ucm.run.getActive();
     setActiveScreen(resolveMissionLandingScreen(refreshedRun));
-    await refresh();
+    await refreshRuntimeContext();
   }
 
   const current = messages[locale].screen[activeScreen];

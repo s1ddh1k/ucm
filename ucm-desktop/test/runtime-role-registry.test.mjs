@@ -97,7 +97,7 @@ test("execution blocks a run when the attached role contract is incompatible", (
   assert.equal(latestEvent?.metadata?.source, "role_contract_validation");
 });
 
-test("partial role registry blocks role execution because contracts are not enforceable", () => {
+test("partial role registry allows execution even when contracts are not fully enforceable", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-role-registry-"));
   fs.mkdirSync(path.join(tempRoot, "roles", "contracts"), { recursive: true });
   fs.mkdirSync(path.join(tempRoot, "schemas", "artifacts"), { recursive: true });
@@ -164,16 +164,11 @@ test("partial role registry blocks role execution because contracts are not enfo
     },
   });
 
-  const latestEvent = (state.runEventsByRunId[run.id] ?? []).at(-1);
-  assert.equal(executionCalls, 0);
-  assert.equal(run.status, "blocked");
-  assert.equal(state.agentsByMissionId["m-1"].find((item) => item.id === agent.id)?.status, "blocked");
-  assert.equal(latestEvent?.kind, "blocked");
-  assert.equal(latestEvent?.metadata?.source, "role_contract_validation");
-  assert.ok(
-    latestEvent?.metadata?.reason?.includes(
-      "Role contract enforcement is disabled. Fix role contract diagnostics before starting this run.",
-    ),
+  assert.equal(executionCalls, 1);
+  assert.equal(run.status, "running");
+  assert.equal(
+    state.agentsByMissionId["m-1"].find((item) => item.id === agent.id)?.status,
+    "running",
   );
 });
 

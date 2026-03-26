@@ -97,7 +97,15 @@ export function createWorkspaceSummary(
   };
 }
 
+const DISCOVERY_CACHE_TTL_MS = 30_000;
+let discoveryCache: { startPath: string; result: WorkspaceSummary[]; expiresAt: number } | null = null;
+
 export function discoverWorkspaceSummaries(startPath = process.cwd()): WorkspaceSummary[] {
+  const now = Date.now();
+  if (discoveryCache && discoveryCache.startPath === startPath && now < discoveryCache.expiresAt) {
+    return discoveryCache.result;
+  }
+
   const candidates = new Map<string, WorkspaceSummary>();
   const currentGitRoot = findGitRoot(startPath);
   const currentRoot = currentGitRoot ?? (directoryExists(startPath) ? path.resolve(startPath) : null);
@@ -112,7 +120,13 @@ export function discoverWorkspaceSummaries(startPath = process.cwd()): Workspace
     }
   }
 
-  return [...candidates.values()];
+  const result = [...candidates.values()];
+  discoveryCache = { startPath, result, expiresAt: now + DISCOVERY_CACHE_TTL_MS };
+  return result;
+}
+
+export function invalidateDiscoveryCache() {
+  discoveryCache = null;
 }
 
 export function isWorkspacePathAvailable(rootPath: string): boolean {

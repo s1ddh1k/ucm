@@ -256,34 +256,34 @@ export function projectRuntimeState(
           run.providerPreference ?? null,
           run.workspaceCommand ?? null,
           run.terminalProvider ?? null,
-          run.session?.sessionId ?? null,
-          run.session?.transport ?? null,
-          run.session?.provider ?? null,
-          run.session?.workspaceMode ?? null,
-          run.session?.workspaceRootPath ?? null,
-          run.session?.worktreePath ?? null,
+          run.terminalSessionId ?? null,
+          null,
+          run.terminalProvider ?? null,
+          null,
+          null,
+          null,
           run.artifacts.length,
-          run.releases.length,
+          (run.deliverables ?? []).length,
           run.handoffs.length,
           run.id === state.activeRunId ? 1 : 0,
         );
 
-        for (const release of run.releases) {
+        for (const deliverable of run.deliverables ?? []) {
           const latestRevision =
-            release.revisions.find(
-              (revision) => revision.id === release.latestRevisionId,
-            ) ?? release.revisions.at(-1);
+            deliverable.revisions.find(
+              (revision: { id: string }) => revision.id === deliverable.latestRevisionId,
+            ) ?? deliverable.revisions.at(-1);
           insertReleaseRow.run(
             storeKey,
-            release.id,
+            deliverable.id,
             missionId,
             run.id,
-            release.kind,
-            release.title,
-            release.latestRevisionId ?? null,
+            deliverable.kind,
+            deliverable.title,
+            deliverable.latestRevisionId ?? null,
             latestRevision?.revision ?? null,
             latestRevision?.status ?? null,
-            release.revisions.length,
+            deliverable.revisions.length,
           );
         }
 
@@ -293,7 +293,7 @@ export function projectRuntimeState(
             handoff.id,
             missionId,
             run.id,
-            handoff.releaseRevisionId,
+            handoff.deliverableRevisionId,
             handoff.channel,
             handoff.target ?? null,
             handoff.status,

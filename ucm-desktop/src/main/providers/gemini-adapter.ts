@@ -3,6 +3,7 @@ import {
   BaseProviderAdapter,
   type ProviderExecutionInput,
   type ProviderExecutionResult,
+  appendProviderOutputChunk,
 } from "../provider-adapter";
 
 export class GeminiAdapter extends BaseProviderAdapter {
@@ -30,6 +31,8 @@ export class GeminiAdapter extends BaseProviderAdapter {
       let stderr = "";
       let settled = false;
       let timedOut = false;
+      const maxStdoutChars = 24_000;
+      const maxStderrChars = 12_000;
 
       const child = spawn(command.cmd, args, {
         cwd: command.cwd,
@@ -60,11 +63,19 @@ export class GeminiAdapter extends BaseProviderAdapter {
       };
 
       child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
+        stdout = appendProviderOutputChunk(
+          stdout,
+          chunk.toString(),
+          maxStdoutChars,
+        );
       });
 
       child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
+        stderr = appendProviderOutputChunk(
+          stderr,
+          chunk.toString(),
+          maxStderrChars,
+        );
       });
 
       child.on("error", (error) => {

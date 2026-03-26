@@ -45,6 +45,7 @@ class GitWorktreeManager {
     this.rootPath =
       options.rootPath ?? path.join(os.homedir(), ".ucm", "worktrees");
     this.runContexts = new Map();
+    this.gitRootCache = new Map();
   }
 
   prepareRunWorkspace(input = {}) {
@@ -67,7 +68,7 @@ class GitWorktreeManager {
     }
 
     const fallbackCwd = this.resolveFallbackCwd(input.workspacePath);
-    const gitRoot = findGitRoot(fallbackCwd);
+    const gitRoot = this.findGitRoot(fallbackCwd);
     if (!gitRoot) {
       const context = {
         cwd: fallbackCwd,
@@ -122,6 +123,17 @@ class GitWorktreeManager {
     } catch {
       return false;
     }
+  }
+
+  findGitRoot(startPath) {
+    const cacheKey = path.resolve(startPath);
+    if (this.gitRootCache.has(cacheKey)) {
+      return this.gitRootCache.get(cacheKey);
+    }
+
+    const gitRoot = findGitRoot(cacheKey);
+    this.gitRootCache.set(cacheKey, gitRoot);
+    return gitRoot;
   }
 
   ensureGitWorktree(input) {

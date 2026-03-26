@@ -20,12 +20,16 @@ type RuntimeStoreOptions<TState> = {
 
 export interface RuntimeStoreLike<TState> {
   read(): TState;
-  write(state: TState): void;
+  write(
+    state: TState,
+    options?: { emitChange?: boolean; projectState?: boolean },
+  ): void;
 }
 
 export class RuntimeStore<TState> implements RuntimeStoreLike<TState> {
   private database: DatabaseSync | null = null;
   private readonly storeKey: string;
+  private lastSerializedHash: number = 0;
 
   constructor(
     private filePath: string,
@@ -53,8 +57,15 @@ export class RuntimeStore<TState> implements RuntimeStoreLike<TState> {
     return initial;
   }
 
-  write(state: TState) {
-    this.persistState(state, true);
+  write(
+    state: TState,
+    options?: { emitChange?: boolean; projectState?: boolean },
+  ) {
+    this.persistState(
+      state,
+      options?.emitChange ?? true,
+      options?.projectState ?? true,
+    );
   }
 
   private getDatabase(): DatabaseSync {
@@ -96,17 +107,26 @@ export class RuntimeStore<TState> implements RuntimeStoreLike<TState> {
   private deserialize(raw: string): TState {
     try {
       const parsed = JSON.parse(raw) as Partial<TState>;
+      this.lastSerializedHash = simpleStringHash(raw);
       return this.hydrate(parsed, this.seedFactory());
     } catch {
       const initial = this.seedFactory();
-      this.persistState(initial, false);
+      this.persistState(initial, false, true);
       return initial;
     }
   }
 
-  private persistState(state: TState, emitChange: boolean) {
+  private persistState(
+    state: TState,
+    emitChange: boolean,
+    projectState: boolean,
+  ) {
     const now = new Date().toISOString();
     const serialized = JSON.stringify(state);
+    const hash = simpleStringHash(serialized);
+    if (hash === this.lastSerializedHash) {
+      return;
+    }
     const database = this.getDatabase();
     database
       .prepare(`
@@ -123,7 +143,11 @@ export class RuntimeStore<TState> implements RuntimeStoreLike<TState> {
           updated_at = excluded.updated_at
       `)
       .run(this.storeKey, serialized, now, now);
-    this.options.projectState?.(database, this.storeKey, state);
+
+    this.lastSerializedHash = hash;
+    if (projectState) {
+      this.options.projectState?.(database, this.storeKey, state);
+    }
 
     if (emitChange) {
       this.onStateChange?.("state_changed");
@@ -140,11 +164,19 @@ export class RuntimeStore<TState> implements RuntimeStoreLike<TState> {
       const raw = fs.readFileSync(legacyJsonPath, "utf8");
       const parsed = JSON.parse(raw) as Partial<TState>;
       const migrated = this.hydrate(parsed, this.seedFactory());
-      this.persistState(migrated, false);
+      this.persistState(migrated, false, true);
     } catch {
       // Ignore missing or invalid legacy JSON and let the seeded state initialize instead.
     }
   }
+}
+
+function simpleStringHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return hash;
 }
 
 export class MemoryRuntimeStore<TState> implements RuntimeStoreLike<TState> {
@@ -161,8 +193,13 @@ export class MemoryRuntimeStore<TState> implements RuntimeStoreLike<TState> {
     return this.state;
   }
 
-  write(state: TState) {
+  write(
+    state: TState,
+    options?: { emitChange?: boolean; projectState?: boolean },
+  ) {
     this.state = state;
-    this.onStateChange?.("state_changed");
+    if (options?.emitChange !== false) {
+      this.onStateChange?.("state_changed");
+    }
   }
 }

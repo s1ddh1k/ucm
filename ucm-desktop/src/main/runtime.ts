@@ -5,7 +5,6 @@ import type {
   MissionDetail,
   RunAutopilotBurstResult,
   MissionSnapshot,
-  RuntimeProvider,
   RunAutopilotResult,
   RunDetail,
   RunEvent,
@@ -13,6 +12,7 @@ import type {
   WorkspaceSummary,
 } from "../shared/contracts";
 import { ExecutionService } from "./execution-service";
+import type { ProviderName } from "./provider-adapter";
 import {
   type RuntimeStoreLike,
   RuntimeStore,
@@ -68,15 +68,33 @@ import {
   listProviderWindowsForWorkspace,
 } from "./runtime-provider-broker";
 import {
+  ROLE_CONTRACT_IDS,
   inferRoleContractIdForRun,
   loadRuntimeRoleRegistry,
   type RuntimeRoleRegistry,
 } from "./runtime-role-registry";
 
+const WORKSPACE_DISCOVERY_REFRESH_MS = 30_000;
+const TERMINAL_PREVIEW_FLUSH_MS = 250;
+const TERMINAL_PREVIEW_IMMEDIATE_FLUSH_BYTES = 8_192;
+const KNOWN_ROLE_CONTRACT_IDS = new Set(ROLE_CONTRACT_IDS);
+
+type PendingTerminalPreview = {
+  missionId: string;
+  runId: string;
+  chunks: string[];
+  size: number;
+};
+
 export class RuntimeService {
   private store: RuntimeStoreLike<RuntimeState>;
   private executionService: ExecutionController;
-  private roleRegistry: RuntimeRoleRegistry;
+  private roleRegistry: RuntimeRoleRegistry | null;
+  private didLogRoleRegistryDiagnostics = false;
+  private state!: RuntimeState;
+  private lastWorkspaceDiscoveryAt = 0;
+  private pendingTerminalPreviews = new Map<string, PendingTerminalPreview>();
+  private terminalPreviewFlushTimer: NodeJS.Timeout | null = null;
   private onStateChange?: (
     reason: RuntimeStateChangeReason,
   ) => void;
@@ -89,7 +107,7 @@ export class RuntimeService {
   }) {
     this.executionService = options?.executionService ?? new ExecutionService();
     this.onStateChange = options?.onStateChange;
-    this.roleRegistry = options?.roleRegistry ?? loadRuntimeRoleRegistry();
+    this.roleRegistry = options?.roleRegistry ?? null;
     this.store =
       options?.store ??
       new RuntimeStore(
@@ -116,22 +134,140 @@ export class RuntimeService {
       );
 
     const normalizedState = this.normalizeState(this.store.read());
+    this.state = normalizedState;
+    this.lastWorkspaceDiscoveryAt = Date.now();
     this.store.write(normalizedState);
-    for (const diagnostic of this.roleRegistry.diagnostics) {
-      console.warn(`[ucm-runtime] ${diagnostic}`);
+  }
+
+  private getRoleRegistry(): RuntimeRoleRegistry {
+    const roleRegistry = this.roleRegistry ?? loadRuntimeRoleRegistry();
+    this.roleRegistry = roleRegistry;
+
+    if (!this.didLogRoleRegistryDiagnostics) {
+      this.didLogRoleRegistryDiagnostics = true;
+      for (const diagnostic of roleRegistry.diagnostics) {
+        console.warn(`[ucm-runtime] ${diagnostic}`);
+      }
     }
+
+    return roleRegistry;
   }
 
   private readState(): RuntimeState {
-    return this.normalizeState(this.store.read());
+    return this.state;
   }
 
-  private writeState(state: RuntimeState) {
-    this.store.write(this.normalizeState(state));
+  private writeState(
+    state: RuntimeState,
+    options?: { emitChange?: boolean; projectState?: boolean },
+  ) {
+    const normalizedState = this.normalizeState(state, { includeDiscovery: false });
+    this.state = normalizedState;
+    this.store.write(normalizedState, options);
+  }
+
+  private refreshWorkspaceDiscovery(force = false): RuntimeState {
+    const now = Date.now();
+    if (!force && now - this.lastWorkspaceDiscoveryAt < WORKSPACE_DISCOVERY_REFRESH_MS) {
+      return this.state;
+    }
+
+    const previousFingerprint = this.workspaceDiscoveryFingerprint(this.state);
+    const refreshedState = this.normalizeState(this.state, { includeDiscovery: true });
+    this.state = refreshedState;
+    this.lastWorkspaceDiscoveryAt = now;
+
+    if (previousFingerprint !== this.workspaceDiscoveryFingerprint(refreshedState)) {
+      this.store.write(refreshedState);
+    }
+
+    return refreshedState;
+  }
+
+  private workspaceDiscoveryFingerprint(state: RuntimeState): string {
+    return JSON.stringify({
+      activeWorkspaceId: state.activeWorkspaceId,
+      activeMissionId: state.activeMissionId,
+      activeRunId: state.activeRunId,
+      workspaces: state.workspaces.map((workspace) => ({
+        id: workspace.id,
+        rootPath: workspace.rootPath,
+        active: workspace.active,
+      })),
+      workspaceIdByMissionId: state.workspaceIdByMissionId,
+    });
+  }
+
+  private queueTerminalPreview(
+    missionId: string,
+    runId: string,
+    chunk: string,
+  ) {
+    const key = `${missionId}:${runId}`;
+    const pending = this.pendingTerminalPreviews.get(key) ?? {
+      missionId,
+      runId,
+      chunks: [],
+      size: 0,
+    };
+    pending.chunks.push(chunk);
+    pending.size += chunk.length;
+    this.pendingTerminalPreviews.set(key, pending);
+
+    if (pending.size >= TERMINAL_PREVIEW_IMMEDIATE_FLUSH_BYTES) {
+      this.flushPendingTerminalPreviews(key);
+      return;
+    }
+
+    if (this.terminalPreviewFlushTimer) {
+      return;
+    }
+
+    this.terminalPreviewFlushTimer = setTimeout(() => {
+      this.terminalPreviewFlushTimer = null;
+      this.flushPendingTerminalPreviews();
+    }, TERMINAL_PREVIEW_FLUSH_MS);
+    this.terminalPreviewFlushTimer.unref?.();
+  }
+
+  private flushPendingTerminalPreviews(targetKey?: string): boolean {
+    if (!targetKey && this.terminalPreviewFlushTimer) {
+      clearTimeout(this.terminalPreviewFlushTimer);
+      this.terminalPreviewFlushTimer = null;
+    }
+
+    const pendingEntries = targetKey
+      ? [this.pendingTerminalPreviews.get(targetKey)].filter(
+          (entry): entry is PendingTerminalPreview => Boolean(entry),
+        )
+      : [...this.pendingTerminalPreviews.values()];
+    if (pendingEntries.length === 0) {
+      return false;
+    }
+
+    const state = this.readState();
+    let updated = false;
+    for (const entry of pendingEntries) {
+      updated =
+        appendTerminalPreviewInState(
+          state,
+          entry.missionId,
+          entry.runId,
+          entry.chunks.join(""),
+        ) || updated;
+      this.pendingTerminalPreviews.delete(`${entry.missionId}:${entry.runId}`);
+    }
+
+    if (updated) {
+      this.writeState(state, { emitChange: false, projectState: false });
+      this.onStateChange?.("terminal_updated");
+    }
+
+    return updated;
   }
 
   listWorkspaces(): WorkspaceSummary[] {
-    return this.readState().workspaces;
+    return this.refreshWorkspaceDiscovery().workspaces;
   }
 
   addWorkspace(input: { rootPath: string }): WorkspaceSummary[] {
@@ -275,13 +411,18 @@ export class RuntimeService {
     const state = this.readState();
     const mission = createMissionInState(state, input);
     this.writeState(state);
-    const builderId = `a-builder-${mission.id}`;
     const runId = `r-${mission.id}`;
     if (input.command?.trim()) {
       this.startAgentExecution({
         missionId: mission.id,
         runId,
-        agentId: builderId,
+        agentId: `a-builder-${mission.id}`,
+      });
+    } else {
+      this.startAgentExecution({
+        missionId: mission.id,
+        runId,
+        agentId: `a-conductor-${mission.id}`,
       });
     }
     return mission;
@@ -496,10 +637,19 @@ export class RuntimeService {
 
   autopilotStep(): RunAutopilotResult {
     const state = this.readState();
+    const result = this.autopilotStepOnState(state);
+    if (result.eventKind !== "none") {
+      this.writeState(state);
+    }
+    return result;
+  }
+
+  private autopilotStepOnState(state: RuntimeState): RunAutopilotResult {
     const located = this.findNextAutopilotTarget(state);
     if (!located) {
+      const activeRun = this.resolveActiveRun(state);
       return {
-        run: this.getActiveRun(),
+        run: activeRun,
         eventKind: "none",
         decision: "observe",
         summary: "Autopilot found no pending run events across active missions.",
@@ -522,7 +672,7 @@ export class RuntimeService {
       run: located.run,
       event: latestEvent,
       latestArtifactType: findLatestActionableArtifactType(located.run),
-      hasDeliverable: located.run.deliverables.length > 0,
+      hasDeliverable: (located.run.deliverables ?? []).length > 0,
     });
     advanceMissionStatusInState(state, located.missionId, latestEvent.kind, deriveMissionStatus);
     this.applyAgentLifecyclePolicy(
@@ -534,11 +684,9 @@ export class RuntimeService {
     applyConductorDecision(state, located.run, decision);
 
     const handledIds = state.autopilotHandledEventIdsByRunId[located.run.id] ?? [];
-    state.autopilotHandledEventIdsByRunId[located.run.id] = [
-      ...handledIds,
-      latestEvent.id,
-    ];
-    this.writeState(state);
+    handledIds.push(latestEvent.id);
+    state.autopilotHandledEventIdsByRunId[located.run.id] =
+      handledIds.length > 200 ? handledIds.slice(-200) : handledIds;
     return {
       run: hydrateRunDetail(state, located.run),
       eventKind:
@@ -554,6 +702,16 @@ export class RuntimeService {
       decision: decision.decision,
       summary: decision.summary,
     };
+  }
+
+  private resolveActiveRun(state: RuntimeState): RunDetail | null {
+    if (!state.activeMissionId) {
+      return null;
+    }
+    const runs = state.runsByMissionId[state.activeMissionId] ?? [];
+    const run =
+      runs.find((item) => item.id === state.activeRunId) ?? runs[0] ?? null;
+    return run ? hydrateRunDetail(state, run) : null;
   }
 
   private findNextAutopilotTarget(state: RuntimeState):
@@ -589,23 +747,34 @@ export class RuntimeService {
 
   tickAutopilot(): RunAutopilotResult {
     const state = this.readState();
-    if (this.resumeQueuedRuns(state)) {
+    let dirty = this.resumeQueuedRuns(state);
+    const burst = this.autopilotBurstOnState(state);
+    dirty = dirty || burst.appliedCount > 0;
+    if (dirty) {
       this.writeState(state);
-      this.onStateChange?.("autopilot_applied");
-    }
-    const burst = this.autopilotBurst();
-    if (burst.appliedCount > 0) {
       this.onStateChange?.("autopilot_applied");
     }
     return burst.lastResult;
   }
 
   autopilotBurst(input?: { maxSteps?: number }): RunAutopilotBurstResult {
+    const state = this.readState();
+    const burst = this.autopilotBurstOnState(state, input);
+    if (burst.appliedCount > 0) {
+      this.writeState(state);
+    }
+    return burst;
+  }
+
+  private autopilotBurstOnState(
+    state: RuntimeState,
+    input?: { maxSteps?: number },
+  ): RunAutopilotBurstResult {
     const maxSteps = Math.max(1, Math.min(16, input?.maxSteps ?? 6));
     const steps: RunAutopilotResult[] = [];
 
     for (let index = 0; index < maxSteps; index += 1) {
-      const next = this.autopilotStep();
+      const next = this.autopilotStepOnState(state);
       steps.push(next);
       if (next.eventKind === "none") {
         break;
@@ -616,7 +785,7 @@ export class RuntimeService {
     const lastResult =
       steps.at(-1) ??
       ({
-        run: this.getActiveRun(),
+        run: this.resolveActiveRun(state),
         eventKind: "none",
         decision: "observe",
         summary: "Autopilot burst had no work to process.",
@@ -701,8 +870,12 @@ export class RuntimeService {
     ];
   }
 
-  private normalizeState(state: RuntimeState): RuntimeState {
-    const discoveredWorkspaces = discoverWorkspaceSummaries();
+  private normalizeState(
+    state: RuntimeState,
+    options?: { includeDiscovery?: boolean },
+  ): RuntimeState {
+    const discoveredWorkspaces =
+      options?.includeDiscovery === false ? [] : discoverWorkspaceSummaries();
     const validStoredWorkspaces = state.workspaces.filter((workspace) =>
       isWorkspacePathAvailable(workspace.rootPath),
     );
@@ -772,8 +945,7 @@ export class RuntimeService {
               const agent = agentsById.get(run.agentId);
               const roleContractId =
                 run.roleContractId &&
-                (!this.roleRegistry.enforceRoleContracts ||
-                  this.roleRegistry.hasRoleContract(run.roleContractId))
+                KNOWN_ROLE_CONTRACT_IDS.has(run.roleContractId)
                   ? run.roleContractId
                   : inferRoleContractIdForRun(run, agent?.role);
               return {
@@ -828,7 +1000,7 @@ export class RuntimeService {
         runId: queuedRun.id,
         agentId: agent.id,
         executionService: this.executionService,
-        roleRegistry: this.roleRegistry,
+        roleRegistry: this.getRoleRegistry(),
         callbacks: {
           onSessionStart: (nextMissionId, nextRunId, session) => {
             this.recordTerminalSession(nextMissionId, nextRunId, session);
@@ -964,7 +1136,7 @@ export class RuntimeService {
         },
       });
 
-      if (transition.status !== "running") {
+      if (transition.status !== "running" && transition.status !== "needs_review") {
         continue;
       }
 
@@ -1009,7 +1181,7 @@ export class RuntimeService {
         runId: scheduledRun?.runId ?? run.id,
         agentId: transition.agentId,
         executionService: this.executionService,
-        roleRegistry: this.roleRegistry,
+        roleRegistry: this.getRoleRegistry(),
         callbacks: {
           onSessionStart: (nextMissionId, nextRunId, session) => {
             this.recordTerminalSession(nextMissionId, nextRunId, session);
@@ -1036,13 +1208,38 @@ export class RuntimeService {
     stdout?: string;
     generatedPatch?: string;
   }) {
+    this.flushPendingTerminalPreviews(`${input.missionId}:${input.runId}`);
     const state = this.readState();
-    const completed = completeAgentRunInState(state, input, this.roleRegistry);
+    const completed = completeAgentRunInState(state, input, this.getRoleRegistry());
     if (!completed) {
       return;
     }
+    this.tryAutoApprove(state, completed.run, completed.agent);
     this.writeState(state);
     this.onStateChange?.("run_completed");
+  }
+
+  private tryAutoApprove(
+    state: RuntimeState,
+    run: RunDetail,
+    agent: { role: string },
+  ) {
+    if (agent.role !== "verification" || run.status !== "completed") {
+      return;
+    }
+    const activeRevision = (run.deliverables ?? [])
+      .flatMap((deliverable) =>
+        deliverable.revisions.map((revision) => ({ deliverable, revision })),
+      )
+      .find(({ revision }) => revision.status === "active");
+    if (!activeRevision) {
+      return;
+    }
+    approveDeliverableRevisionInState(state, {
+      runId: run.id,
+      deliverableRevisionId: activeRevision.revision.id,
+    });
+    updateMissionStatusInState(state, run.missionId, "completed");
   }
 
   private startAgentExecution(input: {
@@ -1057,7 +1254,7 @@ export class RuntimeService {
       runId: input.runId,
       agentId: input.agentId,
       executionService: this.executionService,
-      roleRegistry: this.roleRegistry,
+      roleRegistry: this.getRoleRegistry(),
       callbacks: {
         onSessionStart: (nextMissionId, nextRunId, session) => {
           this.recordTerminalSession(nextMissionId, nextRunId, session);
@@ -1076,7 +1273,7 @@ export class RuntimeService {
   private recordTerminalSession(
     missionId: string,
     runId: string,
-    session: { sessionId: string; provider: RuntimeProvider },
+    session: { sessionId: string; provider: ProviderName },
   ) {
     const state = this.readState();
     const updated = recordTerminalSessionInState(state, missionId, runId, session);
@@ -1091,12 +1288,6 @@ export class RuntimeService {
     runId: string,
     chunk: string,
   ) {
-    const state = this.readState();
-    const updated = appendTerminalPreviewInState(state, missionId, runId, chunk);
-    if (!updated) {
-      return;
-    }
-    this.writeState(state);
-    this.onStateChange?.("terminal_updated");
+    this.queueTerminalPreview(missionId, runId, chunk);
   }
 }

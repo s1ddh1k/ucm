@@ -1,8 +1,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn, spawnSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 
 const { GitWorktreeManager } = require("./git-worktree-manager.js");
+
+const MAX_CAPTURED_PROVIDER_OUTPUT_CHARS = 24000;
+const MAX_CAPTURED_LOCAL_OUTPUT_CHARS = 32000;
+const MAX_CAPTURED_STDERR_CHARS = 12000;
+const MAX_GENERATED_PATCH_CHARS = 80000;
 
 class RuntimeExecutionEngine {
   constructor(options = {}) {
@@ -126,19 +131,28 @@ class RuntimeExecutionEngine {
       model: this.defaultModelFor(provider),
       timeoutMs: 45000,
     });
+    const stdout = clampCapturedText(
+      result.stdout,
+      MAX_CAPTURED_PROVIDER_OUTPUT_CHARS,
+    );
+    const stderr = clampCapturedText(result.stderr, MAX_CAPTURED_STDERR_CHARS);
 
-    if (result.status !== "done" || !result.stdout.trim()) {
-      throw new Error(this.describeFailure(provider, result));
+    if (result.status !== "done" || !stdout.trim()) {
+      throw new Error(this.describeFailure(provider, { ...result, stdout, stderr }));
     }
 
     return {
       missionId: input.missionId,
       runId: input.runId,
       agentId: input.agent.id,
-      summary: this.summarizeProviderOutput(input.agent, input.objective, result),
+      summary: this.summarizeProviderOutput(input.agent, input.objective, {
+        ...result,
+        stdout,
+        stderr,
+      }),
       source: "provider",
-      outcome: this.parseOutcome(result.stdout, input.agent),
-      stderr: result.stderr || undefined,
+      outcome: this.parseOutcome(stdout, input.agent),
+      stderr: stderr || undefined,
       session: {
         sessionId: `exec-${input.runId}`,
         provider,
@@ -177,7 +191,7 @@ class RuntimeExecutionEngine {
         input.input.onTerminalData?.(chunk);
       },
     });
-    const generatedPatch = this.captureGitDiff(input.workspaceContext.cwd);
+    const generatedPatch = await this.captureGitDiff(input.workspaceContext.cwd);
 
     return {
       missionId: input.input.missionId,
@@ -220,7 +234,11 @@ class RuntimeExecutionEngine {
           prompt: input.prompt,
           provider: input.provider,
           onData: (chunk) => {
-            output += chunk;
+            output = appendCapturedText(
+              output,
+              chunk,
+              MAX_CAPTURED_PROVIDER_OUTPUT_CHARS,
+            );
             input.input.onTerminalData?.(chunk);
           },
           onExit: ({ exitCode }) => {
@@ -273,6 +291,11 @@ class RuntimeExecutionEngine {
 
   spawnMockFallback(input) {
     setTimeout(() => {
+      const workspaceContext = this.worktreeManager.prepareRunWorkspace({
+        runId: input.runId,
+        missionId: input.missionId,
+        workspacePath: input.workspacePath,
+      });
       input.onComplete({
         missionId: input.missionId,
         runId: input.runId,
@@ -285,26 +308,10 @@ class RuntimeExecutionEngine {
           sessionId: `mock-${input.runId}`,
           provider: input.workspaceCommand?.trim() ? "local" : this.resolveProvider(input.providerPreference),
           transport: input.workspaceCommand?.trim() ? "local_shell" : "provider_pipe",
-          cwd: this.worktreeManager.prepareRunWorkspace({
-            runId: input.runId,
-            missionId: input.missionId,
-            workspacePath: input.workspacePath,
-          }).cwd,
-          workspaceMode: this.worktreeManager.prepareRunWorkspace({
-            runId: input.runId,
-            missionId: input.missionId,
-            workspacePath: input.workspacePath,
-          }).workspaceMode,
-          workspaceRootPath: this.worktreeManager.prepareRunWorkspace({
-            runId: input.runId,
-            missionId: input.missionId,
-            workspacePath: input.workspacePath,
-          }).workspaceRootPath,
-          worktreePath: this.worktreeManager.prepareRunWorkspace({
-            runId: input.runId,
-            missionId: input.missionId,
-            workspacePath: input.workspacePath,
-          }).worktreePath,
+          cwd: workspaceContext.cwd,
+          workspaceMode: workspaceContext.workspaceMode,
+          workspaceRootPath: workspaceContext.workspaceRootPath,
+          worktreePath: workspaceContext.worktreePath,
           interactive: false,
         },
       });
@@ -324,12 +331,12 @@ class RuntimeExecutionEngine {
 
       child.stdout.on("data", (chunk) => {
         const text = chunk.toString();
-        stdout += text;
+        stdout = appendCapturedText(stdout, text, MAX_CAPTURED_LOCAL_OUTPUT_CHARS);
         input.onData?.(text);
       });
       child.stderr.on("data", (chunk) => {
         const text = chunk.toString();
-        stderr += text;
+        stderr = appendCapturedText(stderr, text, MAX_CAPTURED_STDERR_CHARS);
         input.onData?.(text);
       });
       child.on("error", (error) => {
@@ -346,18 +353,37 @@ class RuntimeExecutionEngine {
   }
 
   captureGitDiff(cwd) {
-    try {
-      const result = spawnSync("git", ["diff", "--no-ext-diff", "--", "."], {
-        cwd,
-        encoding: "utf8",
-      });
-      if (result.status !== 0) {
-        return "";
+    return new Promise((resolve) => {
+      try {
+        const child = spawn("git", ["diff", "--no-ext-diff", "--", "."], {
+          cwd,
+          env: { ...process.env },
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+
+        let stdout = "";
+
+        child.stdout.on("data", (chunk) => {
+          stdout = appendCapturedText(
+            stdout,
+            chunk.toString(),
+            MAX_GENERATED_PATCH_CHARS,
+          );
+        });
+        child.on("error", () => {
+          resolve("");
+        });
+        child.on("close", (exitCode) => {
+          if (exitCode !== 0) {
+            resolve("");
+            return;
+          }
+          resolve(stdout.trim());
+        });
+      } catch {
+        resolve("");
       }
-      return result.stdout.trim();
-    } catch {
-      return "";
-    }
+    });
   }
 
   resolveProvider(preferred) {
@@ -478,6 +504,21 @@ class RuntimeExecutionEngine {
   killTerminalSession(sessionId) {
     this.terminalSessionController?.killSession(sessionId);
   }
+}
+
+function appendCapturedText(current, chunk, maxChars) {
+  return clampCapturedText(`${current}${chunk}`, maxChars);
+}
+
+function clampCapturedText(value, maxChars) {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const separator = "\n...[truncated output]...\n";
+  const headLength = Math.max(0, Math.floor((maxChars - separator.length) * 0.4));
+  const tailLength = Math.max(0, maxChars - separator.length - headLength);
+  return `${value.slice(0, headLength)}${separator}${value.slice(-tailLength)}`;
 }
 
 module.exports = {

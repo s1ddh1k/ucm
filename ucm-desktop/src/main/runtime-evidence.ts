@@ -32,10 +32,10 @@ export function deriveEvidencePacks(run: RunDetail): EvidencePack[] {
           | undefined,
       )
     : null;
-  const activeRevision = run.deliverables
+  const activeRevision = (run.deliverables ?? [])
     .flatMap((deliverable) => deliverable.revisions)
     .find((revision) => revision.status === "active");
-  const approvedRevision = run.deliverables
+  const approvedRevision = (run.deliverables ?? [])
     .flatMap((deliverable) => deliverable.revisions)
     .find((revision) => revision.status === "approved");
   const hasReviewPacket =

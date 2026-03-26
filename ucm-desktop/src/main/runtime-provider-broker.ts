@@ -35,7 +35,7 @@ export function findQueuedRunToResume(
   const runs = Object.values(state.runsByMissionId).flat();
   const runningProviders = new Set(
     runs
-      .filter((run) => run.status === "running" && run.providerPreference)
+      .filter((run) => run.status === "running" && run.providerPreference && run.providerPreference !== "local")
       .map((run) => run.providerPreference as RuntimeProvider),
   );
 
@@ -43,9 +43,10 @@ export function findQueuedRunToResume(
     (run) =>
       run.status === "queued" &&
       run.providerPreference &&
+      run.providerPreference !== "local" &&
       !runningProviders.has(run.providerPreference),
   );
-  if (!queuedRun?.providerPreference) {
+  if (!queuedRun?.providerPreference || queuedRun.providerPreference === "local") {
     return null;
   }
 

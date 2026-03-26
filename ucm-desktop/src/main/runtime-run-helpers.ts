@@ -12,6 +12,10 @@ import type { RuntimeState } from "./runtime-state";
 import { deriveEvidencePacks } from "./runtime-evidence";
 import { createArtifactRecord } from "./runtime-artifact-records";
 
+const MAX_RUN_EVENTS_PER_RUN = 200;
+const MAX_LIFECYCLE_EVENTS_PER_MISSION = 100;
+const MAX_HANDLED_EVENT_IDS_PER_RUN = 200;
+
 const NON_ACTIONABLE_ARTIFACT_CONTRACT_KINDS = new Set([
   "spec_brief",
   "acceptance_checks",
@@ -44,7 +48,7 @@ export function hydrateRunDetail(state: RuntimeState, run: RunDetail): RunDetail
 }
 
 export function countDeliverableRevisions(run: RunDetail): number {
-  return run.deliverables.reduce(
+  return (run.deliverables ?? []).reduce(
     (sum, deliverable) => sum + deliverable.revisions.length,
     0,
   );
@@ -86,7 +90,13 @@ export function ensureRunOutputBaseline(run: RunDetail): RunDetail {
 export function findLatestActionableArtifact(
   run: Pick<RunDetail, "artifacts">,
 ): ArtifactRecord | undefined {
-  return run.artifacts.at(-1);
+  return [...run.artifacts]
+    .reverse()
+    .find(
+      (artifact) =>
+        !artifact.contractKind ||
+        !NON_ACTIONABLE_ARTIFACT_CONTRACT_KINDS.has(artifact.contractKind),
+    );
 }
 
 export function findLatestActionableArtifactType(
@@ -205,14 +215,16 @@ export function appendRunEvent(
   runId: string,
   event: Omit<RunEvent, "id" | "runId">,
 ) {
-  state.runEventsByRunId[runId] = [
-    ...(state.runEventsByRunId[runId] ?? []),
-    {
-      id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      runId,
-      ...event,
-    },
-  ];
+  const events = state.runEventsByRunId[runId] ?? [];
+  events.push({
+    id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    runId,
+    ...event,
+  });
+  state.runEventsByRunId[runId] =
+    events.length > MAX_RUN_EVENTS_PER_RUN
+      ? events.slice(-MAX_RUN_EVENTS_PER_RUN)
+      : events;
 }
 
 export function markSteeringStatus(
@@ -252,12 +264,14 @@ export function appendLifecycleEvent(
   missionId: string,
   event: Omit<AgentLifecycleEvent, "id" | "missionId">,
 ) {
-  state.lifecycleEventsByMissionId[missionId] = [
-    ...(state.lifecycleEventsByMissionId[missionId] ?? []),
-    {
-      id: `lc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      missionId,
-      ...event,
-    },
-  ];
+  const events = state.lifecycleEventsByMissionId[missionId] ?? [];
+  events.push({
+    id: `lc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    missionId,
+    ...event,
+  });
+  state.lifecycleEventsByMissionId[missionId] =
+    events.length > MAX_LIFECYCLE_EVENTS_PER_MISSION
+      ? events.slice(-MAX_LIFECYCLE_EVENTS_PER_MISSION)
+      : events;
 }

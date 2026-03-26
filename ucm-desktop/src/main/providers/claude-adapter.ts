@@ -17,7 +17,6 @@ export class ClaudeAdapter extends BaseProviderAdapter {
     if (input.model?.trim()) {
       args.push("--model", input.model.trim());
     }
-    args.push("--allowedTools", "");
     return {
       cmd: "claude",
       args,

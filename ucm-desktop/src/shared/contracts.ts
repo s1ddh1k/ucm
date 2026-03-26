@@ -302,10 +302,10 @@ export type RunDetail = {
   status: "queued" | "running" | "blocked" | "needs_review" | "completed";
   summary: string;
   budgetClass?: BudgetClass;
-  providerPreference?: RuntimeProvider;
+  providerPreference?: RuntimeProvider | "local";
   workspaceCommand?: string;
   terminalSessionId?: string;
-  terminalProvider?: RuntimeProvider;
+  terminalProvider?: RuntimeProvider | "local";
   activeSurface: "terminal" | "diff" | "tests" | "artifacts";
   terminalPreview: string[];
   origin?: RunOrigin;
@@ -366,6 +366,19 @@ export type RuntimeUpdateEvent = {
     | "run_completed";
 };
 
+export type WorkspaceBrowserEntry = {
+  name: string;
+  path: string;
+  isRepositoryRoot: boolean;
+};
+
+export type WorkspaceBrowserSnapshot = {
+  currentPath: string;
+  parentPath: string | null;
+  homePath: string;
+  directories: WorkspaceBrowserEntry[];
+};
+
 export type UcmDesktopApi = {
   app: {
     getVersion: () => Promise<string>;
@@ -378,6 +391,11 @@ export type UcmDesktopApi = {
     setActive: (input: { workspaceId: string }) => Promise<WorkspaceSummary[]>;
     add: (input: { rootPath: string }) => Promise<WorkspaceSummary[]>;
     pickDirectory: () => Promise<string | null>;
+    browse: (input?: { rootPath?: string }) => Promise<WorkspaceBrowserSnapshot>;
+    createDirectory: (input: {
+      parentPath: string;
+      directoryName: string;
+    }) => Promise<WorkspaceBrowserSnapshot>;
   };
   mission: {
     list: () => Promise<MissionSnapshot[]>;

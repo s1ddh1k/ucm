@@ -66,11 +66,11 @@ test("runtime store persists state in sqlite instead of json", () => {
 
   assert.ok(workspaceRows.length > 0);
   assert.equal(missionRow?.is_active, 1);
-  assert.equal(runRow?.release_count, 1);
+  assert.equal(runRow?.release_count, 2);
   assert.equal(runRow?.handoff_count, 1);
-  assert.equal(runRow?.session_transport, "local_shell");
-  assert.equal(runRow?.workspace_mode, "git_worktree");
-  assert.equal(runRow?.worktree_path, "/tmp/worktree-r-1");
+  assert.equal(runRow?.session_transport, null);
+  assert.equal(runRow?.workspace_mode, null);
+  assert.equal(runRow?.worktree_path, null);
   assert.equal(releaseRow?.latest_revision_id, "del-1-r2");
   assert.equal(handoffRow?.release_revision_id, "del-1-r2");
 
@@ -111,5 +111,35 @@ test("runtime store migrates legacy json into sqlite on first read", () => {
   assert.equal(missionRow?.is_active, 1);
 
   db.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("runtime store can skip index projection for snapshot-only writes", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "ucm-runtime-store-snapshot-"));
+  const dbPath = path.join(tempDir, "runtime-state.db");
+  let projectedCount = 0;
+  const store = new runtimeStore.RuntimeStore(
+    dbPath,
+    runtimeState.cloneSeed,
+    (parsed, seed) => ({ ...seed, ...parsed }),
+    undefined,
+    {
+      projectState(database, storeKey, state) {
+        projectedCount += 1;
+        runtimeStateIndex.projectRuntimeState(database, storeKey, state);
+      },
+    },
+  );
+
+  const state = store.read();
+  const initialProjectedCount = projectedCount;
+  state.runsByMissionId["m-1"][0].terminalPreview = ["chunk 1", "chunk 2"];
+  store.write(state, { emitChange: false, projectState: false });
+
+  const reloaded = store.read();
+
+  assert.equal(projectedCount, initialProjectedCount);
+  assert.deepEqual(reloaded.runsByMissionId["m-1"][0].terminalPreview, ["chunk 1", "chunk 2"]);
+
   fs.rmSync(tempDir, { recursive: true, force: true });
 });

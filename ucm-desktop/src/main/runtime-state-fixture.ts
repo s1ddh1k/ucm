@@ -1,7 +1,4 @@
-import {
-  cloneRuntimeState,
-  type RuntimeState,
-} from "./runtime-state";
+import type { RuntimeState } from "./runtime-state";
 
 const seedState: RuntimeState = {
   activeWorkspaceId: "ws-storefront",
@@ -204,6 +201,7 @@ const seedState: RuntimeState = {
         id: "r-1",
         missionId: "m-1",
         agentId: "a-builder-2",
+        roleContractId: "builder_agent",
         title: "Patch checkout auth regression",
         status: "blocked",
         summary:
@@ -311,22 +309,6 @@ const seedState: RuntimeState = {
         ],
         deliverables: [
           {
-            kind: "review_packet",
-            revisions: [
-              {
-                id: "dv-1",
-                revision: 1,
-                summary: "Initial review packet draft prepared for bootstrap.",
-                createdAtLabel: "18m ago",
-                basedOnArtifactIds: ["art-1", "art-2"],
-                status: "superseded",
-              },
-            ],
-          },
-        ],
-        runEvents: [],
-        releases: [
-          {
             id: "del-1",
             kind: "merge_handoff",
             title: "Checkout auth merge handoff",
@@ -352,11 +334,28 @@ const seedState: RuntimeState = {
               },
             ],
           },
+          {
+            id: "dv-review-1",
+            kind: "review_packet",
+            title: "Review packet for checkout auth fix",
+            latestRevisionId: "dv-1",
+            revisions: [
+              {
+                id: "dv-1",
+                revision: 1,
+                summary: "Initial review packet draft prepared for bootstrap.",
+                createdAtLabel: "18m ago",
+                basedOnArtifactIds: ["art-1", "art-2"],
+                status: "superseded",
+              },
+            ],
+          },
         ],
+        runEvents: [],
         handoffs: [
           {
             id: "handoff-1",
-            releaseRevisionId: "del-1-r2",
+            deliverableRevisionId: "del-1-r2",
             channel: "inbox",
             target: "human reviewer",
             createdAtLabel: "1m ago",
@@ -421,5 +420,5 @@ const seedState: RuntimeState = {
 };
 
 export function cloneSeed(): RuntimeState {
-  return cloneRuntimeState(seedState);
+  return JSON.parse(JSON.stringify(seedState)) as RuntimeState;
 }

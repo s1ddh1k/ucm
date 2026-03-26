@@ -28,7 +28,7 @@ function hasActiveReviewPacket(
   run: RunDetail,
   freshness?: "latest_phase" | "latest_run" | "approved_only",
 ) {
-  return run.deliverables.some((deliverable) =>
+  return (run.deliverables ?? []).some((deliverable) =>
     deliverable.kind === "review_packet" &&
     deliverable.revisions.some((revision) =>
       freshness === "approved_only"
@@ -82,7 +82,7 @@ function hasNewDeliverableRevision(
   freshness?: "latest_phase" | "latest_run" | "approved_only",
 ): boolean {
   const baselineCount = run.outputBaseline?.deliverableRevisionCount ?? 0;
-  const currentCount = run.deliverables.reduce(
+  const currentCount = (run.deliverables ?? []).reduce(
     (sum, deliverable) => sum + deliverable.revisions.length,
     0,
   );
@@ -90,7 +90,7 @@ function hasNewDeliverableRevision(
     return false;
   }
 
-  return run.deliverables.some((deliverable) =>
+  return (run.deliverables ?? []).some((deliverable) =>
     deliverable.revisions.some((revision) => {
       if (freshness === "approved_only") {
         return revision.status === "approved";
@@ -104,7 +104,7 @@ function countDeliverableRevisionArtifacts(
   run: RunDetail,
   freshness?: "latest_phase" | "latest_run" | "approved_only",
 ): number {
-  return run.deliverables.reduce((sum, deliverable) => {
+  return (run.deliverables ?? []).reduce((sum, deliverable) => {
     return (
       sum +
       deliverable.revisions.filter((revision) => {

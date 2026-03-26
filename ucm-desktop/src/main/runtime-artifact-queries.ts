@@ -34,7 +34,7 @@ export function listDeliverableRevisions(
   run: Pick<RunDetail, "deliverables">,
   deliverableKind?: RunDetail["deliverables"][number]["kind"],
 ) {
-  return run.deliverables.flatMap((deliverable) => {
+  return (run.deliverables ?? []).flatMap((deliverable) => {
     if (deliverableKind && deliverable.kind !== deliverableKind) {
       return [];
     }

@@ -132,7 +132,7 @@ export function deriveLifecycleTransitions(
     const verifier = agents.find((agent) => agent.role === "verification");
     if (
       verifier &&
-      verifier.status === "idle" &&
+      (verifier.status === "idle" || verifier.status === "needs_review") &&
       (artifactRequiresRole(latestArtifactType, verifier.role) ||
         phaseRequiresRole(phaseObjective, verifier.role))
     ) {
@@ -191,7 +191,7 @@ export function deriveLifecycleTransitions(
 
   if (event.kind === "review_requested" || event.kind === "needs_review") {
     const verifier = agents.find((agent) => agent.role === "verification");
-    if (verifier && verifier.status !== "needs_review") {
+    if (verifier && verifier.status !== "needs_review" && verifier.status !== "running") {
       transitions.push({
         agentId: verifier.id,
         status: "needs_review",
@@ -202,10 +202,24 @@ export function deriveLifecycleTransitions(
   }
 
   if (event.kind === "completed") {
-    const builder = event.agentId
+    const completedAgent = event.agentId
       ? agents.find((agent) => agent.id === event.agentId)
-      : agents.find((agent) => agent.role === "implementation");
-    if (builder && builder.status !== "idle") {
+      : null;
+    const builder = agents.find((agent) => agent.role === "implementation");
+
+    if (
+      builder &&
+      builder.status === "idle" &&
+      completedAgent?.role === "coordination" &&
+      (run.roleContractId === "conductor" || run.roleContractId === "spec_agent")
+    ) {
+      transitions.push({
+        agentId: builder.id,
+        status: "running",
+        lifecycleKind: "resumed",
+        summary: `${builder.name} resumed because the planning pass is complete and implementation can begin.`,
+      });
+    } else if (builder && builder.status !== "idle" && completedAgent?.id === builder.id) {
       transitions.push({
         agentId: builder.id,
         status: "idle",

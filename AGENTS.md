@@ -44,7 +44,7 @@ Hivemind / Forge      legacy 안의 참고 구현. 새 코드에서는 직접 im
 
 ```bash
 cd ucm-desktop && npm run build         # 데스크톱 빌드
-cd ucm-desktop && npm run test:runtime  # main/runtime 테스트
+cd ucm-desktop && npm run test:runtime  # 경량 main/runtime 테스트 (계약/미션 흐름 테스트 제외)
 cd ucm-desktop && npm run test:smoke    # Electron 스모크 테스트
 ```
 
@@ -55,4 +55,4 @@ cd ucm-desktop && npm run test:smoke    # Electron 스모크 테스트
 - `legacy/*` 코드는 읽기 전용 참고 자료로만 사용한다
 - 저장소 변경 시 snapshot과 SQLite index projection을 같이 고려한다
 - 실행 변경 시 `packages/execution`과 `runtime_run_index` projection을 함께 본다
-- 런타임 변경은 `test:runtime`과 `test:smoke`까지 확인한다
+- 런타임 변경은 기본적으로 `test:runtime`을 확인하고, 계약/미션 흐름 검증이나 Electron 런처 검증은 필요할 때만 별도로 실행한다

@@ -2,11 +2,11 @@ import type {
   AgentSnapshot,
   BudgetClass,
   MissionSnapshot,
-  RuntimeProvider,
   RunDetail,
   RunEvent,
 } from "../shared/contracts";
 import type { ExecutionController } from "./execution-types";
+import type { ProviderName } from "./provider-adapter";
 import {
   appendLifecycleEvent,
   appendRunEvent,
@@ -26,7 +26,7 @@ import type { RuntimeState } from "./runtime-state";
 type ExecutionCallbacks = {
   onSessionStart: (missionId: string, runId: string, session: {
     sessionId: string;
-    provider: RuntimeProvider;
+    provider: ProviderName;
   }) => void;
   onTerminalData: (missionId: string, runId: string, chunk: string) => void;
   onComplete: (result: {
@@ -41,6 +41,9 @@ type ExecutionCallbacks = {
     generatedPatch?: string;
   }) => void;
 };
+
+const MAX_TERMINAL_PREVIEW_LINES = 24;
+const MAX_TERMINAL_PREVIEW_LINE_LENGTH = 240;
 
 export function collectSteeringContext(
   state: RuntimeState,
@@ -81,13 +84,7 @@ export function maybeStartAgentExecutionInState(input: {
     return;
   }
 
-  if (
-    (agent.role !== "verification" &&
-      agent.role !== "implementation" &&
-      agent.role !== "research" &&
-      agent.role !== "design") ||
-    agent.status !== "running"
-  ) {
+  if (agent.status !== "running" && agent.status !== "needs_review") {
     return;
   }
 
@@ -224,7 +221,7 @@ function inferBudgetClassForAgent(agent: AgentSnapshot): BudgetClass {
 
 function inferProviderPreferenceForAgent(
   agent: AgentSnapshot,
-): RuntimeProvider {
+): ProviderName {
   if (agent.role === "implementation") {
     return "codex";
   }
@@ -386,7 +383,7 @@ export function recordTerminalSessionInState(
   state: RuntimeState,
   missionId: string,
   runId: string,
-  session: { sessionId: string; provider: RuntimeProvider },
+  session: { sessionId: string; provider: ProviderName },
 ): boolean {
   const run = (state.runsByMissionId[missionId] ?? []).find(
     (item) => item.id === runId,
@@ -411,6 +408,11 @@ export function appendTerminalPreviewInState(
     .replace(/\r/g, "")
     .split("\n")
     .map((line) => line.trimEnd())
+    .map((line) =>
+      line.length > MAX_TERMINAL_PREVIEW_LINE_LENGTH
+        ? `${line.slice(0, MAX_TERMINAL_PREVIEW_LINE_LENGTH - 3)}...`
+        : line,
+    )
     .filter(Boolean);
   if (normalized.length === 0) {
     return false;
@@ -423,7 +425,9 @@ export function appendTerminalPreviewInState(
     return false;
   }
 
-  run.terminalPreview = [...run.terminalPreview, ...normalized].slice(-24);
+  run.terminalPreview = [...run.terminalPreview, ...normalized].slice(
+    -MAX_TERMINAL_PREVIEW_LINES,
+  );
   return true;
 }
 

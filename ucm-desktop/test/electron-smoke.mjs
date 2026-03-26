@@ -22,12 +22,20 @@ async function closeElectronApp(app) {
       setTimeout(() => resolve("timeout"), 5000);
     }),
   ]);
-  if (closeResult !== "timeout") {
-    return;
-  }
   if (!child || child.exitCode !== null || child.killed) {
     return;
   }
+
+  const exitResult = await Promise.race([
+    once(child, "exit").then(() => "exited"),
+    new Promise((resolve) => {
+      setTimeout(() => resolve("timeout"), closeResult === "timeout" ? 0 : 5000);
+    }),
+  ]);
+  if (exitResult !== "timeout") {
+    return;
+  }
+
   child.kill("SIGKILL");
   await once(child, "exit");
 }

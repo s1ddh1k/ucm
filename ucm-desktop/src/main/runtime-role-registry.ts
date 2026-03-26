@@ -54,7 +54,7 @@ export type RuntimeRoleRegistry = {
 export type RoleContractValidationResult = {
   valid: boolean;
   errors: string[];
-  providerPreference?: RuntimeProvider;
+  providerPreference?: RuntimeProvider | "local";
 };
 
 let cachedRegistry: RuntimeRoleRegistry | null = null;
@@ -134,13 +134,15 @@ export function isExecutableRoleContractCompatible(
 
 function resolveAllowedProvider(
   allowedProviders: RuntimeProvider[] | undefined,
-  preferredProvider: RuntimeProvider | undefined,
+  preferredProvider: RuntimeProvider | "local" | undefined,
 ): RuntimeProvider | undefined {
+  const effectivePreferred =
+    preferredProvider === "local" ? undefined : preferredProvider;
   if (!allowedProviders || allowedProviders.length === 0) {
-    return preferredProvider;
+    return effectivePreferred;
   }
-  if (preferredProvider && allowedProviders.includes(preferredProvider)) {
-    return preferredProvider;
+  if (effectivePreferred && allowedProviders.includes(effectivePreferred)) {
+    return effectivePreferred;
   }
   return allowedProviders[0];
 }
@@ -151,16 +153,13 @@ export function validateRoleContractRunStart(input: {
   run: RunDetail;
   agent: AgentSnapshot;
   roleRegistry: RuntimeRoleRegistry;
-  preferredProvider?: RuntimeProvider;
+  preferredProvider?: RuntimeProvider | "local";
 }): RoleContractValidationResult {
   const { state, missionId, run, agent, roleRegistry, preferredProvider } = input;
   if (!roleRegistry.enforceRoleContracts) {
     return {
-      valid: false,
-      errors: [
-        "Role contract enforcement is disabled. Fix role contract diagnostics before starting this run.",
-        ...roleRegistry.diagnostics,
-      ],
+      valid: true,
+      errors: [],
       providerPreference: preferredProvider,
     };
   }

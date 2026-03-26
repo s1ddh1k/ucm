@@ -29,6 +29,9 @@ type ProviderCommand = {
   cwd?: string;
 };
 
+const MAX_PROVIDER_STDOUT_CHARS = 24_000;
+const MAX_PROVIDER_STDERR_CHARS = 12_000;
+
 export abstract class BaseProviderAdapter implements ProviderAdapter {
   abstract readonly name: ProviderName;
 
@@ -77,11 +80,19 @@ export abstract class BaseProviderAdapter implements ProviderAdapter {
       };
 
       child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
+        stdout = appendProviderOutputChunk(
+          stdout,
+          chunk.toString(),
+          MAX_PROVIDER_STDOUT_CHARS,
+        );
       });
 
       child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
+        stderr = appendProviderOutputChunk(
+          stderr,
+          chunk.toString(),
+          MAX_PROVIDER_STDERR_CHARS,
+        );
       });
 
       child.on("error", (error) => {
@@ -107,4 +118,23 @@ export abstract class BaseProviderAdapter implements ProviderAdapter {
     delete env.CLAUDECODE;
     return env;
   }
+}
+
+export function appendProviderOutputChunk(
+  current: string,
+  chunk: string,
+  maxChars: number,
+): string {
+  return clampProviderOutput(`${current}${chunk}`, maxChars);
+}
+
+function clampProviderOutput(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  const separator = "\n...[truncated provider output]...\n";
+  const headLength = Math.max(0, Math.floor((maxChars - separator.length) * 0.4));
+  const tailLength = Math.max(0, maxChars - separator.length - headLength);
+  return `${value.slice(0, headLength)}${separator}${value.slice(-tailLength)}`;
 }
