@@ -3,4 +3,5 @@ artifacts/
 node_modules/
 dist/
 dist-electron/
+dist-server/
 resources/runtime-config/

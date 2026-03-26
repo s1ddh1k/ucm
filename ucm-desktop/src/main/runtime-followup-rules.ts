@@ -39,7 +39,7 @@ export function inferScheduledProviderPreference(
   _roleContractId: RunDetail["roleContractId"],
   _agentRole: AgentSnapshot["role"],
 ) {
-  return "claude" as const;
+  return (process.env.UCM_PROVIDER || "codex") as "claude" | "codex" | "gemini";
 }
 
 export function describeDeliverableTitle(

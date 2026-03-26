@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app } from "electron";
+import { resolveUserDataPath } from "./user-data-path";
 import type {
   BudgetBucket,
   MissionDetail,
@@ -110,7 +110,7 @@ export class RuntimeService {
     this.store =
       options?.store ??
       new RuntimeStore(
-        path.join(app.getPath("userData"), "runtime-state.json"),
+        path.join(resolveUserDataPath(), "runtime-state.json"),
         cloneSeed,
         (parsed, seed) => ({
         activeWorkspaceId: parsed.activeWorkspaceId ?? seed.activeWorkspaceId,

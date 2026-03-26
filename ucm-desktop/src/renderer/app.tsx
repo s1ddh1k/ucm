@@ -1,2619 +1,735 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
-  AppScreen,
-  ArtifactRecord,
-  DecisionRecord,
-  EvidencePack,
-  MissionDetail,
-  NavigationItem,
   MissionSnapshot,
-  RunAutopilotResult,
   RunDetail,
-  ShellSnapshot,
-  RuntimeUpdateEvent,
   WorkspaceSummary,
+  WorkspaceBrowserSnapshot,
+  WorkspaceBrowserEntry,
 } from "@shared/contracts";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-type Locale = "ko" | "en";
-type ExecutePanel = "patch" | "trace";
-
-const planningRoleContracts = new Set<RunDetail["roleContractId"]>([
-  "conductor",
-  "spec_agent",
-  "research_agent",
-  "architect_agent",
-]);
-
-const reviewRoleContracts = new Set<RunDetail["roleContractId"]>([
-  "reviewer_agent",
-]);
-
-function resolveMissionLandingScreen(run: RunDetail | null): AppScreen {
-  if (!run) {
-    return "plan";
-  }
-  if (run.status === "needs_review" || reviewRoleContracts.has(run.roleContractId)) {
-    return "review";
-  }
-  if (
-    planningRoleContracts.has(run.roleContractId) &&
-    !run.workspaceCommand &&
-    !run.terminalSessionId
-  ) {
-    return "plan";
-  }
-  return "execute";
-}
-
-const screenCopy: Record<
-  AppScreen,
-  { eyebrow: string; title: string; body: string }
-> = {
-  home: {
-    eyebrow: "Home",
-    title: "Start from missions, not files.",
-    body:
-      "Open a workspace, create a mission, or choose a template. This screen is for getting started.",
-  },
-  monitor: {
-    eyebrow: "Overview",
-    title: "Check mission status and blockers at a glance.",
-    body:
-      "See active agents, blocked work, and review items in one place.",
-  },
-  plan: {
-    eyebrow: "Plan",
-    title: "Define the work before execution starts.",
-    body:
-      "Write down the goal, constraints, success criteria, and plan.",
-  },
-  execute: {
-    eyebrow: "Run",
-    title: "Review code changes and run logs together.",
-    body:
-      "See changed files, diff output, run events, and user input in one screen.",
-  },
-  review: {
-    eyebrow: "Review",
-    title: "Verify outputs and approve what is ready to ship.",
-    body:
-      "Review test results, decisions, approvals, and deliverables before handoff.",
-  },
-  settings: {
-    eyebrow: "Environment",
-    title: "Tune the system without flooding the product surface.",
-    body:
-      "Change language, provider defaults, and related settings here.",
-  },
-};
-
-const messages = {
-  ko: {
-    nav: {
-      home: { label: "홈", description: "워크스페이스, 미션, 템플릿 시작" },
-      monitor: { label: "모니터", description: "에이전트 팀, 병목, 리뷰 대기열" },
-      plan: { label: "계획", description: "목표, 제약, 단계, 팀 구조" },
-      execute: { label: "실행", description: "코드 변경, 로그, 사용자 입력" },
-      review: { label: "리뷰", description: "테스트 결과, 승인, 전달물 검토" },
-      settings: { label: "설정", description: "언어, 프로바이더, 기본 동작 설정" },
-    },
-    screen: {
-      home: {
-        eyebrow: "시작 화면",
-        title: "파일이 아니라 미션에서 시작합니다.",
-        body: "워크스페이스를 열고, 미션을 만들고, 재사용 가능한 템플릿을 고릅니다. 홈은 런처이지 대시보드가 아닙니다.",
-      },
-      monitor: {
-        eyebrow: "운영 화면",
-        title: "미션 상태와 병목을 한눈에 봅니다.",
-        body: "활성 에이전트, 막힌 작업, 리뷰 대기열을 한 화면에서 봅니다.",
-      },
-      plan: {
-        eyebrow: "미션 계획",
-        title: "실행 전에 미션을 정리합니다.",
-        body: "목표, 제약, 성공 기준, 팀 구조를 먼저 정리합니다.",
-      },
-      execute: {
-        eyebrow: "실행 화면",
-        title: "코드 변경과 실행 추적을 함께 봅니다.",
-        body: "변경 파일, diff, 실행 로그, 사용자 입력을 한 화면에서 봅니다.",
-      },
-      review: {
-        eyebrow: "리뷰 화면",
-        title: "테스트 결과와 승인 대상을 나눠서 봅니다.",
-        body: "테스트, 결정, 승인 대상, 전달물 이력을 검토자 기준으로 정리합니다.",
-      },
-      settings: {
-        eyebrow: "환경",
-        title: "핵심 화면을 어지럽히지 않고 시스템을 조정합니다.",
-        body: "언어, 프로바이더 기본값, 알림 관련 설정을 여기서 바꿉니다.",
-      },
-    },
-    topbar: { mission: "미션", providers: "프로바이더", agents: "에이전트", blocked: "막힘", review: "리뷰" },
-    common: {
-      loadingWorkspace: "워크스페이스 불러오는 중...",
-      loading: "불러오는 중",
-      navigation: "탐색",
-      workspaces: "워크스페이스",
-      active: "사용 중",
-      available: "사용 가능",
-      teamMembers: "팀 멤버",
-      phases: "단계",
-      runEvents: "실행 이벤트",
-      missions: "미션",
-      language: "언어",
-      korean: "한국어",
-      english: "영어",
-    },
-    sections: {
-      missionLauncher: "미션 시작",
-      agentOrg: "에이전트 조직",
-      runGraph: "실행 그래프",
-      goal: "목표",
-      successCriteria: "성공 기준",
-      constraints: "제약",
-      planPhases: "계획 단계",
-      changedFiles: "변경 파일",
-      patchSurface: "패치",
-      testAndDelivery: "테스트 + 전달",
-      runLineage: "실행 흐름",
-      missionPressure: "현재 상태",
-      providerWindows: "프로바이더 상태",
-      steeringInbox: "사용자 입력",
-      approvalQueue: "승인 대기열",
-      emergencyStop: "긴급 중지",
-      executionTrace: "실행 추적",
-      terminalTrace: "터미널 추적",
-      artifactTrace: "산출물 추적",
-      deliverableHistory: "전달물 이력",
-      missionNotes: "미션 노트",
-      missionRisks: "미션 리스크",
-      reviewLog: "리뷰 로그",
-      lifecycleQueue: "이벤트 목록",
-    },
-    labels: {
-      currentRun: "현재 실행",
-      parentRun: "부모 실행",
-      childRun: "자식 실행",
-      verificationSignal: "테스트 결과",
-      evidenceStatus: "증거 상태",
-      latestDecision: "최신 결정",
-      deliveryPacket: "전달물",
-      briefSteering: "입력 내용",
-      activeSteering: "진행 중인 입력",
-      steeringHistory: "입력 이력",
-      approvalPacket: "승인 대상",
-      activeReview: "활성 리뷰",
-      approvalHistory: "승인 이력",
-      handoffHistory: "전달 이력",
-      eventDrivenLoop: "자동 진행 상태",
-      noLiveTerminal: "실시간 터미널 없음",
-      noPatchYet: "아직 패치 없음",
-      noChangedFiles: "아직 변경 파일 없음",
-      noDiffPreview: "아직 변경 내용 미리보기가 없습니다.",
-      noTestArtifact: "아직 테스트 결과 산출물이 없습니다.",
-      noEvidence: "아직 증거 팩이 없습니다.",
-      noDecision: "아직 결정 요약이 없습니다.",
-      noDeliverable: "아직 활성 전달물 리비전이 없습니다.",
-      blockReason: "차단 사유",
-    },
-    actions: {
-      createMission: "미션 생성",
-      addWorkspace: "워크스페이스 추가",
-      retryRun: "다시 실행",
-      submitSteering: "입력 보내기",
-      approveLatest: "최신본 승인",
-      stopSession: "세션 중지",
-    },
-  },
-  en: {
-    nav: {
-      home: { label: "Home", description: "Launch workspaces, missions, and templates" },
-      monitor: { label: "Monitor", description: "Agent teams, bottlenecks, and review queues" },
-      plan: { label: "Plan", description: "Goals, constraints, phases, and team shape" },
-      execute: { label: "Execute", description: "Code changes, logs, and user input" },
-      review: { label: "Review", description: "Tests, approvals, and deliverables" },
-      settings: { label: "Settings", description: "Language, providers, and runtime defaults" },
-    },
-    screen: screenCopy,
-    topbar: { mission: "Mission", providers: "Providers", agents: "Agents", blocked: "Blocked", review: "Review" },
-    common: {
-      loadingWorkspace: "Loading workspace...",
-      loading: "Loading",
-      navigation: "Navigation",
-      workspaces: "Workspaces",
-      active: "active",
-      available: "available",
-      teamMembers: "team members",
-      phases: "phases",
-      runEvents: "run events",
-      missions: "missions",
-      language: "Language",
-      korean: "Korean",
-      english: "English",
-    },
-    sections: {
-      missionLauncher: "Create Mission",
-      agentOrg: "Agent Org",
-      runGraph: "Run Graph",
-      goal: "Goal",
-      successCriteria: "Success Criteria",
-      constraints: "Constraints",
-      planPhases: "Plan Phases",
-      changedFiles: "Changed Files",
-      patchSurface: "Patch",
-      testAndDelivery: "Test + Delivery",
-      runLineage: "Run Flow",
-      missionPressure: "Current Status",
-      providerWindows: "Provider Status",
-      steeringInbox: "User Input",
-      approvalQueue: "Approval Queue",
-      emergencyStop: "Emergency Stop",
-      executionTrace: "Execution Trace",
-      terminalTrace: "Terminal Trace",
-      artifactTrace: "Artifact Trace",
-      deliverableHistory: "Deliverable History",
-      missionNotes: "Mission Notes",
-      missionRisks: "Mission Risks",
-      reviewLog: "Review Log",
-      lifecycleQueue: "Event List",
-    },
-    labels: {
-      currentRun: "Current Run",
-      parentRun: "Parent Run",
-      childRun: "Child Run",
-      verificationSignal: "Test Result",
-      evidenceStatus: "Evidence Status",
-      latestDecision: "Latest Decision",
-      deliveryPacket: "Deliverable",
-      briefSteering: "Input",
-      activeSteering: "Active Input",
-      steeringHistory: "Input History",
-      approvalPacket: "Approval Item",
-      activeReview: "Active Review",
-      approvalHistory: "Approval History",
-      handoffHistory: "Handoff History",
-      eventDrivenLoop: "Auto progress",
-      noLiveTerminal: "No live terminal",
-      noPatchYet: "No patch emitted yet",
-      noChangedFiles: "No changed files yet",
-      noDiffPreview: "No diff preview is available yet.",
-      noTestArtifact: "No test result artifact is attached to this run yet.",
-      noEvidence: "No evidence pack is available yet.",
-      noDecision: "No decision summary available.",
-      noDeliverable: "No deliverable revision is active.",
-      blockReason: "Block reason",
-    },
-    actions: {
-      createMission: "Create Mission",
-      addWorkspace: "Add Workspace",
-      retryRun: "Run Again",
-      submitSteering: "Send Input",
-      approveLatest: "Approve Latest",
-      stopSession: "Stop Session",
-    },
-  },
-} as const;
-
-type UiMessages = (typeof messages)[Locale];
-
-const missionTemplates = {
-  ko: [
-    {
-      id: "bugfix",
-      label: "버그 수정",
-      title: "결제 회귀 오류 수정",
-      goal: "최근 변경 이후 깨진 결제 흐름을 복구하고 영향 범위를 확인합니다.",
-      command: "npm test",
-    },
-    {
-      id: "verify",
-      label: "검증 실행",
-      title: "현재 상태 검증",
-      goal: "선택한 워크스페이스의 현재 상태를 빠르게 확인하고 실패 지점을 수집합니다.",
-      command: "npm run build",
-    },
-    {
-      id: "plan",
-      label: "계획만 시작",
-      title: "배포 전 정리",
-      goal: "배포 전에 남은 위험과 확인 항목을 정리합니다.",
-      command: "",
-    },
-  ],
-  en: [
-    {
-      id: "bugfix",
-      label: "Bug Fix",
-      title: "Fix checkout regression",
-      goal: "Restore the broken checkout path and confirm the blast radius.",
-      command: "npm test",
-    },
-    {
-      id: "verify",
-      label: "Verify",
-      title: "Verify current state",
-      goal: "Check the selected workspace and collect the first failing signal.",
-      command: "npm run build",
-    },
-    {
-      id: "plan",
-      label: "Plan Only",
-      title: "Prepare release review",
-      goal: "Organize the remaining risks and review items before release.",
-      command: "",
-    },
-  ],
-} as const;
+type Stage = "workspace" | "mission" | "control";
 
 function App() {
-  const [version, setVersion] = useState("...");
-  const [navigation, setNavigation] = useState<NavigationItem[]>([]);
-  const [snapshot, setSnapshot] = useState<ShellSnapshot | null>(null);
+  const [stage, setStage] = useState<Stage>("workspace");
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [missions, setMissions] = useState<MissionSnapshot[]>([]);
-  const [activeMission, setActiveMission] = useState<MissionDetail | null>(null);
+
+  // browser modal
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [browserSnapshot, setBrowserSnapshot] =
+    useState<WorkspaceBrowserSnapshot | null>(null);
+  const [newDirName, setNewDirName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  // active run for control stage
   const [activeRun, setActiveRun] = useState<RunDetail | null>(null);
-  const [missionRuns, setMissionRuns] = useState<RunDetail[]>([]);
-  const [locale, setLocale] = useState<Locale>(() => {
-    if (typeof window === "undefined") return "ko";
-    return (window.localStorage.getItem("ucm-locale") as Locale | null) ?? "ko";
-  });
-  const [activeScreen, setActiveScreen] =
-    useState<AppScreen>("monitor");
+
+  // mission form
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
-  const [command, setCommand] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<
-    (typeof missionTemplates)["ko"][number]["id"] | null
-  >(null);
-  const [steeringInput, setSteeringInput] = useState("");
-  const [selectedPatchPath, setSelectedPatchPath] = useState<string | null>(null);
-  const [executePanel, setExecutePanel] = useState<ExecutePanel>("patch");
-  const [autopilotResult] = useState<RunAutopilotResult>({
-    run: null,
-    eventKind: "none",
-    decision: "observe",
-    summary: "다음 실행 이벤트를 기다리는 중입니다.",
-  });
-  const runtimeRefreshTokenRef = useRef(0);
-  const activeRunRefreshTokenRef = useRef(0);
 
-  async function refreshStaticContext() {
-    const [nextNavigation, nextVersion] = await Promise.all([
-      window.ucm.navigation.listScreens(),
-      window.ucm.app.getVersion(),
-    ]);
-    startTransition(() => {
-      setNavigation(nextNavigation);
-      setVersion(nextVersion);
-    });
-  }
-
-  async function refreshRuntimeContext() {
-    const token = runtimeRefreshTokenRef.current + 1;
-    runtimeRefreshTokenRef.current = token;
-    activeRunRefreshTokenRef.current += 1;
-
-    const [
-      nextSnapshot,
-      nextWorkspaces,
-      nextMissions,
-      nextActiveMission,
-      nextActiveRun,
-      nextMissionRuns,
-    ] = await Promise.all([
-      window.ucm.shell.getSnapshot(),
-      window.ucm.workspace.list(),
-      window.ucm.mission.list(),
-      window.ucm.mission.getActive(),
-      window.ucm.run.getActive(),
-      window.ucm.run.listForActiveMission(),
-    ]);
-
-    if (runtimeRefreshTokenRef.current !== token) {
-      return;
-    }
-
-    startTransition(() => {
-      setSnapshot(nextSnapshot);
-      setWorkspaces(nextWorkspaces);
-      setMissions(nextMissions);
-      setActiveMission(nextActiveMission);
-      setActiveRun(nextActiveRun);
-      setMissionRuns(nextMissionRuns);
-    });
-  }
-
-  async function refreshActiveRunContext() {
-    const token = activeRunRefreshTokenRef.current + 1;
-    activeRunRefreshTokenRef.current = token;
-    const nextActiveRun = await window.ucm.run.getActive();
-    if (activeRunRefreshTokenRef.current !== token) {
-      return;
-    }
-    startTransition(() => {
-      setActiveRun(nextActiveRun);
-    });
-  }
+  const activeWorkspace = workspaces.find((w) => w.active);
 
   useEffect(() => {
-    window.localStorage.setItem("ucm-locale", locale);
-    document.documentElement.lang = locale;
-  }, [locale]);
-
-  useEffect(() => {
-    void Promise.all([refreshStaticContext(), refreshRuntimeContext()]);
-    const unsubscribe = window.ucm.events.onRuntimeUpdate(
-      (event: RuntimeUpdateEvent) => {
-        if (event.reason === "terminal_updated") {
-          void refreshActiveRunContext();
-          return;
-        }
-        void refreshRuntimeContext();
-      },
-    );
-    return () => {
-      unsubscribe();
-    };
+    void loadWorkspaces();
+    // subscribe to runtime updates for live refresh
+    const unsub = window.ucm.events.onRuntimeUpdate(() => {
+      void loadMissions();
+      void loadActiveRun();
+    });
+    return () => unsub();
   }, []);
 
+  // auto-advance: if workspace is already selected, go to mission stage
   useEffect(() => {
-    if (!activeRun?.terminalSessionId) {
-      return;
+    if (workspaces.length > 0 && activeWorkspace) {
+      if (stage === "workspace") setStage("mission");
+      void loadMissions();
     }
-    void window.ucm.run.terminalResize({
-      sessionId: activeRun.terminalSessionId,
-      cols: 120,
-      rows: 32,
-    });
-  }, [activeRun?.terminalSessionId]);
+  }, [workspaces]);
 
-  useEffect(() => {
-    setSelectedPatchPath(null);
-    setExecutePanel("patch");
-  }, [activeRun?.id]);
+  async function loadWorkspaces() {
+    const list = await window.ucm.workspace.list();
+    setWorkspaces(list);
+  }
 
-  async function handleCreateMission(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const activeWorkspace = workspaces.find((workspace) => workspace.active);
+  async function loadMissions() {
+    const list = await window.ucm.mission.list();
+    setMissions(list);
+  }
+
+  async function loadActiveRun() {
+    const run = await window.ucm.run.getActive();
+    setActiveRun(run);
+  }
+
+  async function handleSelectWorkspace(id: string) {
+    await window.ucm.workspace.setActive({ workspaceId: id });
+    await loadWorkspaces();
+    setStage("mission");
+    await loadMissions();
+  }
+
+  async function openBrowser() {
+    const snapshot = await window.ucm.workspace.browse();
+    setBrowserSnapshot(snapshot);
+    setBrowserOpen(true);
+  }
+
+  async function navigateTo(path: string) {
+    const snapshot = await window.ucm.workspace.browse({ rootPath: path });
+    setBrowserSnapshot(snapshot);
+  }
+
+  async function selectDirectory(entry: WorkspaceBrowserEntry) {
+    await window.ucm.workspace.add({ rootPath: entry.path });
+    await window.ucm.workspace.setActive({ workspaceId: entry.path });
+    await loadWorkspaces();
+    setBrowserOpen(false);
+    setStage("mission");
+    await loadMissions();
+  }
+
+  async function handleCreateDir() {
+    if (!browserSnapshot || !newDirName.trim()) return;
+    setCreating(true);
+    try {
+      const snapshot = await window.ucm.workspace.createDirectory({
+        parentPath: browserSnapshot.currentPath,
+        directoryName: newDirName.trim(),
+      });
+      setBrowserSnapshot(snapshot);
+      setNewDirName("");
+    } catch {
+      // directory might already exist
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleCreateMission(e: React.FormEvent) {
+    e.preventDefault();
     if (!activeWorkspace || !title.trim() || !goal.trim()) return;
-    await window.ucm.mission.create({
-      workspaceId: activeWorkspace.id,
-      title,
-      goal,
-      command,
-    });
-    const refreshedRun = await window.ucm.run.getActive();
-    setTitle("");
-    setGoal("");
-    setCommand("");
-    setSelectedTemplateId(null);
-    setActiveScreen(resolveMissionLandingScreen(refreshedRun));
-    await refreshRuntimeContext();
-  }
-
-  function applyMissionTemplate(
-    templateId: (typeof missionTemplates)["ko"][number]["id"],
-  ) {
-    const template = missionTemplates[locale].find((item) => item.id === templateId);
-    if (!template) {
-      return;
+    try {
+      await window.ucm.mission.create({
+        workspaceId: activeWorkspace.id,
+        title: title.trim(),
+        goal: goal.trim(),
+      });
+      setTitle("");
+      setGoal("");
+      await loadMissions();
+      await loadActiveRun();
+      setStage("control");
+    } catch (err) {
+      console.error("mission create failed:", err);
     }
-    setTitle(template.title);
-    setGoal(template.goal);
-    setCommand(template.command);
-    setSelectedTemplateId(template.id);
-  }
-
-  async function handleSelectWorkspace(workspaceId: string) {
-    await window.ucm.workspace.setActive({ workspaceId });
-    await refreshRuntimeContext();
-  }
-
-  async function handleAddWorkspace() {
-    const selectedPath = await window.ucm.workspace.pickDirectory();
-    if (!selectedPath) {
-      return;
-    }
-    await window.ucm.workspace.add({ rootPath: selectedPath });
-    await refreshRuntimeContext();
-  }
-
-  async function handleSteeringSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!activeRun?.id || !steeringInput.trim()) {
-      return;
-    }
-    await window.ucm.run.steeringSubmit({
-      runId: activeRun.id,
-      text: steeringInput,
-    });
-    setSteeringInput("");
-  }
-
-  async function handleTerminalStop() {
-    if (!activeRun?.terminalSessionId) {
-      return;
-    }
-    await window.ucm.run.terminalKill({
-      sessionId: activeRun.terminalSessionId,
-    });
-  }
-
-  async function handleApproveRevision(revisionId: string) {
-    if (!activeRun?.id) {
-      return;
-    }
-    await window.ucm.deliverable.approve({
-      runId: activeRun.id,
-      deliverableRevisionId: revisionId,
-    });
-  }
-
-  async function handleSelectRun(runId: string) {
-    await window.ucm.run.setActive({ runId });
-    setActiveScreen("execute");
-    await refreshRuntimeContext();
-  }
-
-  async function handleRetryRun(runId: string) {
-    await window.ucm.run.retry({ runId });
-    setActiveScreen("execute");
-    await refreshRuntimeContext();
   }
 
   async function handleOpenMission(missionId: string) {
     await window.ucm.mission.setActive({ missionId });
-    const refreshedRun = await window.ucm.run.getActive();
-    setActiveScreen(resolveMissionLandingScreen(refreshedRun));
-    await refreshRuntimeContext();
+    await loadMissions();
+    await loadActiveRun();
+    setStage("control");
   }
 
-  const current = messages[locale].screen[activeScreen];
-  const navCopy = messages[locale].nav;
-  const ui = messages[locale];
-  const activeWorkspace = workspaces.find((workspace) => workspace.active) ?? null;
-  const providerWindows = snapshot?.providerWindows ?? [];
-  const activeScreenLabel = navCopy[activeScreen].label;
-  const canCreateMission = Boolean(activeWorkspace && title.trim() && goal.trim());
-  const missionModeSummary = command.trim()
-    ? locale === "ko"
-      ? `입력한 명령을 바로 실행합니다: ${command.trim()}`
-      : `Run this command immediately: ${command.trim()}`
-    : locale === "ko"
-      ? "명령 없이 미션만 만들고 계획 단계에서 시작합니다."
-      : "Create the mission without a command and start from planning.";
-  const selectedMissionTitle = activeMission?.title ?? snapshot?.missionName ?? (locale === "ko" ? "선택된 미션 없음" : "No mission");
-  const recentRunEvents = [...(activeRun?.runEvents ?? [])].reverse();
-  const latestEventByAgentId = new Map(
-    recentRunEvents
-      .filter((event) => event.agentId)
-      .map((event) => [event.agentId as string, event]),
-  );
-  const latestSteeringRequest =
-    recentRunEvents.find((event) => event.kind === "steering_requested") ?? null;
-  const steeringEvents = recentRunEvents.filter(
-    (event) => event.kind === "steering_submitted",
-  );
-  const activeSteeringEvents = steeringEvents.filter(
-    (event) => event.metadata?.status === "active",
-  );
-  const archivedSteeringEvents = steeringEvents.filter(
-    (event) => event.metadata?.status === "resolved" || event.metadata?.status === "superseded",
-  );
-  const latestApprovalPacket =
-    activeRun?.deliverables[0]?.revisions.find(
-      (revision) =>
-        revision.id === activeRun.deliverables[0]?.latestRevisionId,
-    ) ?? null;
-  const activeApprovalPackets =
-    activeRun?.deliverables.flatMap((deliverable) =>
-      deliverable.revisions.filter((revision) => revision.status === "active"),
-    ) ?? [];
-  const archivedApprovalPackets =
-    activeRun?.deliverables.flatMap((deliverable) =>
-      deliverable.revisions.filter((revision) => revision.status !== "active"),
-    ) ?? [];
-  const recentApprovalHandoffs = (activeRun?.handoffs ?? [])
-    .filter((handoff) => handoff.status === "active")
-    .slice(-3)
-    .reverse();
-  const archivedApprovalHandoffs = (activeRun?.handoffs ?? [])
-    .filter((handoff) => handoff.status !== "active")
-    .slice(-3)
-    .reverse();
-  const activeRunBudgetLabel = activeRun?.budgetClass
-    ? locale === "ko"
-      ? `${activeRun.budgetClass} 버짓`
-      : `${activeRun.budgetClass} budget`
-    : activeRun?.origin?.budgetClass
-      ? locale === "ko"
-        ? `${activeRun.origin.budgetClass} 버짓`
-        : `${activeRun.origin.budgetClass} budget`
-      : locale === "ko"
-        ? "기본 버짓"
-        : "default budget";
-  const activeProviderLabel = activeRun?.providerPreference
-    ? locale === "ko"
-      ? `${activeRun.providerPreference}`
-      : `${activeRun.providerPreference}`
-    : locale === "ko"
-      ? "프로바이더"
-      : "provider";
-  const providerSummary =
-    providerWindows
-      .map((windowInfo) => `${windowInfo.provider}:${windowInfo.status}`)
-      .join(" • ") || (locale === "ko" ? "불러오는 중" : "loading");
-  const rootRuns = missionRuns.filter((run) => !run.origin?.parentRunId);
-  const followupRuns = missionRuns.filter((run) => Boolean(run.origin?.parentRunId));
-  const activeRunParent =
-    activeRun?.origin?.parentRunId
-      ? missionRuns.find((run) => run.id === activeRun.origin?.parentRunId) ?? null
-      : null;
-  const activeRunChildren = missionRuns.filter(
-    (run) => run.origin?.parentRunId === activeRun?.id,
-  );
-  const changedFiles = (activeRun?.artifacts ?? [])
-    .filter((artifact) => artifact.type === "diff")
-    .flatMap((artifact) => getChangedFilesForArtifact(artifact));
-  const testArtifacts = (activeRun?.artifacts ?? []).filter(
-    (artifact) => artifact.type === "test_result",
-  );
-  const diffArtifact =
-    (activeRun?.artifacts ?? []).find((artifact) => artifact.type === "diff") ?? null;
-  const diffFilePatches = diffArtifact ? getFilePatchesForArtifact(diffArtifact) : [];
-  const selectedPatch =
-    diffFilePatches.find((patch) => patch.path === selectedPatchPath) ??
-    diffFilePatches[0] ??
-    null;
-  const primaryDecision = activeRun?.decisions.at(-1) ?? null;
-  const primaryDeliverable = activeRun?.deliverables[0] ?? null;
-  const latestEvidencePack = activeRun?.evidencePacks?.[0] ?? null;
-  const headerContext =
-    activeScreen === "home"
-      ? activeWorkspace?.rootPath ?? current.body
-      : activeScreen === "plan"
-        ? activeMission?.goal ?? current.body
-        : activeScreen === "execute"
-          ? activeRun?.summary ?? current.body
-          : activeScreen === "review"
-            ? latestEvidencePack
-              ? summarizeEvidencePack(latestEvidencePack, locale)
-              : current.body
-            : current.body;
-  const attentionEvents = (snapshot?.lifecycleEvents ?? []).filter((event) =>
-    ["blocked", "needs_review", "review_requested", "steering_requested"].includes(event.kind),
-  );
-  const blockedCount = snapshot?.blockedAgents ?? 0;
-  const reviewCount = snapshot?.reviewCount ?? 0;
-  const topbarTone =
-    blockedCount > 0 ? "blocked" : reviewCount > 0 ? "review" : "running";
-  const topbarStateLabel =
-    locale === "ko"
-      ? blockedCount > 0
-        ? "개입 필요"
-        : reviewCount > 0
-          ? "검토 대기"
-          : "안정"
-      : blockedCount > 0
-        ? "Needs Attention"
-        : reviewCount > 0
-          ? "Awaiting Review"
-          : "Stable";
-  const topbarStateCopy =
-    locale === "ko"
-      ? blockedCount > 0
-        ? `${blockedCount}개의 막힘이 있어 바로 확인이 필요합니다.`
-        : reviewCount > 0
-          ? `${reviewCount}개의 검토 항목이 승인 대기 중입니다.`
-          : "현재 런타임은 개입 요청 없이 진행 중입니다."
-      : blockedCount > 0
-        ? `${blockedCount} blocked items need immediate operator attention.`
-        : reviewCount > 0
-          ? `${reviewCount} review items are waiting for approval.`
-          : "The runtime is progressing without pending intervention.";
-  const activeRunBlockReason = getLatestBlockReason(activeRun?.runEvents ?? []);
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar-intro">
-          <p className="eyebrow">{snapshot?.workspaceName ?? ui.common.loadingWorkspace}</p>
-          <h1>{selectedMissionTitle}</h1>
-          <p className="topbar-copy">
-            <span className="topbar-mode">{activeScreenLabel}</span>
-            {headerContext}
-          </p>
-        </div>
-        <div className="topbar-status-band">
-          <div className="topbar-status-lead">
-            <span className={`status status-${topbarTone}`}>{topbarStateLabel}</span>
-            <p>{topbarStateCopy}</p>
-          </div>
-          <div className="topbar-metrics">
-            <Metric label={ui.topbar.providers} value={providerSummary} />
-            <Metric label={ui.topbar.agents} value={String(snapshot?.activeAgents ?? 0)} />
-            <Metric label={ui.topbar.blocked} value={String(blockedCount)} />
-            <Metric label={ui.topbar.review} value={String(reviewCount)} />
-          </div>
-        </div>
-      </header>
-
-      <div className="workspace">
-        <aside className="sidebar">
-          <div className="sidebar-card">
-            <p className="section-label">{ui.common.navigation}</p>
-            <nav className="nav-list" aria-label={ui.common.navigation}>
-              {navigation.map((item) => (
-                <button
-                  className={
-                    item.id === activeScreen ? "nav-item active" : "nav-item"
-                  }
-                  key={item.id}
-                  aria-pressed={item.id === activeScreen}
-                  onClick={() => setActiveScreen(item.id)}
-                  aria-current={item.id === activeScreen ? "page" : undefined}
-                  type="button"
-                >
-                  <span>{navCopy[item.id].label}</span>
-                  <small>{navCopy[item.id].description}</small>
-                </button>
-              ))}
-            </nav>
+  if (stage === "workspace") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-8">
+        <div className="w-full max-w-2xl space-y-8">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-bold tracking-tight text-foreground">
+              UCM
+            </h1>
+            <p className="text-muted-foreground">
+              프로젝트 폴더를 선택하면 미션을 시작할 수 있습니다.
+            </p>
           </div>
 
-            <div className="sidebar-card">
-              <div className="detail-header">
-                <p className="section-label">{ui.common.workspaces}</p>
-              <button className="secondary-button" onClick={() => {
-                void handleAddWorkspace();
-              }} type="button">
-                {ui.actions.addWorkspace}
-              </button>
-            </div>
-              <div className="stack-list">
-                {workspaces.map((workspace) => (
-                  <button
-                    className={`stack-card workspace-rail-row${workspace.active ? " active" : ""}`}
-                    key={workspace.id}
-                    aria-pressed={workspace.active}
-                    onClick={() => {
-                      void handleSelectWorkspace(workspace.id);
-                    }}
-                    type="button"
-                  >
-                    <div className="workspace-rail-head">
-                      <strong>{workspace.name}</strong>
-                      <span
-                        className={`workspace-rail-state${
-                          workspace.active ? " active" : ""
-                        }`}
-                      >
-                        {workspace.active ? ui.common.active : ui.common.available}
-                      </span>
-                    </div>
-                    <p className="stack-copy">{workspace.rootPath}</p>
-                  </button>
-                ))}
-              {workspaces.length === 0 ? (
-                <div className="stack-card">
-                  <strong>{locale === "ko" ? "워크스페이스가 없습니다." : "No workspaces yet."}</strong>
-                  <p className="stack-copy">
-                    {locale === "ko"
-                      ? "로컬 프로젝트 폴더를 추가하면 여기서 바로 선택할 수 있습니다."
-                      : "Add a local project folder to select it here."}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </aside>
-
-        <main className={`main-surface screen-${activeScreen}`}>
-          <section className={`hero-card hero-card-${activeScreen}`}>
-            <p className="eyebrow">{current.eyebrow}</p>
-            <h2>{current.title}</h2>
-            <p>{current.body}</p>
-          </section>
-
-          <section className={`content-grid content-grid-${activeScreen}`}>
-            <div className="panel org-panel">
-              {activeScreen === "home" ? (
-                <div className="launcher-grid launcher-grid-home">
-                  <section className="detail-block mission-compose compose-sheet">
-                    <div className="detail-header mission-compose-header">
-                      <div>
-                        <p className="section-label">{ui.sections.missionLauncher}</p>
-                        <h4>{locale === "ko" ? "새 미션 시작" : "Start a new mission"}</h4>
-                      </div>
-                      <span className={`status ${activeWorkspace ? "status-running" : "status-blocked"}`}>
-                        {activeWorkspace ? activeWorkspace.name : (locale === "ko" ? "워크스페이스 없음" : "No workspace")}
-                      </span>
-                    </div>
-                    <p className="stack-copy mission-compose-copy">
-                      {activeWorkspace?.rootPath ??
-                        (locale === "ko"
-                          ? "먼저 왼쪽에서 워크스페이스를 추가하고 선택하세요."
-                          : "Add and select a workspace from the left rail first.")}
-                    </p>
-                    <div className="mission-template-strip">
-                      {missionTemplates[locale].map((template) => (
-                        <button
-                          className={`template-chip${
-                            selectedTemplateId === template.id ? " active" : ""
-                          }`}
-                          key={template.id}
-                          aria-pressed={selectedTemplateId === template.id}
-                          onClick={() => applyMissionTemplate(template.id)}
-                          type="button"
-                        >
-                          {template.label}
-                        </button>
-                      ))}
-                    </div>
-                    <form className="mission-form" onSubmit={handleCreateMission}>
-                      <label>
-                        {locale === "ko" ? "미션 제목" : "Mission title"}
-                        <input
-                          onChange={(event) => setTitle(event.target.value)}
-                          placeholder={locale === "ko" ? "예: 결제 인증 회귀 오류 수정" : "Checkout auth regression fix"}
-                          value={title}
-                        />
-                      </label>
-                      <label>
-                        {locale === "ko" ? "목표" : "Goal"}
-                        <textarea
-                          onChange={(event) => setGoal(event.target.value)}
-                          placeholder={locale === "ko" ? "예: 인증 흐름을 깨지 않고 결제 안정성 복구" : "Restore checkout stability without breaking auth flow."}
-                          rows={4}
-                          value={goal}
-                        />
-                      </label>
-                      <label>
-                        {locale === "ko" ? "작업 명령" : "Workspace command"}
-                        <input
-                          onChange={(event) => setCommand(event.target.value)}
-                          placeholder={
-                            locale === "ko"
-                              ? "예: npm test 또는 npm run build"
-                              : "Example: npm test or npm run build"
-                          }
-                          value={command}
-                        />
-                      </label>
-                      <div className="mission-submit-bar">
-                        <div className="mission-launch-summary">
-                          <strong>{locale === "ko" ? "실행 방식" : "Launch mode"}</strong>
-                          <p className="stack-copy">{missionModeSummary}</p>
-                        </div>
-                        <button className="primary-button" disabled={!canCreateMission} type="submit">
-                          {ui.actions.createMission}
-                        </button>
-                      </div>
-                    </form>
-                  </section>
-
-                  <section className="mission-history-list queue-sheet">
-                    <div className="detail-header mission-history-header">
-                      <div>
-                        <p className="section-label">{locale === "ko" ? "기존 미션" : "Existing Missions"}</p>
-                        <h4>{locale === "ko" ? "현재 워크스페이스 흐름" : "Current Workspace Flow"}</h4>
-                      </div>
-                      <span className="detail-meta">
-                        {locale === "ko" ? `${missions.length}개 미션` : `${missions.length} missions`}
-                      </span>
-                    </div>
-                    <div className="stack-list">
-                      {missions.map((mission) => (
-                        <button
-                          className={`stack-card mission-history-card${
-                            mission.id === activeMission?.id ? " active" : ""
-                          }`}
-                          key={mission.id}
-                          aria-pressed={mission.id === activeMission?.id}
-                          onClick={() => {
-                            void handleOpenMission(mission.id);
-                          }}
-                          type="button"
-                        >
-                          <div className="mission-history-head">
-                            <strong>{mission.title}</strong>
-                            <div className="mission-history-status">
-                              {mission.id === activeMission?.id ? (
-                                <span className="status status-running">
-                                  {locale === "ko" ? "선택됨" : "Selected"}
-                                </span>
-                              ) : null}
-                              <span className={`status status-${mission.status}`}>
-                                {formatStatusLabel(mission.status, locale)}
-                              </span>
-                              {mission.attentionRequired ? (
-                                <span className="status status-blocked">
-                                  {locale === "ko" ? "확인 필요" : "Attention"}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <p className="stack-copy">
-                            {locale === "ko" ? "요청" : "Request"}: {mission.goal ?? mission.title}
-                          </p>
-                          {mission.command ? (
-                            <p className="stack-copy">
-                              {locale === "ko" ? "입력" : "Input"}:{" "}
-                              <code className="mono-inline">{mission.command}</code>
-                            </p>
-                          ) : null}
-                          <p className="stack-copy">
-                            {locale === "ko" ? "최근 결과" : "Latest Result"}:{" "}
-                            {mission.latestResult ??
-                              (locale === "ko"
-                                ? "아직 결과가 없습니다."
-                                : "No result yet.")}
-                          </p>
-                          <p className="stack-copy mission-history-meta">
-                            {formatStatusLabel(mission.lineStatus ?? mission.status, locale)}
-                            {" • "}
-                            {locale === "ko"
-                              ? `산출물 ${mission.artifactCount ?? 0}개`
-                              : `${mission.artifactCount ?? 0} artifacts`}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              ) : activeScreen === "plan" ? (
-                <div className="mission-detail-grid mission-plan-sheet">
-                  <section className="detail-block plan-card plan-card-goal">
-                    <p className="section-label">{ui.sections.goal}</p>
-                    <h4>{activeMission?.goal ?? (locale === "ko" ? "선택된 미션이 없습니다." : "No active mission selected.")}</h4>
-                  </section>
-                  <section className="detail-block plan-card">
-                    <p className="section-label">{ui.sections.successCriteria}</p>
-                    <ul className="principles">
-                      {(activeMission?.successCriteria ?? []).map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </section>
-                  <section className="detail-block plan-card">
-                    <p className="section-label">{ui.sections.constraints}</p>
-                    <ul className="principles">
-                      {(activeMission?.constraints ?? []).map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </section>
-                  <section className="detail-block plan-card">
-                    <p className="section-label">{ui.sections.missionRisks}</p>
-                    {(activeMission?.risks?.length ?? 0) > 0 ? (
-                      <ul className="principles">
-                        {(activeMission?.risks ?? []).map((risk) => (
-                          <li key={risk}>{risk}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="stack-copy">
-                        {locale === "ko"
-                          ? "현재 등록된 리스크가 없습니다."
-                          : "No explicit mission risks have been recorded yet."}
-                      </p>
-                    )}
-                  </section>
-                  <section className="detail-block plan-card plan-card-phases">
-                    <p className="section-label">{ui.sections.planPhases}</p>
-                    <div className="stack-list phase-ledger">
-                      {(activeMission?.phases ?? []).map((phase) => (
-                        <div className="stack-card phase-row" key={phase.id}>
-                          <strong>{phase.title}</strong>
-                          <span className={`status status-${phase.status === "active" ? "running" : phase.status === "done" ? "review" : "queued"}`}>
-                            {formatStatusLabel(phase.status === "active" ? "running" : phase.status === "done" ? "review" : "queued", locale)}
-                          </span>
-                          <p className="stack-copy">{phase.objective}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              ) : activeScreen === "execute" ? (
-                <ExecuteScreen
-                  activeProviderLabel={activeProviderLabel}
-                  activeRun={activeRun}
-                  activeRunBlockReason={activeRunBlockReason}
-                  activeRunBudgetLabel={activeRunBudgetLabel}
-                  activeRunChildren={activeRunChildren}
-                  activeRunParent={activeRunParent}
-                  activeSteeringEvents={activeSteeringEvents}
-                  archivedSteeringEvents={archivedSteeringEvents}
-                  autopilotResult={autopilotResult}
-                  changedFiles={changedFiles}
-                  diffArtifact={diffArtifact}
-                  diffFilePatches={diffFilePatches}
-                  executePanel={executePanel}
-                  handleRetryRun={handleRetryRun}
-                  handleSelectRun={handleSelectRun}
-                  handleSteeringSubmit={handleSteeringSubmit}
-                  handleTerminalStop={handleTerminalStop}
-                  latestSteeringRequest={latestSteeringRequest}
-                  locale={locale}
-                  decisions={activeRun?.decisions ?? []}
-                  providerSummary={providerSummary}
-                  selectedPatch={selectedPatch}
-                  setExecutePanel={setExecutePanel}
-                  setSelectedPatchPath={setSelectedPatchPath}
-                  steeringInput={steeringInput}
-                  ui={ui}
-                  onSteeringInputChange={setSteeringInput}
-                />
-              ) : activeScreen === "review" ? (
-                <ReviewScreen
-                  activeApprovalPackets={activeApprovalPackets}
-                  activeRun={activeRun}
-                  handleApproveRevision={handleApproveRevision}
-                  latestApprovalPacket={latestApprovalPacket}
-                  latestEvidencePack={latestEvidencePack}
-                  locale={locale}
-                  primaryDecision={primaryDecision}
-                  primaryDeliverable={primaryDeliverable}
-                  recentApprovalHandoffs={recentApprovalHandoffs}
-                  testArtifacts={testArtifacts}
-                  ui={ui}
-                />
-              ) : activeScreen === "settings" ? (
-                <SettingsScreen
-                  activeWorkspace={activeWorkspace}
-                  handleAddWorkspace={handleAddWorkspace}
-                  handleSelectWorkspace={handleSelectWorkspace}
-                  locale={locale}
-                  providerWindows={providerWindows}
-                  setLocale={setLocale}
-                  ui={ui}
-                  workspaces={workspaces}
-                />
-              ) : (
-                <MonitorScreen
-                  activeRun={activeRun}
-                  attentionEvents={attentionEvents}
-                  handleSelectRun={handleSelectRun}
-                  latestEventByAgentId={latestEventByAgentId}
-                  locale={locale}
-                  rootRuns={rootRuns}
-                  followupRuns={followupRuns}
-                  snapshot={snapshot}
-                  ui={ui}
-                  version={version}
-                />
-              )}
-            </div>
-          </section>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function SettingsScreen({
-  activeWorkspace,
-  handleAddWorkspace,
-  handleSelectWorkspace,
-  locale,
-  providerWindows,
-  setLocale,
-  ui,
-  workspaces,
-}: {
-  activeWorkspace: WorkspaceSummary | null;
-  handleAddWorkspace: () => Promise<void>;
-  handleSelectWorkspace: (workspaceId: string) => Promise<void>;
-  locale: Locale;
-  providerWindows: ShellSnapshot["providerWindows"];
-  setLocale: (locale: Locale) => void;
-  ui: UiMessages;
-  workspaces: WorkspaceSummary[];
-}) {
-  return (
-    <div className="settings-board">
-      <section className="settings-lead">
-        <div className="settings-lead-copy">
-          <p className="section-label">{locale === "ko" ? "운영 기본값" : "Operating Defaults"}</p>
-          <h4>
-            {locale === "ko"
-              ? "전역 설정은 조용한 레저처럼 유지합니다."
-              : "Keep global settings as a quiet operating ledger."}
-          </h4>
-          <p className="stack-copy">
-            {locale === "ko"
-              ? "언어, seat window, 워크스페이스 등록은 미션 화면 밖에서 정리하고, 실제 실행 화면에는 필요한 상태만 다시 가져옵니다."
-              : "Keep locale, seat windows, and workspace registration outside the mission flow, then project only the state each run needs."}
-          </p>
-        </div>
-        <div className="settings-lead-rail">
-          <div className="settings-compact-block">
-            <div className="detail-header settings-compact-header">
-              <div>
-                <p className="section-label">{ui.common.language}</p>
-                <h4>{locale === "ko" ? "표시 언어" : "Interface Locale"}</h4>
-              </div>
-              <span className="detail-meta">{locale === "ko" ? "전역" : "global"}</span>
-            </div>
-            <div className="button-row settings-language-row">
-              <button
-                className={locale === "ko" ? "primary-button" : "secondary-button"}
-                onClick={() => setLocale("ko")}
-                aria-pressed={locale === "ko"}
-                type="button"
-              >
-                {ui.common.korean}
-              </button>
-              <button
-                className={locale === "en" ? "primary-button" : "secondary-button"}
-                onClick={() => setLocale("en")}
-                aria-pressed={locale === "en"}
-                type="button"
-              >
-                {ui.common.english}
-              </button>
-            </div>
-          </div>
-
-          <div className="settings-summary-ledger">
-            <div className="settings-summary-row">
-              <span>{locale === "ko" ? "프로바이더" : "Providers"}</span>
-              <strong>{providerWindows.length}</strong>
-              <small>{locale === "ko" ? "추적 중인 window" : "tracked windows"}</small>
-            </div>
-            <div className="settings-summary-row">
-              <span>{ui.common.workspaces}</span>
-              <strong>{workspaces.length}</strong>
-              <small>{locale === "ko" ? "등록된 루트" : "registered roots"}</small>
-            </div>
-            <div className="settings-summary-row">
-              <span>{locale === "ko" ? "현재 워크스페이스" : "Current Workspace"}</span>
-              <strong>{activeWorkspace?.name ?? (locale === "ko" ? "없음" : "None")}</strong>
-              <small>
-                {activeWorkspace?.rootPath ??
-                  (locale === "ko" ? "선택된 루트가 없습니다." : "No root selected.")}
-              </small>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="detail-block settings-provider-panel">
-        <div className="detail-header">
-          <div>
-            <p className="section-label">{ui.sections.providerWindows}</p>
-            <h4>{locale === "ko" ? "프로바이더 윈도 원장" : "Provider Window Ledger"}</h4>
-          </div>
-          <span className="detail-meta">
-            {locale === "ko" ? `${providerWindows.length}개 공급자` : `${providerWindows.length} providers`}
-          </span>
-        </div>
-        <div className="settings-ledger">
-          {providerWindows.map((windowInfo) => (
-            <div className="provider-window-row" key={windowInfo.provider}>
-              <div className="provider-window-main">
-                <strong>{windowInfo.provider}</strong>
-                <p>
-                  {locale === "ko" ? "다음 사용 가능 시각: " : "Next available slot: "}
-                  {windowInfo.nextAvailableLabel}
+          <div className="space-y-3">
+            {workspaces.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  등록된 워크스페이스가 없습니다.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  아래 버튼으로 프로젝트 폴더를 추가하세요.
                 </p>
               </div>
-              <div className="provider-window-meta">
-                <span className={`status status-${getProviderWindowTone(windowInfo.status)}`}>
-                  {formatStatusLabel(windowInfo.status, locale)}
-                </span>
-                <small>{locale === "ko" ? "윈도 상태" : "window status"}</small>
-              </div>
-              <div className="provider-window-capacity">
-                <strong>{windowInfo.activeRuns}</strong>
-                <small>{locale === "ko" ? "활성 실행" : "active runs"}</small>
-              </div>
-              <div className="provider-window-capacity">
-                <strong>{windowInfo.queuedRuns}</strong>
-                <small>{locale === "ko" ? "대기 실행" : "queued runs"}</small>
-              </div>
-            </div>
-          ))}
-          {providerWindows.length === 0 ? (
-            <div className="settings-empty-row">
-              {locale === "ko"
-                ? "아직 provider window 정보가 없습니다."
-                : "No provider window data is available yet."}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="detail-block settings-workspace-panel">
-        <div className="detail-header">
-          <div>
-            <p className="section-label">{ui.common.workspaces}</p>
-            <h4>{locale === "ko" ? "워크스페이스 등록부" : "Workspace Registry"}</h4>
+            ) : (
+              <>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  워크스페이스 ({workspaces.length})
+                </p>
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    onClick={() => handleSelectWorkspace(ws.id)}
+                    className={`group w-full rounded-lg border p-4 text-left transition-all duration-150 ${
+                      ws.active
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                        : "border-border bg-card hover:border-primary/50 hover:bg-primary/[0.02] hover:ring-1 hover:ring-primary/10"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {ws.name}
+                        </p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {ws.rootPath}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                          ws.active
+                            ? "bg-primary/10 text-primary"
+                            : "bg-transparent text-transparent group-hover:bg-muted group-hover:text-muted-foreground"
+                        }`}
+                      >
+                        {ws.active ? "활성" : "열기 →"}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
-          <button className="secondary-button" onClick={() => {
-            void handleAddWorkspace();
-          }} type="button">
-            {ui.actions.addWorkspace}
-          </button>
-        </div>
-        <div className="settings-ledger">
-          {workspaces.map((workspace) => (
-            <button
-              className={`workspace-registry-row${workspace.active ? " active" : ""}`}
-              key={workspace.id}
-              aria-pressed={workspace.active}
-              onClick={() => {
-                void handleSelectWorkspace(workspace.id);
-              }}
-              type="button"
-            >
-              <div className="workspace-registry-main">
-                <strong>{workspace.name}</strong>
-                <p>{workspace.rootPath}</p>
-              </div>
-              <div className="workspace-registry-meta">
-                <span className={`status ${workspace.active ? "status-running" : "status-queued"}`}>
-                  {workspace.active ? ui.common.active : ui.common.available}
-                </span>
-                <small>
-                  {workspace.active
-                    ? (locale === "ko" ? "현재 선택됨" : "currently selected")
-                    : (locale === "ko" ? "선택 대기" : "ready to select")}
-                </small>
-              </div>
-            </button>
-          ))}
-          {workspaces.length === 0 ? (
-            <div className="settings-empty-row">
-              {locale === "ko"
-                ? "등록된 워크스페이스가 없습니다. 프로젝트 루트를 추가하면 여기서 관리할 수 있습니다."
-                : "No workspaces are registered yet. Add a project root to manage it here."}
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </div>
-  );
-}
 
-function ExecuteScreen({
-  activeProviderLabel,
-  activeRun,
-  activeRunBlockReason,
-  activeRunBudgetLabel,
-  activeRunChildren,
-  activeRunParent,
-  activeSteeringEvents,
-  archivedSteeringEvents,
-  autopilotResult,
-  changedFiles,
-  decisions,
-  diffArtifact,
-  diffFilePatches,
-  executePanel,
-  handleRetryRun,
-  handleSelectRun,
-  handleSteeringSubmit,
-  handleTerminalStop,
-  latestSteeringRequest,
-  locale,
-  providerSummary,
-  selectedPatch,
-  setExecutePanel,
-  setSelectedPatchPath,
-  steeringInput,
-  ui,
-  onSteeringInputChange,
-}: {
-  activeProviderLabel: string;
-  activeRun: RunDetail | null;
-  activeRunBlockReason: string | null;
-  activeRunBudgetLabel: string;
-  activeRunChildren: RunDetail[];
-  activeRunParent: RunDetail | null;
-  activeSteeringEvents: RunDetail["runEvents"];
-  archivedSteeringEvents: RunDetail["runEvents"];
-  autopilotResult: RunAutopilotResult;
-  changedFiles: string[];
-  decisions: DecisionRecord[];
-  diffArtifact: ArtifactRecord | null;
-  diffFilePatches: Array<{ path: string; summary?: string; patch: string }>;
-  executePanel: ExecutePanel;
-  handleRetryRun: (runId: string) => Promise<void>;
-  handleSelectRun: (runId: string) => Promise<void>;
-  handleSteeringSubmit: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
-  handleTerminalStop: () => Promise<void>;
-  latestSteeringRequest: RunDetail["runEvents"][number] | null;
-  locale: Locale;
-  providerSummary: string;
-  selectedPatch: { path: string; summary?: string; patch: string } | null;
-  setExecutePanel: (panel: ExecutePanel) => void;
-  setSelectedPatchPath: (path: string) => void;
-  steeringInput: string;
-  ui: UiMessages;
-  onSteeringInputChange: (value: string) => void;
-}) {
-  if (!activeRun) {
-    return (
-      <div className="monitor-empty">
-        <strong>{locale === "ko" ? "선택된 실행이 없습니다." : "No run selected."}</strong>
-        <p>
-          {locale === "ko"
-            ? "모니터에서 실행을 선택하거나 홈에서 미션을 만들어 실행을 시작하세요."
-            : "Select a run from Monitor or create a mission from Home to start execution."}
-        </p>
+          <Button onClick={openBrowser} className="w-full" size="lg">
+            워크스페이스 추가
+          </Button>
+
+          <DirectoryBrowserDialog
+            open={browserOpen}
+            onOpenChange={setBrowserOpen}
+            snapshot={browserSnapshot}
+            newDirName={newDirName}
+            creating={creating}
+            onNavigate={navigateTo}
+            onSelect={selectDirectory}
+            onNewDirNameChange={setNewDirName}
+            onCreateDir={handleCreateDir}
+          />
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="workbench-grid execute-workbench">
-      <div className="execute-command-bar">
-        <div className="run-brief-card">
-          <strong>{locale === "ko" ? "실행 상태" : "Run Status"}</strong>
-          <span className="status status-running">{formatStatusLabel(activeRun?.status ?? "idle", locale)}</span>
-          <p className="stack-copy">{activeRun?.summary ?? ui.labels.noPatchYet}</p>
-          {activeRun?.status === "blocked" && activeRunBlockReason ? (
-            <p className="stack-copy">
-              <strong>{ui.labels.blockReason}: </strong>
-              {activeRunBlockReason}
-            </p>
-          ) : null}
-        </div>
-        <div className="run-brief-card">
-          <strong>{locale === "ko" ? "사용자 확인" : "User Attention"}</strong>
-          <span className="status status-review">
-            {latestSteeringRequest ? (locale === "ko" ? "확인 필요" : "attention") : (locale === "ko" ? "정상" : "stable")}
-          </span>
-          <p className="stack-copy">
-            {latestSteeringRequest?.summary ??
-              (locale === "ko"
-                ? "현재 실행은 자동 진행 중입니다."
-                : "The current run is continuing automatically.")}
-          </p>
-        </div>
-        <div className="run-brief-card">
-          <strong>{locale === "ko" ? "결과물" : "Outputs"}</strong>
-          <span className="status status-queued">
-            {activeRun?.deliverables.length ?? 0}{locale === "ko" ? "개" : " items"}
-          </span>
-          <p className="stack-copy">
-            {activeRunBudgetLabel} • {activeProviderLabel}
-          </p>
-          {activeRun.workspaceCommand ? (
-            <div className="button-row">
-              <button
-                className="secondary-button"
-                disabled={activeRun.status === "running"}
-                onClick={() => {
-                  void handleRetryRun(activeRun.id);
-                }}
-                type="button"
-              >
-                {ui.actions.retryRun}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="workbench-primary">
-        <section className="detail-block workbench-files ledger-panel">
-          <div className="detail-header">
-            <p className="section-label">{ui.sections.changedFiles}</p>
-            <span className="detail-meta">{locale === "ko" ? `${changedFiles.length}개 파일` : `${changedFiles.length} files`}</span>
+  // Stage: mission
+  if (stage === "mission") return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-8">
+      <div className="w-full max-w-2xl space-y-8">
+        {/* Header with back button */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setStage("workspace")}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
+            >
+              ← 워크스페이스
+            </button>
           </div>
-          <div className="stack-list">
-            {changedFiles.length > 0 ? (
-              changedFiles.map((filePath) => (
-                <button
-                  className={`file-row ${
-                    filePath === selectedPatch?.path ? "selected" : ""
-                  }`}
-                  key={filePath}
-                  aria-pressed={filePath === selectedPatch?.path}
-                  onClick={() => setSelectedPatchPath(filePath)}
-                  type="button"
-                >
-                  <strong>{filePath}</strong>
-                  <span className="status status-review">{formatArtifactType("diff", locale)}</span>
-                  <p className="stack-copy">
-                    {diffFilePatches.find((patch) => patch.path === filePath)?.summary ??
-                      (locale === "ko"
-                        ? "이 파일의 패치 내용을 확인합니다."
-                        : "Inspect the patch emitted for this file.")}
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">
+            {activeWorkspace?.name ?? "UCM"}
+          </h1>
+          <p className="font-mono text-sm text-muted-foreground">
+            {activeWorkspace?.rootPath}
+          </p>
+        </div>
+
+        {/* Mission create form */}
+        <form onSubmit={handleCreateMission} className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            새 미션
+          </p>
+          <div className="space-y-3">
+            <Input
+              placeholder="미션 제목"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <Textarea
+              placeholder="목표 — 이 미션이 달성해야 할 것"
+              rows={3}
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!title.trim() || !goal.trim()}
+          >
+            미션 시작
+          </Button>
+        </form>
+
+        {/* Existing missions */}
+        {missions.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              기존 미션 ({missions.length})
+            </p>
+            {missions.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => handleOpenMission(m.id)}
+                className="group w-full rounded-lg border border-border bg-card p-4 text-left transition-all duration-150 hover:border-primary/50 hover:bg-primary/[0.02] hover:ring-1 hover:ring-primary/10"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          m.status === "completed"
+                            ? "bg-green-400"
+                            : m.status === "blocked"
+                              ? "bg-red-400 animate-pulse"
+                              : m.status === "running"
+                                ? "bg-blue-400 animate-pulse"
+                                : m.status === "review"
+                                  ? "bg-yellow-400"
+                                  : "bg-zinc-500"
+                        }`}
+                      />
+                      <p className="text-sm font-medium text-foreground">
+                        {m.title}
+                      </p>
+                    </div>
+                    {m.latestResult && (
+                      <p className="text-xs text-muted-foreground line-clamp-1 pl-4">
+                        {m.latestResult}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusBadge status={m.status} />
+                    <span className="text-xs text-transparent transition-colors group-hover:text-muted-foreground">
+                      →
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+
+  // Stage: control
+  if (stage === "control") {
+    const run = activeRun;
+    const terminalLines = run?.terminalPreview ?? [];
+    const events = [...(run?.runEvents ?? [])].reverse();
+    const latestDeliverable = run?.deliverables?.[0] ?? null;
+    const latestRevision = latestDeliverable?.revisions.find(
+      (r) => r.id === latestDeliverable.latestRevisionId,
+    ) ?? null;
+    const canApprove = latestRevision?.status === "active";
+    const isBlocked = run?.status === "blocked";
+    const isRunning = run?.status === "running";
+    const isQueued = run?.status === "queued";
+    const needsReview = run?.status === "needs_review" || canApprove;
+
+    async function handleApprove() {
+      if (!run) return;
+      try {
+        // If no deliverable exists yet, generate one first
+        let revisionId = latestRevision?.id;
+        if (!revisionId) {
+          const delId = `del-${run.id}`;
+          const updated = await window.ucm.deliverable.generate({
+            runId: run.id,
+            deliverableId: delId,
+            summary: "에이전트 결과물 승인 준비",
+          });
+          const newDel = updated?.deliverables?.[0];
+          revisionId = newDel?.latestRevisionId;
+        }
+        if (revisionId) {
+          await window.ucm.deliverable.approve({
+            runId: run.id,
+            deliverableRevisionId: revisionId,
+          });
+        }
+      } catch (err) {
+        console.error("approve failed:", err);
+      }
+      await loadMissions();
+      await loadActiveRun();
+    }
+
+    // Determine what the user should know / do right now
+    const actionMessage = !run
+      ? { label: "대기", desc: "에이전트가 아직 할당되지 않았습니다.", color: "zinc" as const }
+      : isQueued
+        ? { label: "대기 중", desc: "에이전트가 실행 큐에서 순서를 기다리고 있습니다. 자동으로 시작됩니다.", color: "zinc" as const }
+        : isRunning
+          ? { label: "실행 중", desc: "에이전트가 작업 중입니다. 완료되면 알려드립니다.", color: "blue" as const }
+          : isBlocked
+            ? { label: "차단됨", desc: "에이전트가 진행할 수 없습니다. 입력이 필요합니다.", color: "red" as const }
+            : needsReview
+              ? { label: "검토 필요", desc: "에이전트가 결과물을 만들었습니다. 확인 후 승인하세요.", color: "yellow" as const }
+              : run.status === "completed"
+                ? { label: "완료", desc: "미션이 완료되었습니다.", color: "green" as const }
+                : { label: run.status, desc: "", color: "zinc" as const };
+
+    const dotColor = {
+      zinc: "bg-zinc-500",
+      blue: "bg-blue-400 animate-pulse",
+      red: "bg-red-400 animate-pulse",
+      yellow: "bg-yellow-400",
+      green: "bg-green-400",
+    }[actionMessage.color];
+
+    const borderColor = {
+      zinc: "border-border",
+      blue: "border-blue-500/20",
+      red: "border-red-500/20",
+      yellow: "border-yellow-500/20",
+      green: "border-green-500/20",
+    }[actionMessage.color];
+
+    return (
+      <div className="flex min-h-screen bg-background p-6">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          {/* Back */}
+          <button
+            onClick={() => setStage("mission")}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
+          >
+            ← 미션 목록
+          </button>
+
+          {/* Action card — the most important thing on screen */}
+          <div className={`rounded-lg border ${borderColor} bg-card p-6 space-y-3`}>
+            <div className="flex items-center gap-3">
+              <span className={`inline-block h-3 w-3 rounded-full ${dotColor}`} />
+              <h1 className="text-xl font-bold text-foreground">
+                {actionMessage.label}
+              </h1>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {actionMessage.desc}
+            </p>
+
+            {/* Approval action */}
+            {needsReview && (
+              <div className="pt-2 space-y-2">
+                {latestRevision && (
+                  <p className="text-xs text-muted-foreground">
+                    {latestRevision.summary}
                   </p>
-                </button>
-              ))
-            ) : (
-              <div className="stack-card empty-state-card">
-                <strong>{ui.labels.noChangedFiles}</strong>
-                <p className="stack-copy">
-                  {locale === "ko"
-                    ? "현재 실행이 아직 코드 변경을 만들지 않았습니다."
-                    : "The current run has not emitted a code diff yet."}
-                </p>
+                )}
+                <Button onClick={() => void handleApprove()} size="lg">
+                  결과물 승인
+                </Button>
               </div>
             )}
           </div>
-        </section>
-        <section className="detail-block workbench-diff diff-stage">
-          <div className="detail-header">
-            <p className="section-label">
-              {executePanel === "patch"
-                ? ui.sections.patchSurface
-                : ui.sections.executionTrace}
-            </p>
-            <div className="segmented-control" role="tablist" aria-label="execute panels">
-              <button
-                className={executePanel === "patch" ? "segmented-button active" : "segmented-button"}
-                role="tab"
-                aria-selected={executePanel === "patch"}
-                aria-controls="execute-panel-patch"
-                onClick={() => setExecutePanel("patch")}
-                type="button"
-              >
-                {locale === "ko" ? "패치" : "Patch"}
-              </button>
-              <button
-                className={executePanel === "trace" ? "segmented-button active" : "segmented-button"}
-                role="tab"
-                aria-selected={executePanel === "trace"}
-                aria-controls="execute-panel-trace"
-                onClick={() => setExecutePanel("trace")}
-                type="button"
-              >
-                {locale === "ko" ? "추적" : "Trace"}
-              </button>
+
+          {/* Mission info */}
+          {run && (
+            <div className="rounded-lg border border-border bg-card p-4 space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {cleanTitle(run.title)}
+              </p>
             </div>
-          </div>
-          {executePanel === "patch" ? (
-            <>
-              <div className="stack-card diff-spotlight" id="execute-panel-patch">
-                <strong>{selectedPatch?.path ?? diffArtifact?.title ?? ui.labels.noPatchYet}</strong>
-                <span className="status status-running">
-                  {formatStatusLabel(activeRun?.status ?? "idle", locale)}
-                </span>
-                <p className="stack-copy">
-                  {selectedPatch?.summary ??
-                    diffArtifact?.preview ??
-                    activeRun?.summary ??
-                    ui.labels.noDiffPreview}
-                </p>
-              </div>
-              <pre className="terminal-preview workbench-preview" data-testid="patch-surface">
-{selectedPatch?.patch ??
-  (diffArtifact
-    ? buildFallbackPatch(diffArtifact)
-    : locale === "ko" ? "// 패치 출력 대기 중" : "// waiting for patch output")}
+          )}
+
+          {/* Terminal — only show if there's output */}
+          {terminalLines.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                에이전트 출력
+              </p>
+              <pre className="max-h-60 overflow-auto rounded-lg border border-border bg-[#08090b] p-4 font-mono text-xs leading-relaxed text-zinc-300">
+                {terminalLines.join("\n")}
               </pre>
-            </>
-          ) : (
-            <div className="execute-trace-grid" id="execute-panel-trace">
-              <section className="detail-block compact-block">
-                <p className="section-label">{ui.sections.executionTrace}</p>
-                <div className="timeline-list">
-                  {(activeRun?.runEvents ?? []).map((event) => (
-                    <div className="timeline-item" key={event.id}>
-                      <strong>{event.summary}</strong>
-                      {event.kind === "blocked" && event.metadata?.reason ? (
-                        <p className="stack-copy">{event.metadata.reason}</p>
-                      ) : null}
-                      <span>
-                        {formatEventKind(event.kind, locale)}
-                        {event.agentId ? ` • ${event.agentId}` : ""}
-                        {event.metadata?.budgetClass
-                          ? ` • ${locale === "ko" ? `${event.metadata.budgetClass} 버짓` : `${event.metadata.budgetClass} budget`}`
-                          : ""}
-                        {` • ${event.createdAtLabel}`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <section className="detail-block compact-block">
-                <p className="section-label">{ui.sections.terminalTrace}</p>
-                <div className="stack-card">
-                  <strong>
-                    {activeRun?.terminalProvider
-                      ? `${activeRun.terminalProvider} ${locale === "ko" ? "세션" : "session"}`
-                      : ui.labels.noLiveTerminal}
-                  </strong>
-                  <span className="status status-running">
-                    {activeRun?.terminalSessionId ?? (locale === "ko" ? "없음" : "offline")}
-                  </span>
-                  <p className="stack-copy">
-                    {locale === "ko"
-                      ? "터미널은 읽기 전용입니다."
-                      : "Terminal stays observation-first."}
-                  </p>
-                </div>
-                <pre className="terminal-preview compact-preview">
-                  {(activeRun?.terminalPreview ?? []).join("\n")}
-                </pre>
-              </section>
-              <section className="detail-block compact-block">
-                <p className="section-label">{ui.sections.artifactTrace}</p>
-                <div className="stack-list">
-                  {(activeRun?.artifacts ?? []).map((artifact) => (
-                    <div className="stack-card" key={artifact.id}>
-                      <strong>{artifact.title}</strong>
-                      <span className="status status-review">{formatArtifactType(artifact.type, locale)}</span>
-                      <p className="stack-copy">{artifact.preview}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
             </div>
           )}
-        </section>
-      </div>
-      <div className="workbench-secondary execute-support-grid">
-        <section className="detail-block workbench-side ops-block">
-          <p className="section-label">{ui.sections.missionPressure}</p>
-          <div className="stack-list">
-            <div className="stack-card">
-              <strong>{ui.labels.eventDrivenLoop}</strong>
-              <span className="status status-running">
-                {autopilotResult.decision === "observe"
-                  ? (locale === "ko" ? "자동 진행 중" : "watching")
-                  : (locale === "ko" ? "처리 중" : "in progress")}
-              </span>
-              <p className="stack-copy">{autopilotResult.summary}</p>
-              <p className="stack-copy">{locale === "ko" ? `최근 이벤트: ${autopilotResult.eventKind}` : `Last event: ${autopilotResult.eventKind}`}</p>
-              <p className="stack-copy">{locale === "ko" ? `실행 예산: ${activeRunBudgetLabel}` : `Run budget: ${activeRunBudgetLabel}`}</p>
-            </div>
-            <div className="stack-card">
-              <strong>{ui.sections.providerWindows}</strong>
-              <span className="status status-review">{activeProviderLabel}</span>
-              <p className="stack-copy">{providerSummary}</p>
-            </div>
-            <div className="stack-card">
-              <strong>{ui.labels.briefSteering}</strong>
-              <span className="status status-review">
-                {activeSteeringEvents.length > 0
-                  ? `${activeSteeringEvents.length} active`
-                  : latestSteeringRequest
-                    ? (locale === "ko" ? "입력 요청" : "requested")
-                    : (locale === "ko" ? "없음" : "quiet")}
-              </span>
-              <p className="stack-copy">
-                {activeSteeringEvents[0]?.metadata?.steering ??
-                  latestSteeringRequest?.summary ??
-                  (locale === "ko" ? "현재 요청된 입력이 없습니다." : "No input request is active.")}
+
+          {/* Artifacts — show what was actually produced */}
+          {run && run.artifacts.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                결과물
               </p>
-            </div>
-          </div>
-        </section>
-        <div className="run-detail-grid run-detail-grid-support">
-          <section className="detail-block decision-block">
-            <div className="detail-header">
-              <p className="section-label">{locale === "ko" ? "결정 기록" : "Decision Trail"}</p>
-              <span className="detail-meta">
-                {locale === "ko" ? `${decisions.length}개` : `${decisions.length} items`}
-              </span>
-            </div>
-            <div className="stack-list">
-              {decisions.length > 0 ? (
-                decisions
-                  .slice(-3)
-                  .reverse()
-                  .map((decision) => (
-                    <DecisionCard decision={decision} key={decision.id} locale={locale} />
-                  ))
-              ) : (
-                <div className="stack-card">
-                  <strong>{locale === "ko" ? "기록된 결정이 없습니다." : "No decisions recorded yet."}</strong>
-                  <p className="stack-copy">
-                    {locale === "ko"
-                      ? "실행 중 합의되거나 기록된 결정이 여기에 쌓입니다."
-                      : "Planning, risk, and approval decisions will appear here as the run progresses."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-          <section className="detail-block lineage-block">
-            <p className="section-label">{ui.sections.runLineage}</p>
-            <div className="stack-list">
-              <div className="stack-card">
-                <strong>{ui.labels.currentRun}</strong>
-                <span className="status status-running">
-                  {activeRun?.status ?? (locale === "ko" ? "알 수 없음" : "unknown")}
-                </span>
-                <p className="stack-copy">
-                  {activeRun?.title ?? (locale === "ko" ? "선택된 실행이 없습니다." : "No active run selected.")}
-                </p>
-                <p className="stack-copy">
-                  {activeProviderLabel} • {activeRunBudgetLabel}
-                </p>
-              </div>
-              {activeRunParent ? (
-                <button
-                  className="stack-card lineage-button"
-                  aria-pressed={activeRunParent.id === activeRun?.id}
-                  onClick={() => {
-                    void handleSelectRun(activeRunParent.id);
-                  }}
-                  type="button"
-                >
-                  <strong>{ui.labels.parentRun}</strong>
-                  <span className="status status-queued">
-                    {formatStatusLabel(activeRunParent.status, locale)}
-                  </span>
-                  <p className="stack-copy">{activeRunParent.title}</p>
-                </button>
-              ) : null}
-              {activeRunChildren.length > 0 ? (
-                <div className="stack-list">
-                  {activeRunChildren.map((child) => (
-                    <button
-                      className="stack-card lineage-button"
-                      key={child.id}
-                      aria-pressed={child.id === activeRun?.id}
-                      onClick={() => {
-                        void handleSelectRun(child.id);
-                      }}
-                      type="button"
-                    >
-                      <strong>{ui.labels.childRun}</strong>
-                      <span className={`status status-${getStatusTone(child.status)}`}>
-                        {formatStatusLabel(child.status, locale)}
-                      </span>
-                      <p className="stack-copy">{child.title}</p>
-                    </button>
+              <div className="space-y-3">
+                {run.artifacts
+                  .filter((a) => a.preview && a.type !== "handoff" && !a.title.startsWith("Run trace") && !a.title.startsWith("Decision "))
+                  .map((a) => (
+                    <div key={a.id} className="rounded-lg border border-border bg-card p-4 space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        {cleanTitle(a.title)}
+                      </p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                        {a.preview}
+                      </p>
+                      {a.filePatches && a.filePatches.length > 0 && (
+                        <div className="space-y-2 pt-2">
+                          {a.filePatches.map((patch) => (
+                            <div key={patch.path} className="space-y-1">
+                              <p className="font-mono text-xs text-primary">
+                                {patch.path}
+                              </p>
+                              {patch.summary && (
+                                <p className="text-xs text-muted-foreground">{patch.summary}</p>
+                              )}
+                              <pre className="max-h-40 overflow-auto rounded border border-border bg-[#08090b] p-3 font-mono text-[11px] leading-relaxed text-zinc-400">
+                                {patch.patch}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </div>
-              ) : null}
+              </div>
             </div>
-          </section>
-          <section className="detail-block steering-block">
-            <p className="section-label">{ui.sections.steeringInbox}</p>
-            <div className="action-stack">
-              <div className="stack-card">
-                <strong>{ui.labels.briefSteering}</strong>
-                <span className="status status-review">
-                  {activeSteeringEvents.length > 0
-                    ? (locale === "ko" ? `${activeSteeringEvents.length}개 진행 중` : `${activeSteeringEvents.length} active`)
-                    : latestSteeringRequest
-                      ? (locale === "ko" ? "입력 요청" : "requested")
-                      : (locale === "ko" ? "없음" : "quiet")}
-                </span>
-                <p className="stack-copy">
-                  {activeSteeringEvents[0]?.metadata?.steering ??
-                    latestSteeringRequest?.summary ??
-                    (locale === "ko"
-                      ? "현재 요청된 입력이 없습니다."
-                      : "No input request is active.")}
-                </p>
-                <form className="mission-form" onSubmit={handleSteeringSubmit}>
-                  <label>
-                    {ui.labels.briefSteering}
-                    <input
-                      onChange={(event) => onSteeringInputChange(event.target.value)}
-                      placeholder="예: checkout 회귀 테스트용 fallback fixture를 사용"
-                      value={steeringInput}
+          )}
+
+          {/* Recent events — compact, translated */}
+          {events.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                진행 기록
+              </p>
+              <div className="space-y-1">
+                {events.slice(0, 5).map((ev) => (
+                  <div key={ev.id} className="flex items-center gap-2 py-1">
+                    <span
+                      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                        ev.kind === "completed" ? "bg-green-400"
+                          : ev.kind === "blocked" ? "bg-red-400"
+                          : ev.kind === "needs_review" || ev.kind === "review_requested" ? "bg-yellow-400"
+                          : ev.kind === "artifact_created" ? "bg-blue-400"
+                          : "bg-zinc-500"
+                      }`}
                     />
-                  </label>
-                  <button
-                    className="primary-button"
-                    disabled={!activeRun?.id || !steeringInput.trim()}
-                    type="submit"
-                  >
-                    {ui.actions.submitSteering}
-                  </button>
-                </form>
-              </div>
-              {activeSteeringEvents.length > 0 ? (
-                <div className="stack-list">
-                  {activeSteeringEvents.map((event) => (
-                    <div className="stack-card" key={event.id}>
-                      <strong>{ui.labels.activeSteering}</strong>
-                      <span className="status status-running">
-                        {formatStatusLabel(event.metadata?.status ?? "active", locale)}
-                      </span>
-                      <p className="stack-copy">
-                        {event.metadata?.steering ?? event.summary}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {archivedSteeringEvents.length > 0 ? (
-                <div className="stack-list">
-                  {archivedSteeringEvents.slice(0, 3).map((event) => (
-                    <div className="stack-card" key={event.id}>
-                      <strong>{ui.labels.steeringHistory}</strong>
-                      <span
-                        className={`status ${
-                          event.metadata?.status === "resolved"
-                            ? "status-running"
-                            : "status-queued"
-                        }`}
-                      >
-                        {formatStatusLabel(event.metadata?.status ?? "superseded", locale)}
-                      </span>
-                      <p className="stack-copy">
-                        {event.metadata?.steering ?? event.summary}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </section>
-          <section className="detail-block control-block">
-            <p className="section-label">{ui.sections.emergencyStop}</p>
-            <div className="action-stack">
-              <div className="stack-card">
-                <strong>{ui.sections.emergencyStop}</strong>
-                <span className="status status-blocked">
-                  {activeRun?.terminalSessionId ? (locale === "ko" ? "사용 가능" : "armed") : (locale === "ko" ? "대기" : "idle")}
-                </span>
-                <p className="stack-copy">
-                  {locale === "ko"
-                    ? "기본 화면에서 제공하는 직접 제어는 세션 중지만 가능합니다."
-                    : "Stop is the only direct terminal intervention exposed in the default surface."}
-                </p>
-                <button
-                  className="primary-button"
-                  disabled={!activeRun?.terminalSessionId}
-                  onClick={() => {
-                    void handleTerminalStop();
-                  }}
-                  type="button"
-                >
-                  {ui.actions.stopSession}
-                </button>
-              </div>
-            </div>
-          </section>
-          <section className="detail-block deliverable-block">
-            <p className="section-label">{ui.sections.deliverableHistory}</p>
-            <div className="stack-list">
-              {(activeRun?.deliverables ?? []).map((deliverable) => (
-                <div className="stack-card" key={deliverable.id}>
-                  <strong>{deliverable.title}</strong>
-                  <span className="status status-review">
-                    {formatDeliverableKind(deliverable.kind, locale)}
-                  </span>
-                  <p className="stack-copy">
-                    {locale === "ko" ? "최신 버전: " : "Latest revision: "}
-                    {
-                      deliverable.revisions.find(
-                        (revision) =>
-                          revision.id === deliverable.latestRevisionId,
-                      )?.summary
-                    }
-                  </p>
-                  {activeRun?.origin?.schedulerRuleId ? (
-                    <p className="stack-copy">
-                      {locale === "ko"
-                        ? `규칙: ${activeRun.origin.schedulerRuleId} • ${activeRunBudgetLabel} • ${activeProviderLabel}`
-                        : `Rule: ${activeRun.origin.schedulerRuleId} • ${activeRunBudgetLabel} • ${activeProviderLabel}`}
+                    <p className="text-xs text-muted-foreground truncate">
+                      {translateEvent(ev.kind, ev.summary)}
                     </p>
-                  ) : null}
-                  <div className="revision-list">
-                    {deliverable.revisions.map((revision) => (
-                      <div className="revision-item" key={revision.id}>
-                        <strong>v{revision.revision}</strong>
-                        <span>{revision.createdAtLabel} • {formatStatusLabel(revision.status, locale)}</span>
-                        <p>{revision.summary}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReviewScreen({
-  activeApprovalPackets,
-  activeRun,
-  handleApproveRevision,
-  latestEvidencePack,
-  latestApprovalPacket,
-  locale,
-  primaryDecision,
-  primaryDeliverable,
-  recentApprovalHandoffs,
-  testArtifacts,
-  ui,
-}: {
-  activeApprovalPackets: Array<RunDetail["deliverables"][number]["revisions"][number]>;
-  activeRun: RunDetail | null;
-  handleApproveRevision: (revisionId: string) => Promise<void>;
-  latestEvidencePack: EvidencePack | null;
-  latestApprovalPacket: RunDetail["deliverables"][number]["revisions"][number] | null;
-  locale: Locale;
-  primaryDecision: DecisionRecord | null;
-  primaryDeliverable: RunDetail["deliverables"][number] | null;
-  recentApprovalHandoffs: RunDetail["handoffs"];
-  testArtifacts: ArtifactRecord[];
-  ui: UiMessages;
-}) {
-  if (!activeRun) {
-    return (
-      <div className="monitor-empty">
-        <strong>{locale === "ko" ? "검토할 실행이 없습니다." : "No run is ready for review."}</strong>
-        <p>
-          {locale === "ko"
-            ? "실행이 생성되고 결과물이 쌓이면 이 화면에서 검토할 수 있습니다."
-            : "This screen becomes useful once a run has artifacts and approval items."}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="review-board review-desk">
-      <section className="detail-block review-lead">
-        <div className="detail-header review-lead-header">
-          <div>
-            <p className="section-label">{locale === "ko" ? "검토 데스크" : "Review Desk"}</p>
-            <h4>{activeRun.title}</h4>
-            <p className="stack-copy">
-              {latestEvidencePack
-                ? summarizeEvidencePack(latestEvidencePack, locale)
-                : ui.labels.noEvidence}
-            </p>
-          </div>
-          <button
-            className="primary-button"
-            disabled={!latestApprovalPacket || latestApprovalPacket.status !== "active"}
-            onClick={() => {
-              if (latestApprovalPacket) {
-                void handleApproveRevision(latestApprovalPacket.id);
-              }
-            }}
-            type="button"
-          >
-            {ui.actions.approveLatest}
-          </button>
-        </div>
-        <div className="review-focus-grid">
-          <div className="stack-card review-stat">
-            <strong>{ui.labels.verificationSignal}</strong>
-            <span className="status status-review">
-              {testArtifacts.length > 0
-                ? (locale === "ko" ? `${testArtifacts.length}개 결과` : `${testArtifacts.length} test artifacts`)
-                : (locale === "ko" ? "대기" : "pending")}
-            </span>
-            <p className="stack-copy">
-              {testArtifacts[0]?.preview ?? ui.labels.noTestArtifact}
-            </p>
-          </div>
-          <div className="stack-card review-stat">
-            <strong>{ui.labels.deliveryPacket}</strong>
-            <span className="status status-running">
-              {primaryDeliverable?.kind ? formatDeliverableKind(primaryDeliverable.kind, locale) : formatStatusLabel("none", locale)}
-            </span>
-            <p className="stack-copy">
-              {primaryDeliverable?.revisions.find(
-                (revision) => revision.id === primaryDeliverable.latestRevisionId,
-              )?.summary ?? ui.labels.noDeliverable}
-            </p>
-          </div>
-          <div className="stack-card review-stat">
-            <strong>{ui.labels.evidenceStatus}</strong>
-            <span className={`status status-${getEvidenceTone(latestEvidencePack?.decision)}`}>
-              {formatEvidenceDecision(latestEvidencePack?.decision, locale)}
-            </span>
-            <p className="stack-copy">
-              {latestEvidencePack
-                ? summarizeEvidencePack(latestEvidencePack, locale)
-                : ui.labels.noEvidence}
-            </p>
-          </div>
-          <div className="stack-card review-stat">
-            <strong>{locale === "ko" ? "승인 상태" : "Approval Status"}</strong>
-            <span className="status status-queued">
-              {activeApprovalPackets.length > 0
-                ? (locale === "ko" ? `${activeApprovalPackets.length}개 진행 중` : `${activeApprovalPackets.length} active`)
-                : formatStatusLabel(latestApprovalPacket?.status ?? "pending", locale)}
-            </span>
-            <p className="stack-copy">
-              {primaryDecision?.summary ?? ui.labels.noDecision}
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className="detail-block review-evidence review-evidence-panel">
-        <div className="detail-header">
-          <p className="section-label">{locale === "ko" ? "증거와 결정" : "Evidence and Decisions"}</p>
-          <span className="detail-meta">{locale === "ko" ? `${activeRun?.artifacts.length ?? 0}개 산출물` : `${activeRun?.artifacts.length ?? 0} artifacts`}</span>
-        </div>
-        <div className="stack-list review-evidence-list">
-          <DecisionCard
-            decision={
-              primaryDecision ?? {
-                id: "none",
-                category: "approval",
-                summary: ui.labels.noDecision,
-                rationale: locale === "ko" ? "아직 리뷰 결정이 없습니다." : "No review decision has been recorded yet.",
-              }
-            }
-            locale={locale}
-          />
-          {latestEvidencePack ? (
-            <div className="evidence-check-list">
-              {latestEvidencePack.checks.map((check) => (
-                <div className="evidence-check-row" key={check.name}>
-                  <div>
-                    <strong>{check.name}</strong>
-                    <p className="stack-copy">{check.summary}</p>
-                  </div>
-                  <span className={`status status-${getEvidenceCheckTone(check.status)}`}>
-                    {formatStatusLabel(check.status, locale)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="stack-card review-empty-card">
-              <strong>{ui.labels.evidenceStatus}</strong>
-              <p className="stack-copy">{ui.labels.noEvidence}</p>
-            </div>
-          )}
-          <div className="stack-card review-deliverable-card">
-            <strong>{ui.labels.deliveryPacket}</strong>
-            <span className="status status-running">
-              {primaryDeliverable?.kind ? formatDeliverableKind(primaryDeliverable.kind, locale) : formatStatusLabel("none", locale)}
-            </span>
-            <p className="stack-copy">
-              {primaryDeliverable?.revisions.find(
-                (revision) => revision.id === primaryDeliverable.latestRevisionId,
-              )?.summary ?? ui.labels.noDeliverable}
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className="detail-block review-queue review-queue-panel">
-        <div className="detail-header">
-          <p className="section-label">{ui.sections.approvalQueue}</p>
-          <span className="detail-meta">{locale === "ko" ? `${activeApprovalPackets.length}개 진행 중` : `${activeApprovalPackets.length} active`}</span>
-        </div>
-        <div className="action-stack">
-          <div className="stack-card">
-            <strong>{ui.labels.approvalPacket}</strong>
-            <span className="status status-running">
-              {activeApprovalPackets.length > 0
-                ? (locale === "ko" ? `${activeApprovalPackets.length}개 진행 중` : `${activeApprovalPackets.length} active`)
-                : formatStatusLabel(latestApprovalPacket?.status ?? "pending", locale)}
-            </span>
-            <p className="stack-copy">
-              {latestApprovalPacket?.summary ?? (locale === "ko" ? "아직 승인할 항목이 없습니다." : "No item is ready for approval yet.")}
-            </p>
-            <button
-              className="primary-button"
-              disabled={!latestApprovalPacket || latestApprovalPacket.status !== "active"}
-              onClick={() => {
-                if (latestApprovalPacket) {
-                  void handleApproveRevision(latestApprovalPacket.id);
-                }
-              }}
-              type="button"
-            >
-              {ui.actions.approveLatest}
-            </button>
-          </div>
-          {activeApprovalPackets.length > 0 ? (
-            <div className="stack-list">
-              {activeApprovalPackets.map((revision) => (
-                <div className="stack-card" key={revision.id}>
-                  <strong>{ui.labels.activeReview}</strong>
-                  <span className="status status-review">{formatStatusLabel(revision.status, locale)}</span>
-                  <p className="stack-copy">{revision.summary}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="stack-list">
-            {recentApprovalHandoffs.map((handoff) => (
-              <div className="stack-card" key={handoff.id}>
-                <strong>{handoff.channel}</strong>
-                <span className="status status-review">{formatStatusLabel(handoff.status, locale)}</span>
-                <p className="stack-copy">
-                  {locale === "ko"
-                    ? `리비전 ${handoff.deliverableRevisionId}${handoff.target ? ` → ${handoff.target}` : ""}`
-                    : `Revision ${handoff.deliverableRevisionId}${handoff.target ? ` to ${handoff.target}` : ""}`}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-      <section className="detail-block review-history review-history-panel">
-        <p className="section-label">{ui.sections.deliverableHistory}</p>
-        <div className="stack-list">
-          {(activeRun?.deliverables ?? []).map((deliverable) => (
-            <div className="stack-card" key={deliverable.id}>
-              <strong>{deliverable.title}</strong>
-              <span className="status status-review">{formatDeliverableKind(deliverable.kind, locale)}</span>
-              <p className="stack-copy">
-                {locale === "ko" ? "최신 버전: " : "Latest revision: "}
-                {
-                  deliverable.revisions.find(
-                    (revision) => revision.id === deliverable.latestRevisionId,
-                  )?.summary
-                }
-              </p>
-              <div className="revision-list">
-                {deliverable.revisions.map((revision) => (
-                  <div className="revision-item" key={revision.id}>
-                    <strong>v{revision.revision}</strong>
-                    <span>{revision.createdAtLabel} • {formatStatusLabel(revision.status, locale)}</span>
-                    <p>{revision.summary}</p>
                   </div>
                 ))}
               </div>
             </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function MonitorScreen({
-  activeRun,
-  attentionEvents,
-  handleSelectRun,
-  latestEventByAgentId,
-  locale,
-  rootRuns,
-  followupRuns,
-  snapshot,
-  ui,
-  version,
-}: {
-  activeRun: RunDetail | null;
-  attentionEvents: ShellSnapshot["lifecycleEvents"];
-  handleSelectRun: (runId: string) => Promise<void>;
-  latestEventByAgentId: Map<string, RunDetail["runEvents"][number]>;
-  locale: Locale;
-  rootRuns: RunDetail[];
-  followupRuns: RunDetail[];
-  snapshot: ShellSnapshot | null;
-  ui: UiMessages;
-  version: string;
-}) {
-  const agents = snapshot?.agents ?? [];
-  const activeAgents = agents.filter((agent) => agent.status !== "idle");
-  const visibleAgents = (activeAgents.length > 0 ? activeAgents : agents).slice(0, 4);
-  const hiddenAgentCount = Math.max(0, agents.length - visibleAgents.length);
-  const progressAgents = agents.filter(
-    (agent) => latestEventByAgentId.has(agent.id) || agent.status !== "idle",
-  );
-  const visibleProgressAgents = (progressAgents.length > 0 ? progressAgents : agents).slice(0, 4);
-  const hiddenProgressCount = Math.max(0, agents.length - visibleProgressAgents.length);
-  const currentFollowups = activeRun
-    ? followupRuns.filter((child) => child.origin?.parentRunId === activeRun.id)
-    : [];
-  const visibleFollowups = currentFollowups.slice(0, 2);
-  const hiddenFollowupCount = Math.max(0, currentFollowups.length - visibleFollowups.length);
-
-  return (
-    <div className="monitor-console">
-      <section className="monitor-workspace control-board">
-        <div className="detail-block monitor-list-panel monitor-ledger-panel">
-          <div className="detail-header">
-            <p className="section-label">{locale === "ko" ? "에이전트" : "Agents"}</p>
-            <span className="detail-meta">{locale === "ko" ? `${snapshot?.agents.length ?? 0}명` : `${snapshot?.agents.length ?? 0} agents`}</span>
-          </div>
-          <div className="monitor-list">
-            {visibleAgents.map((agent) => (
-              <div className="monitor-row" key={agent.id}>
-                <div className="monitor-row-main">
-                  <strong>{agent.name}</strong>
-                  <p>{agent.objective}</p>
-                </div>
-                <div className="monitor-row-meta">
-                  <span className={`badge badge-${agent.status}`}>{formatStatusLabel(agent.status, locale)}</span>
-                  <small>{agent.role}</small>
-                </div>
-              </div>
-            ))}
-            {visibleAgents.length === 0 ? (
-              <div className="monitor-empty-row">
-                {locale === "ko"
-                  ? "선택한 워크스페이스에 아직 에이전트가 없습니다."
-                  : "No agents are active in this workspace yet."}
-              </div>
-            ) : null}
-            {hiddenAgentCount > 0 ? (
-              <div className="monitor-summary-row">
-                {locale === "ko"
-                  ? `기타 ${hiddenAgentCount}명은 대기 중이거나 변화가 없습니다.`
-                  : `${hiddenAgentCount} more agents are idle or unchanged.`}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="detail-header monitor-subhead">
-            <p className="section-label">{locale === "ko" ? "실행 목록" : "Runs"}</p>
-            <span className="detail-meta">{rootRuns.length}</span>
-          </div>
-          <div className="monitor-list">
-            {rootRuns.map((run) => (
-              <button
-                className={`monitor-run-row${activeRun?.id === run.id ? " selected" : ""}`}
-                key={run.id}
-                aria-pressed={activeRun?.id === run.id}
-                onClick={() => {
-                  void handleSelectRun(run.id);
-                }}
-                type="button"
-              >
-                <div className="monitor-row-main">
-                  <strong>{run.title}</strong>
-                  <p>{run.summary}</p>
-                  {run.status === "blocked" ? (
-                    getLatestBlockReason(run.runEvents) ? (
-                      <p className="stack-copy">
-                        {`${ui.labels.blockReason}: ${getLatestBlockReason(run.runEvents)}`}
-                      </p>
-                    ) : null
-                  ) : null}
-                </div>
-                <div className="monitor-row-meta">
-                  <span className={`status status-${getStatusTone(run.status)}`}>{formatStatusLabel(run.status, locale)}</span>
-                  <small>{run.providerPreference ?? (locale === "ko" ? "미정" : "n/a")}</small>
-                </div>
-              </button>
-            ))}
-            {rootRuns.length === 0 ? (
-              <div className="monitor-empty-row">
-                {locale === "ko"
-                  ? "선택한 워크스페이스에 아직 실행이 없습니다. 홈에서 미션을 만들면 여기 나타납니다."
-                  : "No runs yet for this workspace. Create a mission from Home to start one."}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="detail-block monitor-detail-panel monitor-dossier-panel">
-          {activeRun ? (
-            <>
-              <div className="monitor-detail-header">
-              <div className="monitor-detail-intro">
-                  <p className="section-label">{locale === "ko" ? "실행 개요" : "Run Dossier"}</p>
-                  <h4>{activeRun.title}</h4>
-                  <p className="monitor-header-copy">{activeRun.summary}</p>
-                </div>
-                <span className={`status status-${getStatusTone(activeRun.status)}`}>
-                  {formatStatusLabel(activeRun.status, locale)}
-                </span>
-              </div>
-
-              <div className="monitor-detail-grid">
-                <div className="monitor-detail-box">
-                  <span>{locale === "ko" ? "프로바이더" : "Provider"}</span>
-                  <strong>{activeRun.providerPreference ?? (locale === "ko" ? "미정" : "n/a")}</strong>
-                </div>
-                <div className="monitor-detail-box">
-                  <span>{locale === "ko" ? "버짓" : "Budget"}</span>
-                  <strong>{activeRun.budgetClass ?? (locale === "ko" ? "기본" : "default")}</strong>
-                </div>
-                <div className="monitor-detail-box">
-                  <span>{locale === "ko" ? "이벤트 수" : "Events"}</span>
-                  <strong>{activeRun.runEvents.length}</strong>
-                </div>
-                <div className="monitor-detail-box">
-                  <span>{locale === "ko" ? "산출물 수" : "Artifacts"}</span>
-                  <strong>{activeRun.artifacts.length}</strong>
-                </div>
-              </div>
-
-              <div className="monitor-split">
-                <div className="monitor-pane">
-                  <div className="detail-header monitor-subhead">
-                    <p className="section-label">{locale === "ko" ? "현재 진행 상황" : "Current Progress"}</p>
-                    <span className="detail-meta">{locale === "ko" ? "에이전트별" : "by agent"}</span>
-                  </div>
-                  <div className="monitor-list">
-                    {visibleProgressAgents.map((agent) => {
-                      const latest = latestEventByAgentId.get(agent.id);
-                      return (
-                        <div className="monitor-row compact" key={agent.id}>
-                          <div className="monitor-row-main">
-                            <strong>{agent.name}</strong>
-                            <p>{latest?.summary ?? (locale === "ko" ? "최근 이벤트 없음" : "No recent event")}</p>
-                          </div>
-                          <div className="monitor-row-meta">
-                            <small>{latest ? formatEventKind(latest.kind, locale) : ""}</small>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {hiddenProgressCount > 0 ? (
-                      <div className="monitor-summary-row">
-                        {locale === "ko"
-                          ? `기타 ${hiddenProgressCount}명은 변화가 없어 생략했습니다.`
-                          : `${hiddenProgressCount} more agents have no recent updates.`}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="monitor-pane">
-                  <div className="detail-header monitor-subhead">
-                    <p className="section-label">{locale === "ko" ? "후속 실행" : "Follow-up Runs"}</p>
-                    <span className="detail-meta">
-                      {currentFollowups.length}
-                    </span>
-                  </div>
-                  <div className="monitor-list">
-                    {visibleFollowups.map((child) => (
-                        <button
-                          className={`monitor-run-row compact${activeRun?.id === child.id ? " selected" : ""}`}
-                          key={child.id}
-                          aria-pressed={activeRun?.id === child.id}
-                          onClick={() => {
-                            void handleSelectRun(child.id);
-                          }}
-                          type="button"
-                        >
-                          <div className="monitor-row-main">
-                            <strong>{child.title}</strong>
-                            <p>{child.summary}</p>
-                          </div>
-                          <div className="monitor-row-meta">
-                            <span className={`status status-${getStatusTone(child.status)}`}>{formatStatusLabel(child.status, locale)}</span>
-                            <small>{child.origin?.schedulerRuleId ?? (locale === "ko" ? "수동" : "manual")}</small>
-                          </div>
-                        </button>
-                      ))}
-                    {hiddenFollowupCount > 0 ? (
-                      <div className="monitor-summary-row">
-                        {locale === "ko"
-                          ? `기타 ${hiddenFollowupCount}개 후속 실행은 생략했습니다.`
-                          : `${hiddenFollowupCount} more follow-up runs are hidden.`}
-                      </div>
-                    ) : null}
-                    {currentFollowups.length === 0 ? (
-                      <div className="monitor-row compact">
-                        <div className="monitor-row-main">
-                          <strong>{locale === "ko" ? "후속 실행 없음" : "No follow-up runs"}</strong>
-                          <p>{locale === "ko" ? "이 실행에서 파생된 후속 실행이 없습니다." : "No child runs were created from this run."}</p>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="monitor-empty">
-              <strong>{locale === "ko" ? "선택된 실행이 없습니다." : "No run selected."}</strong>
-              <p>{locale === "ko" ? "왼쪽 목록에서 실행을 선택하면 상세 정보가 여기에 표시됩니다." : "Select a run from the list to see details here."}</p>
-            </div>
           )}
         </div>
+      </div>
+    );
+  }
 
-        <div className="detail-block monitor-attention-panel">
-          <div className="detail-header">
-            <div>
-              <p className="section-label">{locale === "ko" ? "주의 항목" : "Attention"}</p>
-              <h4>{locale === "ko" ? "개입 대기열" : "Intervention Queue"}</h4>
+  // unreachable fallback
+  return null;
+}
+
+function DirectoryBrowserDialog({
+  open,
+  onOpenChange,
+  snapshot,
+  newDirName,
+  creating,
+  onNavigate,
+  onSelect,
+  onNewDirNameChange,
+  onCreateDir,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  snapshot: WorkspaceBrowserSnapshot | null;
+  newDirName: string;
+  creating: boolean;
+  onNavigate: (path: string) => void;
+  onSelect: (entry: WorkspaceBrowserEntry) => void;
+  onNewDirNameChange: (name: string) => void;
+  onCreateDir: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>디렉토리 선택</DialogTitle>
+        </DialogHeader>
+
+        {snapshot && (
+          <div className="space-y-4">
+            <div className="rounded border border-border bg-muted px-3 py-2">
+              <p className="font-mono text-xs text-muted-foreground">
+                {snapshot.currentPath}
+              </p>
             </div>
-            <span className="detail-meta">v{version}</span>
-          </div>
-          <p className="stack-copy monitor-attention-copy">
-            {locale === "ko"
-              ? "중단, 검토 필요, 입력 요청처럼 바로 반응해야 하는 항목만 남깁니다."
-              : "Keep only items that require immediate operator intervention here."}
-          </p>
-          <div className="attention-list monitor-attention-list">
-            {attentionEvents.map((event) => (
-              <div className="attention-item" key={event.id}>
-                <div className="attention-main">
-                  <strong>{event.summary}</strong>
-                  <p className="attention-meta">
-                    {event.agentId} • {event.createdAtLabel}
-                  </p>
-                  {event.kind === "blocked" && event.metadata?.reason ? (
-                    <p className="stack-copy">{event.metadata.reason}</p>
-                  ) : null}
-                </div>
-                <span className={`status status-${getAttentionTone(event.kind)}`}>
-                  {formatEventKind(event.kind, locale)}
-                </span>
+
+            <div className="flex gap-2">
+              {snapshot.parentPath && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onNavigate(snapshot.parentPath!)}
+                >
+                  상위 폴더
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onNavigate(snapshot.homePath)}
+              >
+                홈
+              </Button>
+            </div>
+
+            <ScrollArea className="h-72 rounded border border-border">
+              <div className="divide-y divide-border">
+                {snapshot.directories.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    하위 디렉토리가 없습니다.
+                  </div>
+                ) : (
+                  snapshot.directories.map((entry) => (
+                    <div
+                      key={entry.path}
+                      className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                    >
+                      <button
+                        onClick={() => onNavigate(entry.path)}
+                        className="flex-1 text-left"
+                      >
+                        <span className="text-sm text-foreground transition-colors group-hover:text-primary">
+                          {entry.name}
+                        </span>
+                        {entry.isRepositoryRoot && (
+                          <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            repo
+                          </span>
+                        )}
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onSelect(entry)}
+                        className="text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        선택
+                      </Button>
+                    </div>
+                  ))
+                )}
               </div>
-            ))}
-            {attentionEvents.length === 0 ? (
-              <div className="attention-empty">
-                <strong>{locale === "ko" ? "주의할 항목이 없습니다." : "No attention items."}</strong>
-                <p>
-                  {locale === "ko"
-                    ? "막힘이나 검토 요청이 생기면 여기에만 표시합니다."
-                    : "Blocked runs and review requests appear here when they happen."}
-                </p>
-              </div>
-            ) : null}
+            </ScrollArea>
+
+            <div className="flex gap-2">
+              <Input
+                placeholder="새 폴더 이름"
+                value={newDirName}
+                onChange={(e) => onNewDirNameChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onCreateDir();
+                  }
+                }}
+              />
+              <Button
+                onClick={onCreateDir}
+                disabled={!newDirName.trim() || creating}
+                variant="outline"
+              >
+                생성
+              </Button>
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={() =>
+                onSelect({
+                  name: snapshot.currentPath.split("/").pop() || "",
+                  path: snapshot.currentPath,
+                  isRepositoryRoot: false,
+                })
+              }
+            >
+              현재 폴더를 워크스페이스로 선택
+            </Button>
           </div>
-        </div>
-      </section>
-    </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+/** Strip internal role prefixes from titles */
+function cleanTitle(title: string): string {
+  return title
+    .replace(/^Plan\s+/, "")
+    .replace(/^Build\s+/, "")
+    .replace(/^Verify\s+/, "")
+    .replace(/\s+review packet.*$/i, "")
+    .trim();
 }
 
-function DecisionCard({ decision, locale = "ko" }: { decision: DecisionRecord; locale?: Locale }) {
-  return (
-    <div className="stack-card">
-      <strong>{decision.summary}</strong>
-      <span className="status status-review">
-        {formatDecisionCategory(decision.category, locale)}
-      </span>
-      <p className="stack-copy">{decision.rationale}</p>
-    </div>
-  );
-}
-
-function getStatusTone(status: string): "running" | "queued" | "blocked" | "review" {
-  if (status === "running") return "running";
-  if (status === "queued") return "queued";
-  if (status === "blocked") return "blocked";
-  return "review";
-}
-
-function getProviderWindowTone(
-  status: "ready" | "busy" | "cooldown" | "unavailable",
-): "running" | "queued" | "blocked" | "review" {
-  if (status === "ready") return "running";
-  if (status === "cooldown") return "queued";
-  if (status === "unavailable") return "blocked";
-  return "review";
-}
-
-function getAttentionTone(kind: string): "blocked" | "review" | "queued" {
-  if (kind === "blocked") return "blocked";
-  if (kind === "steering_requested") return "queued";
-  return "review";
-}
-
-function getEvidenceTone(
-  decision?: EvidencePack["decision"],
-): "running" | "queued" | "blocked" | "review" {
-  if (decision === "promote_to_completion") return "review";
-  if (decision === "promote_to_review") return "running";
-  if (decision === "insufficient") return "blocked";
-  return "queued";
-}
-
-function getEvidenceCheckTone(
-  status: "pass" | "warn" | "fail",
-): "running" | "queued" | "blocked" {
-  if (status === "pass") return "running";
-  if (status === "warn") return "queued";
-  return "blocked";
-}
-
-function formatStatusLabel(status: string, locale: Locale): string {
-  const ko: Record<string, string> = {
-    idle: "대기",
-    queued: "대기 중",
-    running: "진행 중",
-    blocked: "중단됨",
-    review: "검토 필요",
-    needs_review: "검토 필요",
-    completed: "완료",
-    active: "진행 중",
-    approved: "승인됨",
-    superseded: "대체됨",
-    resolved: "해결됨",
-    ready: "준비됨",
-    busy: "사용 중",
-    cooldown: "대기 중",
-    unavailable: "사용 불가",
-    none: "없음",
-    pending: "대기",
-    pass: "통과",
-    warn: "주의",
-    fail: "실패",
-  };
-  const en: Record<string, string> = {
-    idle: "Idle",
-    queued: "Queued",
-    running: "Running",
-    blocked: "Blocked",
-    review: "Needs Review",
-    needs_review: "Needs Review",
-    completed: "Completed",
-    active: "Active",
-    approved: "Approved",
-    superseded: "Superseded",
-    resolved: "Resolved",
-    ready: "Ready",
-    busy: "Busy",
-    cooldown: "Cooldown",
-    unavailable: "Unavailable",
-    none: "None",
-    pending: "Pending",
-    pass: "Pass",
-    warn: "Warn",
-    fail: "Fail",
-  };
-  return (locale === "ko" ? ko : en)[status] ?? status;
-}
-
-function formatEvidenceDecision(
-  decision: EvidencePack["decision"] | undefined,
-  locale: Locale,
-): string {
-  const ko: Record<NonNullable<EvidencePack["decision"]>, string> = {
-    insufficient: "증거 부족",
-    promote_to_review: "리뷰 가능",
-    promote_to_completion: "완료 가능",
-  };
-  const en: Record<NonNullable<EvidencePack["decision"]>, string> = {
-    insufficient: "Insufficient",
-    promote_to_review: "Review Ready",
-    promote_to_completion: "Completion Ready",
-  };
-  if (!decision) {
-    return locale === "ko" ? "대기" : "Pending";
-  }
-  return (locale === "ko" ? ko : en)[decision];
-}
-
-function summarizeEvidencePack(
-  evidencePack: EvidencePack,
-  locale: Locale,
-): string {
-  const passCount = evidencePack.checks.filter((check) => check.status === "pass").length;
-  const warnCount = evidencePack.checks.filter((check) => check.status === "warn").length;
-  const failCount = evidencePack.checks.filter((check) => check.status === "fail").length;
-
-  return locale === "ko"
-    ? `통과 ${passCount} · 주의 ${warnCount} · 실패 ${failCount}`
-    : `${passCount} pass · ${warnCount} warn · ${failCount} fail`;
-}
-
-function formatEventKind(kind: string, locale: Locale): string {
-  const ko: Record<string, string> = {
-    none: "없음",
+/** Translate system event messages to Korean */
+function translateEvent(kind: string, summary: string): string {
+  const kindMap: Record<string, string> = {
     artifact_created: "산출물 생성",
-    blocked: "중단",
-    agent_status_changed: "에이전트 상태 변경",
-    needs_review: "검토 필요",
-    review_requested: "리뷰 요청",
-    steering_requested: "입력 요청",
-    steering_submitted: "입력 전송",
     completed: "완료",
+    blocked: "차단됨",
+    needs_review: "검토 필요",
+    review_requested: "검토 요청",
+    steering_requested: "입력 요청",
+    steering_submitted: "입력 완료",
+    agent_status_changed: "에이전트 상태 변경",
   };
-  const en: Record<string, string> = {
-    none: "None",
-    artifact_created: "Artifact Created",
-    blocked: "Blocked",
-    agent_status_changed: "Agent Status Changed",
-    needs_review: "Needs Review",
-    review_requested: "Review Requested",
-    steering_requested: "Input Requested",
-    steering_submitted: "Input Sent",
-    completed: "Completed",
-  };
-  return (locale === "ko" ? ko : en)[kind] ?? kind;
+  const prefix = kindMap[kind] ?? kind;
+  // If summary is meaningful Korean, use it; otherwise just use prefix
+  if (/[가-힣]/.test(summary)) return summary;
+  // Translate common English patterns
+  if (/planner produced a spec/i.test(summary)) return `${prefix} — 스펙 작성 완료`;
+  if (/planner parked/i.test(summary)) return `${prefix} — 계획 단계 종료`;
+  if (/builder resumed/i.test(summary)) return `${prefix} — 빌드 시작`;
+  if (/planner assessment/i.test(summary)) return `${prefix} — 플래너 평가 완료`;
+  return `${prefix}`;
 }
 
-function getLatestBlockReason(
-  runEvents: RunDetail["runEvents"],
-): string | null {
-  const latestBlockEvent = [...runEvents].reverse().find((event) => event.kind === "blocked");
-  if (!latestBlockEvent?.metadata?.reason) {
-    return null;
-  }
-  return latestBlockEvent.metadata.reason;
-}
+const statusLabels: Record<string, string> = {
+  running: "실행 중",
+  queued: "대기 중",
+  blocked: "차단됨",
+  review: "검토 대기",
+  completed: "완료",
+  needs_review: "검토 필요",
+};
 
-function formatArtifactType(type: ArtifactRecord["type"], locale: Locale): string {
-  const ko: Record<ArtifactRecord["type"], string> = {
-    diff: "코드 변경",
-    report: "리포트",
-    test_result: "테스트 결과",
-    handoff: "전달 자료",
-  };
-  const en: Record<ArtifactRecord["type"], string> = {
-    diff: "Diff",
-    report: "Report",
-    test_result: "Test Result",
-    handoff: "Handoff",
-  };
-  return (locale === "ko" ? ko : en)[type];
-}
+const statusColors: Record<string, string> = {
+  running: "bg-blue-500/10 text-blue-400",
+  queued: "bg-zinc-500/10 text-zinc-400",
+  blocked: "bg-red-500/10 text-red-400",
+  review: "bg-yellow-500/10 text-yellow-400",
+  completed: "bg-green-500/10 text-green-400",
+  needs_review: "bg-yellow-500/10 text-yellow-400",
+};
 
-function formatDeliverableKind(kind: RunDetail["deliverables"][number]["kind"], locale: Locale): string {
-  const ko: Record<RunDetail["deliverables"][number]["kind"], string> = {
-    release_brief: "배포 요약",
-    review_packet: "리뷰 자료",
-    merge_handoff: "병합 전달",
-    deployment_note: "배포 메모",
-  };
-  const en: Record<RunDetail["deliverables"][number]["kind"], string> = {
-    release_brief: "Release Brief",
-    review_packet: "Review Packet",
-    merge_handoff: "Merge Handoff",
-    deployment_note: "Deployment Note",
-  };
-  return (locale === "ko" ? ko : en)[kind];
-}
-
-function formatDecisionCategory(category: DecisionRecord["category"], locale: Locale): string {
-  const ko: Record<DecisionRecord["category"], string> = {
-    planning: "계획",
-    technical: "기술",
-    risk: "리스크",
-    approval: "승인",
-    orchestration: "조정",
-  };
-  const en: Record<DecisionRecord["category"], string> = {
-    planning: "Planning",
-    technical: "Technical",
-    risk: "Risk",
-    approval: "Approval",
-    orchestration: "Orchestration",
-  };
-  return (locale === "ko" ? ko : en)[category];
-}
-
-function getChangedFilesForArtifact(artifact: ArtifactRecord): string[] {
-  if (artifact.filePatches?.length) {
-    return artifact.filePatches.map((patch) => patch.path);
-  }
-
-  if (artifact.type !== "diff") {
-    return [];
-  }
-
-  return [
-    "src/checkout/session.ts",
-    "src/auth/recover.ts",
-    "test/auth-redirect.spec.ts",
-  ];
-}
-
-function getFilePatchesForArtifact(artifact: ArtifactRecord): Array<{
-  path: string;
-  summary?: string;
-  patch: string;
-}> {
-  if (artifact.filePatches?.length) {
-    return artifact.filePatches;
-  }
-
-  if (artifact.type !== "diff") {
-    return [];
-  }
-
-  return [
-    {
-      path: "src/generated/fallback.ts",
-      summary: artifact.preview,
-      patch: buildFallbackPatch(artifact),
-    },
-  ];
-}
-
-function buildFallbackPatch(artifact: ArtifactRecord): string {
-  return `diff --git a/src/generated/fallback.ts b/src/generated/fallback.ts
-@@
--// pending patch
-+// ${artifact.preview}`;
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`rounded px-2 py-0.5 text-[11px] font-medium ${statusColors[status] ?? "bg-zinc-500/10 text-zinc-400"}`}
+    >
+      {statusLabels[status] ?? status}
+    </span>
+  );
 }
 
 export default App;

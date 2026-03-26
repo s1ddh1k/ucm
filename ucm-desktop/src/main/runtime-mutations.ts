@@ -120,7 +120,7 @@ export function createMissionInState(
       ? `Planner is expanding the goal into a concrete spec.`
       : `Builder is executing "${normalizedCommand}" in the selected workspace.`,
     budgetClass: usePlanner ? "light" : "standard",
-    providerPreference: normalizedCommand ? undefined : "claude",
+    providerPreference: normalizedCommand ? undefined : (process.env.UCM_PROVIDER as "claude" | "codex" | "gemini" | undefined) || "codex",
     workspaceCommand: normalizedCommand || undefined,
     terminalSessionId: undefined,
     terminalProvider: undefined,
