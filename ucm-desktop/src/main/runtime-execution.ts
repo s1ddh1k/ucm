@@ -3,6 +3,7 @@ import type {
   BudgetClass,
   MissionSnapshot,
   RunDetail,
+  RunExecutionStats,
   RunEvent,
 } from "../shared/contracts";
 import type { ExecutionController } from "./execution-types";
@@ -16,6 +17,7 @@ import {
   setAgentStatus,
 } from "./runtime-run-helpers";
 import { buildRoleCompletionArtifacts } from "./runtime-role-completion-artifacts";
+import { compileLearningProposal } from "./runtime-proposal-compiler";
 import {
   validateRoleContractRunCompletion,
   validateRoleContractRunStart,
@@ -39,6 +41,7 @@ type ExecutionCallbacks = {
     stderr?: string;
     stdout?: string;
     generatedPatch?: string;
+    executionStats?: RunExecutionStats;
   }) => void;
 };
 
@@ -62,6 +65,46 @@ export function collectSteeringContext(
         `- S${index + 1}: ${event.metadata?.steering ?? event.summary}`,
     )
     .join("\n");
+}
+
+function buildExecutionObjective(run: RunDetail, agent: AgentSnapshot): string {
+  const parts = [run.title, run.summary, agent.objective]
+    .map((value) => value?.trim())
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
+  return parts.join("\n");
+}
+
+function buildExecutionContextSummary(run: RunDetail): string {
+  const recentArtifacts = run.artifacts
+    .slice(-6)
+    .map((artifact) => {
+      const kind = artifact.contractKind ?? artifact.type;
+      return `- ${kind}: ${artifact.title} — ${artifact.preview}`;
+    });
+  return recentArtifacts.join("\n");
+}
+
+function finalizeExecutionStatsForRun(
+  state: RuntimeState,
+  runId: string,
+  outcome: "completed" | "blocked" | "needs_review",
+  stats?: RunExecutionStats,
+): RunExecutionStats | undefined {
+  if (!stats) {
+    return undefined;
+  }
+
+  const runEvents = state.runEventsByRunId[runId] ?? [];
+  const blockedEvents = runEvents.filter((event) => event.kind === "blocked").length;
+  const steeringEvents = runEvents.filter(
+    (event) => event.kind === "steering_submitted",
+  ).length;
+
+  return {
+    ...stats,
+    blockerCount: blockedEvents + (outcome === "blocked" ? 1 : 0),
+    steeringCount: steeringEvents,
+  };
 }
 
 export function maybeStartAgentExecutionInState(input: {
@@ -140,18 +183,22 @@ export function maybeStartAgentExecutionInState(input: {
   run.providerPreference = providerPreference;
   const executionBudgetLimit =
     state.missionBudgetById[missionId]?.[budgetClass]?.limit;
+  const objective = buildExecutionObjective(run, agent);
+  const contextSummary = buildExecutionContextSummary(run);
 
   const started = executionService.spawnAgentRun({
     missionId,
     runId,
     agent,
-    objective: agent.objective,
+    objective,
+    roleContractId: run.roleContractId,
     budgetClass,
     providerPreference,
     executionBudgetLimit,
     workspacePath,
     workspaceCommand: run.workspaceCommand,
     steeringContext,
+    contextSummary,
     onSessionStart: (session) => {
       callbacks.onSessionStart(missionId, runId, session);
     },
@@ -240,6 +287,7 @@ export function completeAgentRunInState(
     stderr?: string;
     stdout?: string;
     generatedPatch?: string;
+    executionStats?: RunExecutionStats;
   },
   roleRegistry?: RuntimeRoleRegistry,
 ): { run: RunDetail; agent: AgentSnapshot } | null {
@@ -255,6 +303,12 @@ export function completeAgentRunInState(
   }
   located.run.outputBaseline =
     located.run.outputBaseline ?? captureRunOutputBaseline(located.run);
+  located.run.executionStats = finalizeExecutionStatsForRun(
+    state,
+    input.runId,
+    input.outcome,
+    input.executionStats,
+  );
   located.run.status =
     input.outcome === "blocked"
       ? "blocked"
@@ -273,6 +327,21 @@ export function completeAgentRunInState(
     located.run.decisions = [...located.run.decisions, ...completion.appendedDecisions];
   }
   located.run.artifacts = [...located.run.artifacts, ...completion.artifacts];
+  if (
+    located.run.roleContractId === "learning_agent" &&
+    (input.outcome === "completed" || input.outcome === "needs_review")
+  ) {
+    const compiled = compileLearningProposal({
+      state,
+      run: located.run,
+    });
+    if (compiled.appendedDecisions.length > 0) {
+      located.run.decisions = [...located.run.decisions, ...compiled.appendedDecisions];
+    }
+    if (compiled.artifacts.length > 0) {
+      located.run.artifacts = [...located.run.artifacts, ...compiled.artifacts];
+    }
+  }
   located.run.timeline = [
     ...located.run.timeline,
     {

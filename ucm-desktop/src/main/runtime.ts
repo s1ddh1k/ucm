@@ -1193,6 +1193,7 @@ export class RuntimeService {
     stderr?: string;
     stdout?: string;
     generatedPatch?: string;
+    executionStats?: RunDetail["executionStats"];
   }) {
     this.flushPendingTerminalPreviews(`${input.missionId}:${input.runId}`);
     const state = this.readState();

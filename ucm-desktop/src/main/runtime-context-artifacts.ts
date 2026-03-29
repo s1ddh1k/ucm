@@ -46,6 +46,13 @@ export function buildFollowupInputArtifacts(input: {
   missionGoal: string;
 }): ArtifactRecord[] {
   const artifacts: ArtifactRecord[] = [];
+  const inheritArtifact = (artifact: ArtifactRecord) => {
+    artifacts.push({
+      ...artifact,
+      id: `art-inherit-${input.runId}-${artifact.id}`,
+      relatedArtifactIds: [...(artifact.relatedArtifactIds ?? []), artifact.id],
+    });
+  };
 
   // For verification runs, inherit diff artifacts from the source builder run
   if (input.roleContractId === "qa_agent") {
@@ -53,11 +60,18 @@ export function buildFollowupInputArtifacts(input: {
       .reverse()
       .find((artifact) => artifact.type === "diff");
     if (latestDiff) {
-      artifacts.push({
-        ...latestDiff,
-        id: `art-inherit-${input.runId}-${latestDiff.id}`,
-        relatedArtifactIds: [...(latestDiff.relatedArtifactIds ?? []), latestDiff.id],
-      });
+      inheritArtifact(latestDiff);
+    }
+  }
+
+  if (input.roleContractId === "learning_agent") {
+    for (const artifact of input.sourceRun.artifacts) {
+      if (
+        artifact.contractKind === "incident_record" ||
+        artifact.contractKind === "improvement_proposal"
+      ) {
+        inheritArtifact(artifact);
+      }
     }
   }
 

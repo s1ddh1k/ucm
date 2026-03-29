@@ -69,6 +69,7 @@ export function deriveLifecycleTransitions(
 
   const planner = agents.find((agent) => agent.role === "coordination");
   const builder = agents.find((agent) => agent.role === "implementation");
+  const researcher = agents.find((agent) => agent.role === "research");
   const verifier = agents.find((agent) => agent.role === "verification");
   const latestArtifactType = findLatestActionableArtifactType(run);
 
@@ -142,6 +143,19 @@ export function deriveLifecycleTransitions(
         status: "idle",
         lifecycleKind: "parked",
         summary: `${verifier.name} parked after completion.`,
+      });
+    }
+
+    if (
+      researcher &&
+      run.roleContractId === "ops_agent" &&
+      researcher.status === "idle"
+    ) {
+      transitions.push({
+        agentId: researcher.id,
+        status: "running",
+        lifecycleKind: "resumed",
+        summary: `${researcher.name} resumed because the ops run produced evidence for a learning pass.`,
       });
     }
   }

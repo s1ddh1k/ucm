@@ -199,6 +199,7 @@ export type ArtifactContractKind =
   | "release_manifest"
   | "rollback_plan"
   | "incident_record"
+  | "historical_replay_result"
   | "improvement_proposal";
 
 export type ArtifactPayloadValidation = {
@@ -284,6 +285,19 @@ export type RunOutputBaseline = {
   timelineCount: number;
 };
 
+export type RunExecutionStats = {
+  provider: RuntimeProvider | "local";
+  estimatedPromptTokens: number;
+  promptChars: number;
+  outputChars: number;
+  latencyMs: number;
+  retryCount: number;
+  blockerCount: number;
+  steeringCount: number;
+  localityScore: number;
+  usedTerminalSession: boolean;
+};
+
 export type RunOrigin = {
   parentRunId: string;
   sourceEventId: string;
@@ -310,6 +324,7 @@ export type RunDetail = {
   terminalPreview: string[];
   origin?: RunOrigin;
   outputBaseline?: RunOutputBaseline;
+  executionStats?: RunExecutionStats;
   timeline: RunTimelineEntry[];
   decisions: DecisionRecord[];
   artifacts: ArtifactRecord[];

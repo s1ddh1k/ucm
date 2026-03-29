@@ -1,4 +1,9 @@
-import type { AgentSnapshot, BudgetClass } from "../shared/contracts";
+import type {
+  AgentSnapshot,
+  BudgetClass,
+  RoleContractId,
+  RunExecutionStats,
+} from "../shared/contracts";
 import type {
   BaseProviderAdapter,
   ProviderExecutionResult,
@@ -18,6 +23,7 @@ export type AgentRunCompletion = {
   stdout?: string;
   generatedPatch?: string;
   session?: ExecutionSessionSnapshot;
+  executionStats?: RunExecutionStats;
 };
 
 export type WorkspaceExecutionMode = "process" | "workspace" | "git_worktree";
@@ -43,12 +49,14 @@ export type SpawnAgentRunInput = {
   runId: string;
   agent: AgentSnapshot;
   objective: string;
+  roleContractId?: RoleContractId;
   budgetClass: BudgetClass;
   providerPreference?: ProviderName;
   executionBudgetLimit?: number;
   workspacePath?: string;
   workspaceCommand?: string;
   steeringContext?: string;
+  contextSummary?: string;
   onSessionStart?: (session: ExecutionSessionSnapshot) => void;
   onTerminalData?: (chunk: string) => void;
   onComplete: (result: AgentRunCompletion) => void;

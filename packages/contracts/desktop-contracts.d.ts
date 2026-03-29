@@ -24,6 +24,7 @@ export type ArtifactContractKind =
   | "evidence_log"
   | "evidence_pack"
   | "handoff_record"
+  | "historical_replay_result"
   | "improvement_proposal"
   | "incident_record"
   | "patch_set"
@@ -121,6 +122,19 @@ export type RuntimeOutputBaseline = {
   deliverableRevisionCount?: number;
   timelineCount?: number;
   handoffCount?: number;
+};
+
+export type RunExecutionStats = {
+  provider: ProviderName;
+  estimatedPromptTokens: number;
+  promptChars: number;
+  outputChars: number;
+  latencyMs: number;
+  retryCount: number;
+  blockerCount: number;
+  steeringCount: number;
+  localityScore: number;
+  usedTerminalSession: boolean;
 };
 
 export type WorkspaceSummary = Pick<
@@ -346,6 +360,7 @@ export type RunDetail = Pick<
   handoffs: HandoffRecord[];
   roleContractId?: RoleContractId;
   outputBaseline?: RuntimeOutputBaseline;
+  executionStats?: RunExecutionStats;
 };
 
 export type RunAutopilotResult = {

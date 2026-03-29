@@ -163,6 +163,8 @@ Mission Intake
 - acceptance checks가 존재해야 한다
 - 대안 2개 이상이 비교되어야 한다
 - `DecisionRecord.category=planning|technical|risk` 중 최소 하나가 생성되어야 한다
+- deliberation 결과는 가능한 한 artifact reference와 decision delta로 다음 phase에 전달한다
+- 같은 문제 맥락을 다시 설명하는 장문 transcript 전달은 기본 경로가 아니다
 
 ### Failure path
 
@@ -202,6 +204,8 @@ bounded run 단위로 실제 작업을 수행한다.
 - `workspacePath`
 - `steeringContext`
 - `expectedEvidence`
+- `contextRefs`
+- `deltaContext`
 
 ### Outputs
 
@@ -215,6 +219,8 @@ bounded run 단위로 실제 작업을 수행한다.
 - provider seat가 `healthy`
 - seat status가 `ready` 또는 queueable
 - acceptance checks 정의 완료
+- 이전 phase 산출물은 우선 참조 기반으로 읽고, 전문 재주입은 fallback으로만 사용한다
+- 같은 mission/phase의 연속 run은 risk가 허용하는 범위에서 session affinity를 우선 고려한다
 
 ### Exit event kinds
 
@@ -229,6 +235,7 @@ bounded run 단위로 실제 작업을 수행한다.
 - auth invalid → `blocked(provider_reauth_required)`
 - subscription/API 충돌 → `blocked(billing_mode_conflict)`
 - evidence 없이 patch만 생성 → verification 승급 금지
+- context payload가 과도하게 커지면 summarize/re-anchor 후 재시도하거나 deliberation으로 되돌린다
 
 ## 4.5 Verification
 
@@ -241,6 +248,7 @@ bounded run 단위로 실제 작업을 수행한다.
 - diff artifact가 생기면 verification lane을 우선 고려한다
 - verifier run은 implementation run과 분리한다
 - verification은 evidence를 생산해야 한다
+- verification lane은 독립성을 유지하되, 같은 artifact reference를 재사용해 full prompt replay를 최소화한다
 
 ### Required outputs
 

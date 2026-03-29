@@ -306,6 +306,139 @@ test("completed agent run resolves active steering and emits an artifact", () =>
   assert.equal(steeringEvents.at(-1)?.metadata?.status, "resolved");
 });
 
+test("learning-agent completion emits a structured improvement proposal and execution stats", () => {
+  const state = runtimeState.cloneSeed();
+
+  state.agentsByMissionId["m-1"] = state.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-researcher" ? { ...agent, status: "running" } : agent,
+  );
+  state.runsByMissionId["m-1"][0].executionStats = {
+    provider: "codex",
+    estimatedPromptTokens: 320,
+    promptChars: 1280,
+    outputChars: 640,
+    latencyMs: 2400,
+    retryCount: 1,
+    blockerCount: 1,
+    steeringCount: 1,
+    localityScore: 0.42,
+    usedTerminalSession: true,
+  };
+  state.runsByMissionId["m-1"].push({
+    id: "r-build-recent-1",
+    missionId: "m-1",
+    agentId: "a-builder-1",
+    roleContractId: "builder_agent",
+    title: "Replay checkout auth fallback",
+    status: "completed",
+    summary: "Recent implementation run completed with high prompt replay overhead.",
+    budgetClass: "standard",
+    providerPreference: "codex",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [],
+    decisions: [],
+    artifacts: [],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+    executionStats: {
+      provider: "codex",
+      estimatedPromptTokens: 260,
+      promptChars: 1040,
+      outputChars: 520,
+      latencyMs: 2100,
+      retryCount: 0,
+      blockerCount: 0,
+      steeringCount: 1,
+      localityScore: 0.48,
+      usedTerminalSession: true,
+    },
+  });
+  state.runEventsByRunId["r-build-recent-1"] = [];
+  state.runsByMissionId["m-1"].push({
+    id: "r-learning-1",
+    missionId: "m-1",
+    agentId: "a-researcher",
+    roleContractId: "learning_agent",
+    title: "Learn from checkout auth incidents",
+    status: "running",
+    summary: "Researcher is converting ops evidence into a self-improvement proposal.",
+    budgetClass: "light",
+    providerPreference: "gemini",
+    activeSurface: "artifacts",
+    terminalPreview: [],
+    timeline: [
+      {
+        id: "tl-learning-start",
+        kind: "started",
+        summary: "Learning run started.",
+        timestampLabel: "just now",
+      },
+    ],
+    decisions: [],
+    artifacts: [
+      runtimeArtifacts.createArtifactRecord({
+        id: "art-learning-incident",
+        type: "report",
+        title: "Incident record",
+        preview: "Retry spikes were observed after rollout.",
+        contractKind: "incident_record",
+        payload: {
+          summary: "Retry spikes were observed after rollout.",
+        },
+      }),
+    ],
+    runEvents: [],
+    deliverables: [],
+    handoffs: [],
+  });
+  state.runEventsByRunId["r-learning-1"] = [];
+
+  const completed = runtimeExecution.completeAgentRunInState(state, {
+    missionId: "m-1",
+    runId: "r-learning-1",
+    agentId: "a-researcher",
+    summary: "Learning pass generated a structured proposal.",
+    source: "mock",
+    outcome: "completed",
+    stdout: '{"title":"Cache-local handoff","summary":"Use artifact-addressed handoff for implementation reruns.","scope":"workflow","hypothesis":"Artifact-addressed handoff reduces repeated prompt assembly.","expectedImpact":"Lower token cost and fewer repeated blockers.","requiredEvals":["Replay recent implementation failures."]}\nStatus: completed',
+    executionStats: {
+      provider: "gemini",
+      estimatedPromptTokens: 128,
+      promptChars: 512,
+      outputChars: 240,
+      latencyMs: 1500,
+      retryCount: 0,
+      blockerCount: 0,
+      steeringCount: 0,
+      localityScore: 0.91,
+      usedTerminalSession: false,
+    },
+  });
+
+  assert.ok(completed);
+  const proposalArtifact = completed.run.artifacts.find(
+    (artifact) => artifact.contractKind === "improvement_proposal",
+  );
+  const replayArtifact = completed.run.artifacts.find(
+    (artifact) => artifact.contractKind === "historical_replay_result",
+  );
+
+  assert.equal(proposalArtifact?.type, "report");
+  assert.equal(proposalArtifact?.payload?.scope, "workflow");
+  assert.match(proposalArtifact?.payload?.hypothesis ?? "", /artifact-addressed handoff/i);
+  assert.equal(replayArtifact?.type, "report");
+  assert.equal(replayArtifact?.payload?.templateId, "artifact_refs_with_delta");
+  assert.deepEqual(replayArtifact?.payload?.baselineRunIds, ["r-1", "r-build-recent-1"]);
+  assert.ok(
+    replayArtifact?.payload?.experiment?.projectedAvgEstimatedPromptTokens <
+      replayArtifact?.payload?.baseline?.avgEstimatedPromptTokens,
+  );
+  assert.equal(completed.run.executionStats?.estimatedPromptTokens, 128);
+  assert.equal(completed.run.executionStats?.latencyMs, 1500);
+});
+
 test("builder completion still triggers verification follow-up after trace artifacts are appended", () => {
   const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
   const seededState = store.read();

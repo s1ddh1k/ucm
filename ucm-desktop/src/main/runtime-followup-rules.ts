@@ -36,9 +36,12 @@ export type FollowupRule = {
 };
 
 export function inferScheduledProviderPreference(
-  _roleContractId: RunDetail["roleContractId"],
+  roleContractId: RunDetail["roleContractId"],
   _agentRole: AgentSnapshot["role"],
 ) {
+  if (roleContractId === "ops_agent" || roleContractId === "learning_agent") {
+    return "gemini" as const;
+  }
   return (process.env.UCM_PROVIDER || "codex") as "claude" | "codex" | "gemini";
 }
 
@@ -94,6 +97,38 @@ export const FOLLOWUP_RULES: FollowupRule[] = [
         "The planner produced a concrete spec; the builder executes it.",
       revisionSummary:
         "Builder run initialized from the planner spec.",
+      deliverableKind: "review_packet",
+    }),
+  },
+  {
+    id: "learning_from_ops_completion",
+    priority: 60,
+    role: "research",
+    roleContractId: "learning_agent",
+    reuseExistingRun: false,
+    spawnMode: "execute",
+    maxOpenRuns: 1,
+    exclusiveWith: [],
+    budgetClass: "light",
+    eventKinds: ["completed"],
+    matches: ({ sourceRun }) =>
+      sourceRun.roleContractId === "ops_agent" &&
+      sourceRun.artifacts.some(
+        (artifact) =>
+          artifact.contractKind === "incident_record" ||
+          artifact.contractKind === "improvement_proposal",
+      ),
+    buildSpec: ({ sourceRun, agent }) => ({
+      key: "learn",
+      title: `Learn from ${sourceRun.title}`,
+      status: "running",
+      summary: `${agent.name} is converting operational evidence into a structured self-improvement proposal.`,
+      decisionSummary:
+        "Create a learning follow-up run from the completed ops output.",
+      rationale:
+        "Operational incidents and candidate improvements should be distilled into a reusable proposal before broader rollout changes are attempted.",
+      revisionSummary:
+        "Learning run initialized from the latest ops evidence and improvement proposal.",
       deliverableKind: "review_packet",
     }),
   },

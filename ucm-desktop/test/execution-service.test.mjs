@@ -120,7 +120,11 @@ test("execution service prefers terminal-backed provider output when session suc
   assert.equal(result.source, "provider");
   assert.equal(result.outcome, "needs_review");
   assert.equal(result.summary, "Patched checkout auth flow");
+  assert.equal(result.stdout?.includes("Patched checkout auth flow"), true);
   assert.equal(result.session?.transport, "provider_terminal");
+  assert.equal(result.executionStats?.usedTerminalSession, true);
+  assert.ok((result.executionStats?.estimatedPromptTokens ?? 0) > 0);
+  assert.ok((result.executionStats?.latencyMs ?? 0) >= 1);
 });
 
 test("execution service falls back to pipe execution when terminal session does not yield output", async () => {
@@ -227,6 +231,54 @@ test("execution service can run a gemini-backed pass without opening a terminal 
   assert.equal(result.source, "provider");
   assert.equal(result.outcome, "completed");
   assert.equal(result.summary, "Collected broader alternatives");
+});
+
+test("execution service prepares a structured learning-agent prompt", async () => {
+  const sessions = [];
+  const terminalController = {
+    startSession(input) {
+      sessions.push(input);
+      setTimeout(() => {
+        input.onData(
+          '{"title":"Cache-local handoff","summary":"Use artifact-addressed handoff.","scope":"workflow","hypothesis":"Artifact refs reduce prompt replay.","expectedImpact":"Lower token cost.","requiredEvals":["Replay recent implementation failures."]}\n',
+        );
+        input.onData("Status: completed\n");
+        input.onExit({ exitCode: 0, signal: 0 });
+      }, 0);
+      return "term-learning-1";
+    },
+    killSession() {},
+    writeToSession() {
+      return false;
+    },
+    resizeSession() {
+      return false;
+    },
+  };
+
+  const service = new ExecutionService({
+    providerAdapters: createProviderRegistry(),
+    terminalSessionService: terminalController,
+  });
+
+  const result = await waitForCompletion((onComplete) => {
+    service.spawnAgentRun({
+      missionId: "m-learning",
+      runId: "r-learning",
+      agent: createAgent({ role: "research", name: "Researcher-Test" }),
+      roleContractId: "learning_agent",
+      objective: "Synthesize a learning proposal from recent ops signals.",
+      contextSummary:
+        "- incident_record: Retry spikes after rollout.\n- improvement_proposal: Classify retry spikes earlier.",
+      onComplete,
+    });
+  });
+
+  assert.match(sessions[0].prompt, /Role contract: learning_agent/);
+  assert.match(sessions[0].prompt, /single JSON object/i);
+  assert.match(sessions[0].prompt, /requiredEvals/);
+  assert.equal(result.executionStats?.usedTerminalSession, true);
+  assert.equal(result.outcome, "completed");
 });
 
 test("execution service delegates terminal controls to the terminal controller", () => {

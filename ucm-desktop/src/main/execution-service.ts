@@ -13,6 +13,7 @@ import type {
 } from "./provider-adapter";
 import { TerminalSessionService } from "./terminal-session-service";
 import type {
+  AgentRunCompletion,
   ExecutionController,
   ExecutionSessionSnapshot,
   ProviderAdapterRegistry,
@@ -122,17 +123,7 @@ export class ExecutionService implements ExecutionController {
 
   private async executeWithProvider(
     input: SpawnAgentRunInput,
-  ): Promise<{
-    missionId: string;
-    runId: string;
-    agentId: string;
-    summary: string;
-    source: "provider" | "local";
-    outcome: "completed" | "blocked" | "needs_review";
-    stderr?: string;
-    stdout?: string;
-    generatedPatch?: string;
-  }> {
+  ): Promise<AgentRunCompletion> {
     if (input.workspaceCommand?.trim()) {
       return this.executeLocalWorkspaceCommand(input);
     }
@@ -143,12 +134,18 @@ export class ExecutionService implements ExecutionController {
     }
     const adapter = this.providerAdapters[provider];
     const prompt = this.buildPrompt(input);
+    const promptChars = prompt.length;
+    const estimatedPromptTokens = estimatePromptTokens(prompt);
+    const startedAt = Date.now();
     const cwd = this.resolveCwd(input.workspacePath);
     if (this.supportsTerminalSession(provider)) {
       const terminalResult = await this.executeWithTerminalSession({
         adapter,
         provider,
         prompt,
+        startedAt,
+        estimatedPromptTokens,
+        promptChars,
         cwd,
         input,
       });
@@ -186,28 +183,35 @@ export class ExecutionService implements ExecutionController {
       outcome: this.parseOutcome(stdout, input.agent),
       stderr: stderr || undefined,
       stdout: stdout || undefined,
+      executionStats: {
+        provider,
+        estimatedPromptTokens,
+        promptChars,
+        outputChars: stdout.length + stderr.length,
+        latencyMs: Math.max(1, Date.now() - startedAt),
+        retryCount: 1,
+        blockerCount: 0,
+        steeringCount: 0,
+        localityScore: computeLocalityScore({
+          estimatedPromptTokens,
+          usesArtifactContext: Boolean(input.contextSummary?.trim()),
+          promptChars,
+        }),
+        usedTerminalSession: false,
+      },
     };
   }
 
   private async executeLocalWorkspaceCommand(
     input: SpawnAgentRunInput,
-  ): Promise<{
-    missionId: string;
-    runId: string;
-    agentId: string;
-    summary: string;
-    source: "local";
-    outcome: "completed" | "blocked" | "needs_review";
-    stderr?: string;
-    stdout?: string;
-    generatedPatch?: string;
-  }> {
+  ): Promise<AgentRunCompletion> {
     const cwd = this.resolveCwd(input.workspacePath);
     const command = input.workspaceCommand?.trim();
     if (!command) {
       throw new Error("workspace command is required");
     }
 
+    const startedAt = Date.now();
     const output = await this.executeShellCommand({
       command,
       cwd,
@@ -227,6 +231,18 @@ export class ExecutionService implements ExecutionController {
       stderr: output.stderr || undefined,
       stdout: output.stdout || undefined,
       generatedPatch: generatedPatch || undefined,
+      executionStats: {
+        provider: "local",
+        estimatedPromptTokens: 0,
+        promptChars: 0,
+        outputChars: output.stdout.length + output.stderr.length,
+        latencyMs: Math.max(1, Date.now() - startedAt),
+        retryCount: 0,
+        blockerCount: 0,
+        steeringCount: 0,
+        localityScore: 1,
+        usedTerminalSession: false,
+      },
     };
   }
 
@@ -234,35 +250,18 @@ export class ExecutionService implements ExecutionController {
     adapter: BaseProviderAdapter;
     provider: Exclude<ProviderName, "local">;
     prompt: string;
+    startedAt: number;
+    estimatedPromptTokens: number;
+    promptChars: number;
     cwd: string;
     input: SpawnAgentRunInput;
-  }): Promise<{
-    missionId: string;
-    runId: string;
-    agentId: string;
-    summary: string;
-    source: "provider";
-    outcome: "completed" | "blocked" | "needs_review";
-    stderr?: string;
-    session?: ExecutionSessionSnapshot;
-  } | null> {
+  }): Promise<AgentRunCompletion | null> {
     return new Promise((resolve) => {
       let output = "";
       let settled = false;
       let sessionId = "";
 
-      const finish = (
-        result: {
-          missionId: string;
-          runId: string;
-          agentId: string;
-          summary: string;
-          source: "provider";
-          outcome: "completed" | "blocked" | "needs_review";
-          stderr?: string;
-          session?: ExecutionSessionSnapshot;
-        } | null,
-      ) => {
+      const finish = (result: AgentRunCompletion | null) => {
         if (settled) return;
         settled = true;
         resolve(result);
@@ -311,7 +310,24 @@ export class ExecutionService implements ExecutionController {
               ),
               source: "provider",
               outcome: this.parseOutcome(output, input.input.agent),
+              stdout: output || undefined,
               session: { ...sessionSnapshot, sessionId },
+              executionStats: {
+                provider: input.provider,
+                estimatedPromptTokens: input.estimatedPromptTokens,
+                promptChars: input.promptChars,
+                outputChars: output.length,
+                latencyMs: Math.max(1, Date.now() - input.startedAt),
+                retryCount: 0,
+                blockerCount: 0,
+                steeringCount: 0,
+                localityScore: computeLocalityScore({
+                  estimatedPromptTokens: input.estimatedPromptTokens,
+                  usesArtifactContext: Boolean(input.input.contextSummary?.trim()),
+                  promptChars: input.promptChars,
+                }),
+                usedTerminalSession: true,
+              },
             });
           },
         });
@@ -467,15 +483,25 @@ export class ExecutionService implements ExecutionController {
     const steeringSection = input.steeringContext
       ? `Recent human steering:\n${input.steeringContext}`
       : "Recent human steering:\n- none";
-    const roleInstruction = this.buildRoleInstruction(input.agent.role);
+    const contextSection = input.contextSummary
+      ? `Relevant run context:\n${input.contextSummary}`
+      : "Relevant run context:\n- none";
+    const roleInstruction = this.buildRoleInstruction({
+      role: input.agent.role,
+      roleContractId: input.roleContractId,
+    });
     return [
       `You are ${input.agent.name}, acting in role ${input.agent.role}.`,
+      input.roleContractId ? `Role contract: ${input.roleContractId}` : "",
       `Objective: ${input.objective}`,
       steeringSection,
+      contextSection,
       roleInstruction,
       "When done, end with exactly one status line:",
       "Status: completed | blocked | needs_review",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   private summarizeProviderOutput(
@@ -546,7 +572,20 @@ export class ExecutionService implements ExecutionController {
       .join(": ");
   }
 
-  private buildRoleInstruction(role: string): string {
+  private buildRoleInstruction(input: {
+    role: string;
+    roleContractId?: SpawnAgentRunInput["roleContractId"];
+  }): string {
+    if (input.roleContractId === "learning_agent") {
+      return [
+        "Analyze the incident and prior improvement context, then produce exactly one structured self-improvement proposal.",
+        "Return a single JSON object with keys: title, summary, scope, hypothesis, expectedImpact, requiredEvals.",
+        'Allowed scope values: "product", "prompt", "workflow", "policy", "routing".',
+        "Do not wrap the JSON in markdown fences and do not emit multiple proposals.",
+      ].join(" ");
+    }
+
+    const role = input.role;
     switch (role) {
       case "implementation":
         return "Implement the objective. Read the relevant code, make the changes, and run tests if available.";
@@ -593,4 +632,24 @@ function clampCapturedText(value: string, maxChars: number): string {
   const headLength = Math.max(0, Math.floor((maxChars - separator.length) * 0.4));
   const tailLength = Math.max(0, maxChars - separator.length - headLength);
   return `${value.slice(0, headLength)}${separator}${value.slice(-tailLength)}`;
+}
+
+function estimatePromptTokens(prompt: string): number {
+  const normalized = prompt.trim();
+  if (!normalized) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(normalized.length / 4));
+}
+
+function computeLocalityScore(input: {
+  estimatedPromptTokens: number;
+  usesArtifactContext: boolean;
+  promptChars: number;
+}): number {
+  const tokenPenalty = Math.min(0.85, input.estimatedPromptTokens / 5_000);
+  const promptPenalty = Math.min(0.1, input.promptChars / 20_000);
+  const artifactBonus = input.usesArtifactContext ? 0.1 : 0;
+  const score = 1 - tokenPenalty - promptPenalty + artifactBonus;
+  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
 }

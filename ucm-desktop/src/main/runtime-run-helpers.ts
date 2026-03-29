@@ -20,6 +20,7 @@ const NON_ACTIONABLE_ARTIFACT_CONTRACT_KINDS = new Set([
   "acceptance_checks",
   "success_metrics",
   "decision_record",
+  "historical_replay_result",
   "task_backlog",
   "run_trace",
   "evidence_pack",
