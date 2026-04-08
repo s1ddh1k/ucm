@@ -574,12 +574,17 @@ test("provider queue gate defers spawn and records a queued event", () => {
   const latestLifecycle = (state.lifecycleEventsByMissionId["m-1"] ?? []).at(-1);
   const builder = state.agentsByMissionId["m-1"].find((agent) => agent.id === "a-builder-1");
   const run = state.runsByMissionId["m-1"].find((item) => item.id === "r-1");
+  const wakeup = state.wakeupRequestsByMissionId["m-1"]?.at(-1);
+  const attempt = state.executionAttemptsByRunId["r-1"]?.at(-1);
 
   assert.equal(builder?.status, "queued");
   assert.equal(run?.status, "queued");
   assert.equal(latestEvent?.kind, "agent_status_changed");
   assert.equal(latestEvent?.metadata?.source, "provider_queue");
   assert.equal(latestLifecycle?.kind, "queued");
+  assert.equal(wakeup?.status, "queued");
+  assert.equal(attempt?.status, "cancelled");
+  assert.equal(attempt?.errorCode, "provider_lane_busy");
 });
 
 test("local workspace execution blocks instead of entering an orphaned queue", () => {
@@ -620,11 +625,17 @@ test("local workspace execution blocks instead of entering an orphaned queue", (
   const run = state.runsByMissionId[mission.id].find((item) => item.id === runId);
   const agent = state.agentsByMissionId[mission.id].find((item) => item.id === builderId);
   const latestEvent = (state.runEventsByRunId[runId] ?? []).at(-1);
+  const wakeup = state.wakeupRequestsByMissionId[mission.id]?.at(-1);
+  const attempt = state.executionAttemptsByRunId[runId]?.at(-1);
 
   assert.equal(run?.status, "blocked");
   assert.equal(agent?.status, "blocked");
   assert.equal(latestEvent?.kind, "blocked");
   assert.equal(latestEvent?.metadata?.source, "local_lane_busy");
+  assert.equal(wakeup?.status, "queued");
+  assert.equal(attempt?.status, "blocked");
+  assert.equal(attempt?.errorCode, "local_lane_busy");
+  assert.match(attempt?.errorMessage ?? "", /saturated/i);
 });
 
 test("createMissionInState seeds planning missions with research and design agents", () => {
@@ -918,6 +929,105 @@ test("runtime service resumes a queued run when the provider window becomes free
   assert.equal(executionCalls.length, 1);
   assert.equal(executionCalls[0].provider, "codex");
   assert.equal(latestEvent?.metadata?.source, "provider_resume");
+});
+
+test("runtime service closes wakeup, attempt, and lease state when a live terminal is killed", () => {
+  const store = new runtimeStore.MemoryRuntimeStore(runtimeState.cloneSeed);
+  const seededState = store.read();
+  seededState.runsByMissionId["m-1"][0] = {
+    ...seededState.runsByMissionId["m-1"][0],
+    status: "running",
+    terminalSessionId: "term-live-1",
+    terminalProvider: "codex",
+  };
+  seededState.agentsByMissionId["m-1"] = seededState.agentsByMissionId["m-1"].map((agent) =>
+    agent.id === "a-builder-2" ? { ...agent, status: "running" } : agent,
+  );
+  seededState.wakeupRequestsByMissionId["m-1"] = [
+    {
+      id: "wr-r-1-1",
+      workspaceId: "ws-storefront",
+      missionId: "m-1",
+      runId: "r-1",
+      source: "manual",
+      status: "claimed",
+      requestedAt: "2026-03-31T00:00:00.000Z",
+      requestedBy: "user",
+    },
+  ];
+  seededState.executionAttemptsByRunId["r-1"] = [
+    {
+      id: "att-r-1-1",
+      workspaceId: "ws-storefront",
+      missionId: "m-1",
+      runId: "r-1",
+      wakeupRequestId: "wr-r-1-1",
+      sessionLeaseId: "lease-codex-1",
+      attemptNumber: 1,
+      provider: "codex",
+      status: "running",
+      startedAt: "2026-03-31T00:00:01.000Z",
+      sessionId: "term-live-1",
+      terminalSessionId: "term-live-1",
+    },
+  ];
+  seededState.sessionLeasesByWorkspaceId["ws-storefront"] = [
+    {
+      id: "lease-codex-1",
+      provider: "codex",
+      workspaceId: "ws-storefront",
+      missionId: "m-1",
+      runId: "r-1",
+      affinityKey: "m-1:a-builder-2:codex",
+      sessionId: "term-live-1",
+      status: "busy",
+      reusePolicy: "prefer_reuse",
+      lastAttemptId: "att-r-1-1",
+      lastUsedAt: "2026-03-31T00:00:01.000Z",
+    },
+  ];
+  store.write(seededState);
+
+  const killedSessions = [];
+  const runtime = new runtimeServiceModule.RuntimeService({
+    store,
+    executionService: {
+      spawnAgentRun() {
+        return true;
+      },
+      writeTerminalSession() {
+        return false;
+      },
+      resizeTerminalSession() {
+        return false;
+      },
+      killTerminalSession(sessionId) {
+        killedSessions.push(sessionId);
+      },
+    },
+  });
+
+  const killed = runtime.killTerminal({ sessionId: "term-live-1" });
+  const state = store.read();
+  const run = state.runsByMissionId["m-1"].find((item) => item.id === "r-1");
+  const agent = state.agentsByMissionId["m-1"].find((item) => item.id === "a-builder-2");
+  const wakeup = state.wakeupRequestsByMissionId["m-1"]?.[0];
+  const attempt = state.executionAttemptsByRunId["r-1"]?.[0];
+  const lease = state.sessionLeasesByWorkspaceId["ws-storefront"]?.[0];
+  const latestLifecycle = (state.lifecycleEventsByMissionId["m-1"] ?? []).at(-1);
+
+  assert.equal(killed, true);
+  assert.deepEqual(killedSessions, ["term-live-1"]);
+  assert.equal(run?.status, "blocked");
+  assert.equal(run?.terminalSessionId, undefined);
+  assert.equal(agent?.status, "blocked");
+  assert.equal(wakeup?.status, "cancelled");
+  assert.equal(attempt?.status, "cancelled");
+  assert.equal(attempt?.errorCode, "terminal_killed");
+  assert.match(attempt?.errorMessage ?? "", /stopped the live terminal session/i);
+  assert.ok(attempt?.finishedAt);
+  assert.equal(lease?.status, "cooldown");
+  assert.equal(latestLifecycle?.kind, "blocked");
 });
 
 test("shell snapshot lists gemini alongside existing provider windows", () => {

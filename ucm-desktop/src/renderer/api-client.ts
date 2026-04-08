@@ -40,6 +40,9 @@ export function createApiClient(): UcmDesktopApi {
     run: {
       getActive: () => rpc("run:get-active"),
       listForActiveMission: () => rpc("run:list-for-active-mission"),
+      listWakeupRequests: (input) => rpc("run:list-wakeup-requests", input),
+      listExecutionAttempts: (input) => rpc("run:list-execution-attempts", input),
+      listSessionLeases: (input) => rpc("run:list-session-leases", input),
       setActive: (input) => rpc("run:set-active", input),
       retry: (input) => rpc("run:retry", input),
       autopilotStep: () => rpc("run:autopilot-step"),

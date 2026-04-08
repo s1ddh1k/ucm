@@ -12,6 +12,12 @@ function normalizeCodexModel(model?: string): string | undefined {
 
 export class CodexAdapter extends BaseProviderAdapter {
   readonly name = "codex" as const;
+  readonly capabilities = {
+    defaultModel: "medium",
+    supportsTerminalSession: true,
+    sessionStrategy: "live_terminal",
+    resumeSupport: "live_terminal",
+  } as const;
 
   protected buildCommand(input: ProviderExecutionInput) {
     const args = [

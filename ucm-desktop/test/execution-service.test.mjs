@@ -22,6 +22,12 @@ function createAgent(overrides = {}) {
 function createProviderRegistry(overrides = {}) {
   const baseAdapter = {
     name: "claude",
+    capabilities: {
+      defaultModel: "sonnet",
+      supportsTerminalSession: true,
+      sessionStrategy: "live_terminal",
+      resumeSupport: "live_terminal",
+    },
     createCommand() {
       return {
         cmd: "fake-provider",
@@ -42,8 +48,27 @@ function createProviderRegistry(overrides = {}) {
 
   return {
     claude: { ...baseAdapter, ...overrides.claude },
-    codex: { ...baseAdapter, name: "codex", ...overrides.codex },
-    gemini: { ...baseAdapter, name: "gemini", ...overrides.gemini },
+    codex: {
+      ...baseAdapter,
+      name: "codex",
+      capabilities: {
+        defaultModel: "medium",
+        supportsTerminalSession: true,
+        sessionStrategy: "live_terminal",
+        resumeSupport: "live_terminal",
+      },
+      ...overrides.codex,
+    },
+    gemini: {
+      ...baseAdapter,
+      name: "gemini",
+      capabilities: {
+        supportsTerminalSession: false,
+        sessionStrategy: "pipe_only",
+        resumeSupport: "none",
+      },
+      ...overrides.gemini,
+    },
   };
 }
 
@@ -68,6 +93,9 @@ test("execution service prefers terminal-backed provider output when session suc
         input.onExit({ exitCode: 0, signal: 0 });
       }, 0);
       return "term-test-1";
+    },
+    resumeSession() {
+      return false;
     },
     killSession() {},
     writeToSession() {
@@ -136,6 +164,9 @@ test("execution service falls back to pipe execution when terminal session does 
       }, 0);
       return "term-test-2";
     },
+    resumeSession() {
+      return false;
+    },
     killSession() {},
     writeToSession() {
       return false;
@@ -181,12 +212,71 @@ test("execution service falls back to pipe execution when terminal session does 
   assert.equal(result.summary, "Verification packet is ready");
 });
 
+test("execution service attempts to resume a leased terminal session before opening a new one", async () => {
+  let startCalls = 0;
+  const resumedSessions = [];
+  const terminalController = {
+    startSession() {
+      startCalls += 1;
+      return "term-fresh";
+    },
+    resumeSession(input) {
+      resumedSessions.push(input.sessionId);
+      setTimeout(() => {
+        input.onData("Reused live provider session\n");
+        input.onData("Status: completed\n");
+        input.onExit({ exitCode: 0, signal: 0 });
+      }, 0);
+      return true;
+    },
+    killSession() {},
+    writeToSession() {
+      return false;
+    },
+    resizeSession() {
+      return false;
+    },
+  };
+
+  const service = new ExecutionService({
+    providerAdapters: createProviderRegistry(),
+    terminalSessionService: terminalController,
+  });
+
+  const sessionStarts = [];
+  const result = await waitForCompletion((onComplete) => {
+    service.spawnAgentRun({
+      missionId: "m-test",
+      runId: "r-resume",
+      agent: createAgent(),
+      objective: "Continue the implementation pass in the same session.",
+      sessionLeaseId: "lease-claude-1",
+      resumeSessionId: "term-warm-1",
+      sessionReusePolicy: "prefer_reuse",
+      onSessionStart(session) {
+        sessionStarts.push(session);
+      },
+      onComplete,
+    });
+  });
+
+  assert.equal(startCalls, 0);
+  assert.deepEqual(resumedSessions, ["term-warm-1"]);
+  assert.equal(sessionStarts.length, 1);
+  assert.equal(sessionStarts[0].sessionId, "term-warm-1");
+  assert.equal(result.summary, "Reused live provider session");
+  assert.equal(result.executionStats?.retryCount, 1);
+});
+
 test("execution service can run a gemini-backed pass without opening a terminal session", async () => {
   let terminalStarts = 0;
   const terminalController = {
     startSession() {
       terminalStarts += 1;
       return "term-gemini";
+    },
+    resumeSession() {
+      return false;
     },
     killSession() {},
     writeToSession() {
@@ -247,6 +337,9 @@ test("execution service prepares a structured learning-agent prompt", async () =
       }, 0);
       return "term-learning-1";
     },
+    resumeSession() {
+      return false;
+    },
     killSession() {},
     writeToSession() {
       return false;
@@ -287,6 +380,9 @@ test("execution service delegates terminal controls to the terminal controller",
     startSession() {
       return "term-control";
     },
+    resumeSession() {
+      return false;
+    },
     killSession(sessionId) {
       calls.push(["kill", sessionId]);
     },
@@ -322,6 +418,9 @@ test("execution service blocks provider spawn when the budget bucket is saturate
     startSession(input) {
       pendingSessions.push(input);
       return `term-${pendingSessions.length}`;
+    },
+    resumeSession() {
+      return false;
     },
     killSession() {},
     writeToSession() {
@@ -387,6 +486,9 @@ test("execution service can run a local workspace command and capture git diff",
     terminalSessionService: {
       startSession() {
         throw new Error("local commands should not create provider terminal sessions");
+      },
+      resumeSession() {
+        return false;
       },
       killSession() {},
       writeToSession() {

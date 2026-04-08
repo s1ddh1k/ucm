@@ -2,17 +2,20 @@ import path from "node:path";
 import { resolveUserDataPath } from "./user-data-path";
 import type {
   BudgetBucket,
+  ExecutionAttempt,
   MissionDetail,
   RunAutopilotBurstResult,
   MissionSnapshot,
   RunAutopilotResult,
   RunDetail,
   RunEvent,
+  SessionLease,
   ShellSnapshot,
+  WakeupRequest,
   WorkspaceSummary,
 } from "../shared/contracts";
 import { ExecutionService } from "./execution-service";
-import type { ProviderName } from "./provider-adapter";
+import { PROVIDER_CAPABILITIES, type ProviderName } from "./provider-adapter";
 import {
   type RuntimeStoreLike,
   RuntimeStore,
@@ -57,6 +60,7 @@ import {
   advanceMissionStatusInState,
   appendTerminalPreviewInState,
   completeAgentRunInState,
+  interruptAgentRunInState,
   maybeStartAgentExecutionInState,
   recordTerminalSessionInState,
   updateMissionStatusInState,
@@ -128,6 +132,12 @@ export class RuntimeService {
           lifecycleEventsByMissionId: parsed.lifecycleEventsByMissionId ?? {},
           autopilotHandledEventIdsByRunId:
             parsed.autopilotHandledEventIdsByRunId ?? {},
+          wakeupRequestsByMissionId:
+            parsed.wakeupRequestsByMissionId ?? {},
+          executionAttemptsByRunId:
+            parsed.executionAttemptsByRunId ?? {},
+          sessionLeasesByWorkspaceId:
+            parsed.sessionLeasesByWorkspaceId ?? {},
         }),
         this.onStateChange,
       );
@@ -433,6 +443,50 @@ export class RuntimeService {
     return (state.runsByMissionId[state.activeMissionId] ?? []).map((run) =>
       hydrateRunDetail(state, run),
     );
+  }
+
+  listWakeupRequestsForRun(input: { runId: string }): WakeupRequest[] {
+    const state = this.readState();
+    const located = findRun(state, input.runId);
+    if (!located) {
+      return [];
+    }
+    return [...(state.wakeupRequestsByMissionId[located.missionId] ?? [])]
+      .filter((request) => request.runId === input.runId)
+      .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+  }
+
+  listExecutionAttemptsForRun(input: { runId: string }): ExecutionAttempt[] {
+    const state = this.readState();
+    return [...(state.executionAttemptsByRunId[input.runId] ?? [])].sort(
+      (a, b) => a.attemptNumber - b.attemptNumber,
+    );
+  }
+
+  listSessionLeasesForRun(input: { runId: string }): SessionLease[] {
+    const state = this.readState();
+    const located = findRun(state, input.runId);
+    if (!located) {
+      return [];
+    }
+    const workspaceId =
+      state.workspaceIdByMissionId[located.missionId] ?? state.activeWorkspaceId;
+    return [...(state.sessionLeasesByWorkspaceId[workspaceId] ?? [])]
+      .filter(
+        (lease) =>
+          lease.missionId === located.missionId ||
+          lease.runId === input.runId ||
+          lease.lastAttemptId ===
+            (state.executionAttemptsByRunId[input.runId] ?? []).at(-1)?.id,
+      )
+      .map((lease) => ({
+        ...lease,
+        resumable:
+          lease.status === "warm" &&
+          Boolean(lease.sessionId) &&
+          PROVIDER_CAPABILITIES[lease.provider].resumeSupport !== "none",
+      }))
+      .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
   }
 
   setActiveRun(input: { runId: string }): RunDetail | null {
@@ -1042,7 +1096,19 @@ export class RuntimeService {
     }
 
     this.executionService.killTerminalSession(input.sessionId);
+    const latestAttempt = [...(state.executionAttemptsByRunId[run.id] ?? [])]
+      .reverse()
+      .find((attempt) => !attempt.finishedAt);
+    interruptAgentRunInState(state, {
+      missionId,
+      runId: run.id,
+      executionAttemptId: latestAttempt?.id,
+      wakeupRequestId: latestAttempt?.wakeupRequestId,
+      reason: "Human observer stopped the live terminal session.",
+      errorCode: "terminal_killed",
+    });
     run.status = "blocked";
+    run.terminalSessionId = undefined;
     run.timeline = [
       ...run.timeline,
       {
@@ -1060,6 +1126,13 @@ export class RuntimeService {
       metadata: {
         source: "terminal_kill",
       },
+    });
+    setAgentStatus(state, missionId, run.agentId, "blocked");
+    appendLifecycleEvent(state, missionId, {
+      agentId: run.agentId,
+      kind: "blocked",
+      summary: "Live terminal session was stopped by the human observer.",
+      createdAtLabel: "just now",
     });
     this.writeState(state);
     return true;
@@ -1166,6 +1239,7 @@ export class RuntimeService {
         missionId,
         runId: scheduledRun?.runId ?? run.id,
         agentId: transition.agentId,
+        triggerSource: "automation",
         executionService: this.executionService,
         roleRegistry: this.getRoleRegistry(),
         callbacks: {
@@ -1187,6 +1261,8 @@ export class RuntimeService {
     missionId: string;
     runId: string;
     agentId: string;
+    wakeupRequestId?: string;
+    executionAttemptId?: string;
     summary: string;
     source: "provider" | "mock" | "local";
     outcome: "completed" | "blocked" | "needs_review";
@@ -1231,6 +1307,7 @@ export class RuntimeService {
       missionId: input.missionId,
       runId: input.runId,
       agentId: input.agentId,
+      triggerSource: "manual",
       executionService: this.executionService,
       roleRegistry: this.getRoleRegistry(),
       callbacks: {
@@ -1251,7 +1328,7 @@ export class RuntimeService {
   private recordTerminalSession(
     missionId: string,
     runId: string,
-    session: { sessionId: string; provider: ProviderName },
+    session: { sessionId: string; provider: ProviderName; executionAttemptId?: string },
   ) {
     const state = this.readState();
     const updated = recordTerminalSessionInState(state, missionId, runId, session);

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import type {
+  ExecutionAttempt,
   MissionSnapshot,
+  ShellSnapshot,
   RunDetail,
+  SessionLease,
+  WakeupRequest,
   WorkspaceSummary,
   WorkspaceBrowserSnapshot,
   WorkspaceBrowserEntry,
@@ -33,6 +37,10 @@ function App() {
 
   // active run for control stage
   const [activeRun, setActiveRun] = useState<RunDetail | null>(null);
+  const [shellSnapshot, setShellSnapshot] = useState<ShellSnapshot | null>(null);
+  const [wakeupRequests, setWakeupRequests] = useState<WakeupRequest[]>([]);
+  const [executionAttempts, setExecutionAttempts] = useState<ExecutionAttempt[]>([]);
+  const [sessionLeases, setSessionLeases] = useState<SessionLease[]>([]);
 
   // mission form
   const [title, setTitle] = useState("");
@@ -69,8 +77,26 @@ function App() {
   }
 
   async function loadActiveRun() {
-    const run = await window.ucm.run.getActive();
+    const [run, shell] = await Promise.all([
+      window.ucm.run.getActive(),
+      window.ucm.shell.getSnapshot(),
+    ]);
     setActiveRun(run);
+    setShellSnapshot(shell);
+    if (!run) {
+      setWakeupRequests([]);
+      setExecutionAttempts([]);
+      setSessionLeases([]);
+      return;
+    }
+    const [nextWakeups, nextAttempts, nextLeases] = await Promise.all([
+      window.ucm.run.listWakeupRequests({ runId: run.id }),
+      window.ucm.run.listExecutionAttempts({ runId: run.id }),
+      window.ucm.run.listSessionLeases({ runId: run.id }),
+    ]);
+    setWakeupRequests(nextWakeups);
+    setExecutionAttempts(nextAttempts);
+    setSessionLeases(nextLeases);
   }
 
   async function handleSelectWorkspace(id: string) {
@@ -338,6 +364,7 @@ function App() {
     const latestRevision = latestDeliverable?.revisions.find(
       (r) => r.id === latestDeliverable.latestRevisionId,
     ) ?? null;
+    const latestAttempt = executionAttempts.at(-1) ?? null;
     const canApprove = latestRevision?.status === "active";
     const isBlocked = run?.status === "blocked";
     const isRunning = run?.status === "running";
@@ -528,6 +555,147 @@ function App() {
               </div>
             </div>
           )}
+
+          {(executionAttempts.length > 0 || wakeupRequests.length > 0 || sessionLeases.length > 0) && (
+            <div className="space-y-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                운영 상태
+              </p>
+
+              {shellSnapshot && shellSnapshot.providerWindows.length > 0 && (
+                <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Provider Windows
+                  </p>
+                  <div className="space-y-2">
+                    {shellSnapshot.providerWindows.map((window) => (
+                      <div
+                        key={window.provider}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-foreground">
+                            {window.provider} · {formatProviderWindowStatus(window.status)}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            warm: {window.warmLeaseCount ?? 0} · resumable: {window.resumableLeaseCount ?? 0} · queued: {window.queuedRuns}
+                          </p>
+                        </div>
+                        <div className="shrink-0 flex flex-wrap justify-end gap-2">
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${providerWindowStatusBadgeClass(window.status)}`}>
+                            {formatProviderWindowStatus(window.status)}
+                          </span>
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${providerWindowStrategyBadgeClass(window.sessionStrategy)}`}>
+                            {formatSessionStrategy(window.sessionStrategy)}
+                          </span>
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${providerWindowResumeBadgeClass(window.resumeSupport)}`}>
+                            {formatResumeSupport(window.resumeSupport)}
+                          </span>
+                          <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {window.nextAvailableLabel}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {latestAttempt && (
+                <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-foreground">
+                      최근 실행 시도
+                    </p>
+                    <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {latestAttempt.status}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                    <p>attempt #{latestAttempt.attemptNumber}</p>
+                    <p>provider: {latestAttempt.provider}</p>
+                    <p>tokens: {latestAttempt.estimatedPromptTokens ?? "n/a"}</p>
+                    <p>latency: {formatMs(latestAttempt.latencyMs)}</p>
+                    <p>session: {latestAttempt.sessionId ?? "n/a"}</p>
+                    <p>output chars: {latestAttempt.outputChars ?? "n/a"}</p>
+                  </div>
+                </div>
+              )}
+
+              {wakeupRequests.length > 0 && (
+                <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Wakeup Queue
+                  </p>
+                  <div className="space-y-2">
+                    {[...wakeupRequests].reverse().slice(0, 4).map((request) => (
+                      <div
+                        key={request.id}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-foreground">
+                            {request.source}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            {request.reason ?? request.id}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          {request.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sessionLeases.length > 0 && (
+                <div className="rounded-lg border border-border bg-card p-4 space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Session Leases
+                  </p>
+                  <div className="space-y-2">
+                    {sessionLeases.slice(0, 4).map((lease) => (
+                      <div
+                        key={lease.id}
+                        className="flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-foreground">
+                            {lease.provider} · {lease.affinityKey ?? lease.id}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            session: {lease.sessionId ?? "unbound"}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            policy: {lease.reusePolicy}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            last attempt: {lease.lastAttemptId ?? "none"}
+                          </p>
+                        </div>
+                        <div className="shrink-0 flex flex-wrap justify-end gap-2">
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${leaseStatusBadgeClass(lease.status)}`}>
+                            {lease.status}
+                          </span>
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${leaseResumeBadgeClass(lease.resumable)}`}>
+                            {lease.resumable ? "resume ready" : "resume unavailable"}
+                          </span>
+                          <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${leaseRotationBadgeClass(lease.rotationReason)}`}>
+                            {formatLeaseRotationReason(lease.rotationReason)}
+                          </span>
+                          <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {lease.reusePolicy}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -702,6 +870,142 @@ function translateEvent(kind: string, summary: string): string {
   if (/builder resumed/i.test(summary)) return `${prefix} — 빌드 시작`;
   if (/planner assessment/i.test(summary)) return `${prefix} — 플래너 평가 완료`;
   return `${prefix}`;
+}
+
+function formatMs(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (value < 1000) {
+    return `${value}ms`;
+  }
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
+function formatLeaseRotationReason(reason?: string): string {
+  if (!reason) {
+    return "steady";
+  }
+  if (reason === "ephemeral_policy") {
+    return "ephemeral";
+  }
+  return reason.replaceAll("_", " ");
+}
+
+function formatSessionStrategy(strategy?: string): string {
+  if (strategy === "persistent_terminal") {
+    return "persistent session";
+  }
+  if (strategy === "live_terminal") {
+    return "live terminal";
+  }
+  if (strategy === "pipe_only") {
+    return "pipe only";
+  }
+  return "unknown strategy";
+}
+
+function formatResumeSupport(support?: string): string {
+  if (support === "persistent_terminal") {
+    return "full resume";
+  }
+  if (support === "live_terminal") {
+    return "live resume";
+  }
+  if (support === "none") {
+    return "no resume";
+  }
+  return "unknown resume";
+}
+
+function formatProviderWindowStatus(status?: string): string {
+  if (status === "ready") {
+    return "ready";
+  }
+  if (status === "busy") {
+    return "running";
+  }
+  if (status === "cooldown") {
+    return "queued";
+  }
+  if (status === "unavailable") {
+    return "offline";
+  }
+  return status ?? "unknown";
+}
+
+function providerWindowStatusBadgeClass(status?: string): string {
+  if (status === "busy") {
+    return "bg-blue-500/10 text-blue-400";
+  }
+  if (status === "cooldown") {
+    return "bg-amber-500/10 text-amber-400";
+  }
+  if (status === "unavailable") {
+    return "bg-red-500/10 text-red-400";
+  }
+  if (status === "ready") {
+    return "bg-green-500/10 text-green-400";
+  }
+  return "bg-zinc-500/10 text-zinc-400";
+}
+
+function providerWindowStrategyBadgeClass(strategy?: string): string {
+  if (strategy === "persistent_terminal") {
+    return "bg-emerald-500/10 text-emerald-400";
+  }
+  if (strategy === "live_terminal") {
+    return "bg-cyan-500/10 text-cyan-400";
+  }
+  if (strategy === "pipe_only") {
+    return "bg-zinc-500/10 text-zinc-400";
+  }
+  return "bg-zinc-500/10 text-zinc-400";
+}
+
+function providerWindowResumeBadgeClass(support?: string): string {
+  if (support === "persistent_terminal") {
+    return "bg-emerald-500/10 text-emerald-400";
+  }
+  if (support === "live_terminal") {
+    return "bg-blue-500/10 text-blue-400";
+  }
+  if (support === "none") {
+    return "bg-zinc-500/10 text-zinc-400";
+  }
+  return "bg-zinc-500/10 text-zinc-400";
+}
+
+function leaseStatusBadgeClass(status?: string): string {
+  if (status === "warm") {
+    return "bg-green-500/10 text-green-400";
+  }
+  if (status === "busy") {
+    return "bg-blue-500/10 text-blue-400";
+  }
+  if (status === "cooldown") {
+    return "bg-amber-500/10 text-amber-400";
+  }
+  if (status === "expired") {
+    return "bg-red-500/10 text-red-400";
+  }
+  return "bg-zinc-500/10 text-zinc-400";
+}
+
+function leaseResumeBadgeClass(resumable?: boolean): string {
+  return resumable
+    ? "bg-emerald-500/10 text-emerald-400"
+    : "bg-zinc-500/10 text-zinc-400";
+}
+
+function leaseRotationBadgeClass(reason?: string): string {
+  if (reason === "ephemeral_policy") {
+    return "bg-amber-500/10 text-amber-400";
+  }
+  if (!reason) {
+    return "bg-green-500/10 text-green-400";
+  }
+  return "bg-zinc-500/10 text-zinc-400";
 }
 
 const statusLabels: Record<string, string> = {

@@ -68,6 +68,53 @@ export type RuntimeHandoffIndexRow = {
   status: string;
 };
 
+export type RuntimeWakeupRequestIndexRow = {
+  wakeupRequestId: string;
+  workspaceId: string;
+  missionId: string;
+  runId: string;
+  source: string;
+  status: string;
+  requestedAt: string;
+  reason: string | null;
+};
+
+export type RuntimeExecutionAttemptIndexRow = {
+  attemptId: string;
+  workspaceId: string;
+  missionId: string;
+  runId: string;
+  wakeupRequestId: string | null;
+  attemptNumber: number;
+  provider: string;
+  model: string | null;
+  status: string;
+  sessionId: string | null;
+  terminalSessionId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  latencyMs: number | null;
+  estimatedPromptTokens: number | null;
+  outputChars: number | null;
+};
+
+export type RuntimeSessionLeaseIndexRow = {
+  leaseId: string;
+  provider: string;
+  workspaceId: string;
+  missionId: string | null;
+  runId: string | null;
+  affinityKey: string | null;
+  sessionId: string | null;
+  status: string;
+  reusePolicy: string;
+  lastAttemptId: string | null;
+  lastUsedAt: string;
+  expiresAt: string | null;
+  rotationReason: string | null;
+};
+
 export class RuntimeIndexRepository {
   private database: DatabaseSync | null = null;
 
@@ -373,6 +420,218 @@ export class RuntimeIndexRepository {
       channel: row.channel,
       target: row.target,
       status: row.status,
+    }));
+  }
+
+  listWakeupRequests(input?: {
+    missionId?: string;
+    runId?: string;
+  }): RuntimeWakeupRequestIndexRow[] {
+    const clauses = ["store_key = ?"];
+    const params: SQLInputValue[] = [this.storeKey];
+
+    if (input?.missionId) {
+      clauses.push("mission_id = ?");
+      params.push(input.missionId);
+    }
+    if (input?.runId) {
+      clauses.push("run_id = ?");
+      params.push(input.runId);
+    }
+
+    const rows = this.safeAll<{
+      wakeup_request_id: string;
+      workspace_id: string;
+      mission_id: string;
+      run_id: string;
+      source: string;
+      status: string;
+      requested_at: string;
+      reason: string | null;
+    }>(
+      `
+        SELECT
+          wakeup_request_id,
+          workspace_id,
+          mission_id,
+          run_id,
+          source,
+          status,
+          requested_at,
+          reason
+        FROM runtime_wakeup_request_index
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY requested_at ASC, wakeup_request_id ASC
+      `,
+      ...params,
+    );
+
+    return rows.map((row) => ({
+      wakeupRequestId: row.wakeup_request_id,
+      workspaceId: row.workspace_id,
+      missionId: row.mission_id,
+      runId: row.run_id,
+      source: row.source,
+      status: row.status,
+      requestedAt: row.requested_at,
+      reason: row.reason,
+    }));
+  }
+
+  listExecutionAttempts(input?: {
+    missionId?: string;
+    runId?: string;
+  }): RuntimeExecutionAttemptIndexRow[] {
+    const clauses = ["store_key = ?"];
+    const params: SQLInputValue[] = [this.storeKey];
+
+    if (input?.missionId) {
+      clauses.push("mission_id = ?");
+      params.push(input.missionId);
+    }
+    if (input?.runId) {
+      clauses.push("run_id = ?");
+      params.push(input.runId);
+    }
+
+    const rows = this.safeAll<{
+      attempt_id: string;
+      workspace_id: string;
+      mission_id: string;
+      run_id: string;
+      wakeup_request_id: string | null;
+      attempt_number: number;
+      provider: string;
+      model: string | null;
+      status: string;
+      session_id: string | null;
+      terminal_session_id: string | null;
+      started_at: string;
+      finished_at: string | null;
+      exit_code: number | null;
+      latency_ms: number | null;
+      estimated_prompt_tokens: number | null;
+      output_chars: number | null;
+    }>(
+      `
+        SELECT
+          attempt_id,
+          workspace_id,
+          mission_id,
+          run_id,
+          wakeup_request_id,
+          attempt_number,
+          provider,
+          model,
+          status,
+          session_id,
+          terminal_session_id,
+          started_at,
+          finished_at,
+          exit_code,
+          latency_ms,
+          estimated_prompt_tokens,
+          output_chars
+        FROM runtime_execution_attempt_index
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY attempt_number ASC, attempt_id ASC
+      `,
+      ...params,
+    );
+
+    return rows.map((row) => ({
+      attemptId: row.attempt_id,
+      workspaceId: row.workspace_id,
+      missionId: row.mission_id,
+      runId: row.run_id,
+      wakeupRequestId: row.wakeup_request_id,
+      attemptNumber: row.attempt_number,
+      provider: row.provider,
+      model: row.model,
+      status: row.status,
+      sessionId: row.session_id,
+      terminalSessionId: row.terminal_session_id,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      exitCode: row.exit_code,
+      latencyMs: row.latency_ms,
+      estimatedPromptTokens: row.estimated_prompt_tokens,
+      outputChars: row.output_chars,
+    }));
+  }
+
+  listSessionLeases(input?: {
+    workspaceId?: string;
+    missionId?: string;
+    runId?: string;
+  }): RuntimeSessionLeaseIndexRow[] {
+    const clauses = ["store_key = ?"];
+    const params: SQLInputValue[] = [this.storeKey];
+
+    if (input?.workspaceId) {
+      clauses.push("workspace_id = ?");
+      params.push(input.workspaceId);
+    }
+    if (input?.missionId) {
+      clauses.push("mission_id = ?");
+      params.push(input.missionId);
+    }
+    if (input?.runId) {
+      clauses.push("run_id = ?");
+      params.push(input.runId);
+    }
+
+    const rows = this.safeAll<{
+      lease_id: string;
+      provider: string;
+      workspace_id: string;
+      mission_id: string | null;
+      run_id: string | null;
+      affinity_key: string | null;
+      session_id: string | null;
+      status: string;
+      reuse_policy: string;
+      last_attempt_id: string | null;
+      last_used_at: string;
+      expires_at: string | null;
+      rotation_reason: string | null;
+    }>(
+      `
+        SELECT
+          lease_id,
+          provider,
+          workspace_id,
+          mission_id,
+          run_id,
+          affinity_key,
+          session_id,
+          status,
+          reuse_policy,
+          last_attempt_id,
+          last_used_at,
+          expires_at,
+          rotation_reason
+        FROM runtime_session_lease_index
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY last_used_at DESC, lease_id ASC
+      `,
+      ...params,
+    );
+
+    return rows.map((row) => ({
+      leaseId: row.lease_id,
+      provider: row.provider,
+      workspaceId: row.workspace_id,
+      missionId: row.mission_id,
+      runId: row.run_id,
+      affinityKey: row.affinity_key,
+      sessionId: row.session_id,
+      status: row.status,
+      reusePolicy: row.reuse_policy,
+      lastAttemptId: row.last_attempt_id,
+      lastUsedAt: row.last_used_at,
+      expiresAt: row.expires_at,
+      rotationReason: row.rotation_reason,
     }));
   }
 

@@ -239,6 +239,85 @@ export type ProviderWindowSummary = {
   activeRuns: number;
   queuedRuns: number;
   nextAvailableLabel: string;
+  warmLeaseCount?: number;
+  resumableLeaseCount?: number;
+  sessionStrategy?: "pipe_only" | "live_terminal" | "persistent_terminal";
+  resumeSupport?: "none" | "live_terminal" | "persistent_terminal";
+};
+
+export type WakeupSource =
+  | "manual"
+  | "automation"
+  | "followup"
+  | "approval"
+  | "steering"
+  | "retry"
+  | "system";
+
+export type WakeupRequest = {
+  id: string;
+  workspaceId: string;
+  missionId: string;
+  runId: string;
+  source: WakeupSource;
+  status: "queued" | "claimed" | "completed" | "cancelled" | "superseded";
+  requestedAt: string;
+  requestedBy?: "user" | "system" | "runtime";
+  triggerEventId?: string;
+  parentAttemptId?: string;
+  reason?: string;
+};
+
+export type ExecutionAttempt = {
+  id: string;
+  workspaceId: string;
+  missionId: string;
+  runId: string;
+  wakeupRequestId?: string;
+  sessionLeaseId?: string;
+  attemptNumber: number;
+  provider: RuntimeProvider | "local";
+  model?: string;
+  status:
+    | "starting"
+    | "running"
+    | "succeeded"
+    | "blocked"
+    | "failed"
+    | "cancelled"
+    | "timed_out";
+  startedAt: string;
+  finishedAt?: string;
+  sessionId?: string;
+  terminalSessionId?: string;
+  exitCode?: number | null;
+  stdoutExcerpt?: string;
+  stderrExcerpt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  estimatedPromptTokens?: number;
+  outputChars?: number;
+  latencyMs?: number;
+  localityScore?: number;
+};
+
+export type SessionReusePolicy = "ephemeral" | "prefer_reuse" | "require_reuse";
+
+export type SessionLease = {
+  id: string;
+  provider: RuntimeProvider;
+  workspaceId: string;
+  missionId?: string;
+  runId?: string;
+  affinityKey?: string;
+  sessionId?: string;
+  status: "warm" | "busy" | "cooldown" | "expired";
+  reusePolicy: SessionReusePolicy;
+  resumable?: boolean;
+  lastAttemptId?: string;
+  lastUsedAt: string;
+  expiresAt?: string;
+  rotationReason?: string;
 };
 
 export type DeliverableKind =
@@ -317,6 +396,8 @@ export type RunDetail = {
   summary: string;
   budgetClass?: BudgetClass;
   providerPreference?: RuntimeProvider | "local";
+  sessionReusePolicy?: SessionReusePolicy;
+  sessionAffinityKey?: string;
   workspaceCommand?: string;
   terminalSessionId?: string;
   terminalProvider?: RuntimeProvider | "local";
@@ -426,6 +507,9 @@ export type UcmDesktopApi = {
   run: {
     getActive: () => Promise<RunDetail | null>;
     listForActiveMission: () => Promise<RunDetail[]>;
+    listWakeupRequests: (input: { runId: string }) => Promise<WakeupRequest[]>;
+    listExecutionAttempts: (input: { runId: string }) => Promise<ExecutionAttempt[]>;
+    listSessionLeases: (input: { runId: string }) => Promise<SessionLease[]>;
     setActive: (input: { runId: string }) => Promise<RunDetail | null>;
     retry: (input: { runId: string }) => Promise<RunDetail | null>;
     autopilotStep: () => Promise<RunAutopilotResult>;

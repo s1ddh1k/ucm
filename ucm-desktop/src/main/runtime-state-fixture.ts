@@ -417,6 +417,9 @@ const seedState: RuntimeState = {
     ],
   },
   autopilotHandledEventIdsByRunId: {},
+  wakeupRequestsByMissionId: {},
+  executionAttemptsByRunId: {},
+  sessionLeasesByWorkspaceId: {},
 };
 
 export function cloneSeed(): RuntimeState {

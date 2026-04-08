@@ -9,6 +9,10 @@ type TerminalSession = {
   id: string;
   process: pty.IPty;
   provider: ProviderName;
+  activeRequest: {
+    onData: (chunk: string) => void;
+    onExit: (result: { exitCode: number; signal: number }) => void;
+  } | null;
 };
 
 export class TerminalSessionService implements TerminalSessionController {
@@ -31,20 +35,43 @@ export class TerminalSessionService implements TerminalSessionController {
       id: sessionId,
       process: terminal,
       provider: input.provider,
+      activeRequest: {
+        onData: input.onData,
+        onExit: input.onExit,
+      },
     });
 
     terminal.onData((chunk) => {
-      input.onData(chunk);
+      const session = this.sessions.get(sessionId);
+      session?.activeRequest?.onData(chunk);
     });
 
     terminal.onExit(({ exitCode, signal }) => {
+      const session = this.sessions.get(sessionId);
       this.sessions.delete(sessionId);
-      input.onExit({ exitCode, signal: signal ?? -1 });
+      session?.activeRequest?.onExit({ exitCode, signal: signal ?? -1 });
     });
 
     terminal.write(input.prompt);
     terminal.write("\u0004");
     return sessionId;
+  }
+
+  resumeSession(input: StartTerminalSessionInput & { sessionId: string }) {
+    const session = this.sessions.get(input.sessionId);
+    if (!session || session.provider !== input.provider || session.activeRequest) {
+      return false;
+    }
+    session.activeRequest = {
+      onData: input.onData,
+      onExit: (result) => {
+        session.activeRequest = null;
+        input.onExit(result);
+      },
+    };
+    session.process.write(input.prompt);
+    session.process.write("\u0004");
+    return true;
   }
 
   killSession(sessionId: string) {

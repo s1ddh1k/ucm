@@ -1,10 +1,13 @@
 import type {
+  ExecutionAttempt,
   AgentLifecycleEvent,
   AgentSnapshot,
   MissionDetail,
   MissionSnapshot,
   RunDetail,
   RunEvent,
+  SessionLease,
+  WakeupRequest,
   WorkspaceSummary,
 } from "../shared/contracts";
 
@@ -25,6 +28,9 @@ export type RuntimeState = {
   runEventsByRunId: Record<string, RunEvent[]>;
   lifecycleEventsByMissionId: Record<string, AgentLifecycleEvent[]>;
   autopilotHandledEventIdsByRunId: Record<string, string[]>;
+  wakeupRequestsByMissionId: Record<string, WakeupRequest[]>;
+  executionAttemptsByRunId: Record<string, ExecutionAttempt[]>;
+  sessionLeasesByWorkspaceId: Record<string, SessionLease[]>;
 };
 
 const seedState: RuntimeState = {
@@ -428,6 +434,9 @@ const seedState: RuntimeState = {
     ],
   },
   autopilotHandledEventIdsByRunId: {},
+  wakeupRequestsByMissionId: {},
+  executionAttemptsByRunId: {},
+  sessionLeasesByWorkspaceId: {},
 };
 
 export function cloneSeed(): RuntimeState {

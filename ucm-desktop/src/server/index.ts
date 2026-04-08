@@ -74,6 +74,12 @@ const routes: Record<string, RpcHandler> = {
     runtime.createMission(input as { workspaceId: string; title: string; goal: string; command?: string }),
   "run:get-active": () => runtime.getActiveRun(),
   "run:list-for-active-mission": () => runtime.listRunsForActiveMission(),
+  "run:list-wakeup-requests": (input) =>
+    runtime.listWakeupRequestsForRun(input as { runId: string }),
+  "run:list-execution-attempts": (input) =>
+    runtime.listExecutionAttemptsForRun(input as { runId: string }),
+  "run:list-session-leases": (input) =>
+    runtime.listSessionLeasesForRun(input as { runId: string }),
   "run:set-active": (input) => runtime.setActiveRun(input as { runId: string }),
   "run:retry": (input) => runtime.retryRun(input as { runId: string }),
   "run:autopilot-step": () => runtime.autopilotStep(),

@@ -149,6 +149,15 @@ function registerIpc() {
   ipcMain.handle("mission:create", (_, input) => runtime.createMission(input));
   ipcMain.handle("run:get-active", () => runtime.getActiveRun());
   ipcMain.handle("run:list-for-active-mission", () => runtime.listRunsForActiveMission());
+  ipcMain.handle("run:list-wakeup-requests", (_, input) =>
+    runtime.listWakeupRequestsForRun(input),
+  );
+  ipcMain.handle("run:list-execution-attempts", (_, input) =>
+    runtime.listExecutionAttemptsForRun(input),
+  );
+  ipcMain.handle("run:list-session-leases", (_, input) =>
+    runtime.listSessionLeasesForRun(input),
+  );
   ipcMain.handle("run:set-active", (_, input) => runtime.setActiveRun(input));
   ipcMain.handle("run:retry", (_, input) => runtime.retryRun(input));
   ipcMain.handle("run:autopilot-step", () => runtime.autopilotStep());

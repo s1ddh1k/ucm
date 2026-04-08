@@ -3,6 +3,7 @@ import type {
   RunDetail,
   RuntimeProvider,
 } from "../shared/contracts";
+import { PROVIDER_CAPABILITIES } from "./provider-adapter";
 import type { RuntimeState } from "./runtime-state";
 
 export const RUNTIME_PROVIDERS: RuntimeProvider[] = [
@@ -25,7 +26,7 @@ export function listProviderWindowsForWorkspace(
     .flatMap(([, missionRuns]) => missionRuns);
 
   return RUNTIME_PROVIDERS.map((provider) =>
-    summarizeProviderWindow(provider, runs),
+    summarizeProviderWindow(provider, runs, state, workspaceId),
   );
 }
 
@@ -59,6 +60,8 @@ export function findQueuedRunToResume(
 function summarizeProviderWindow(
   provider: RuntimeProvider,
   runs: RunDetail[],
+  state: RuntimeState,
+  workspaceId?: string,
 ): ProviderWindowSummary {
   const activeRuns = runs.filter(
     (run) => run.providerPreference === provider && run.status === "running",
@@ -66,12 +69,31 @@ function summarizeProviderWindow(
   const queuedRuns = runs.filter(
     (run) => run.providerPreference === provider && run.status === "queued",
   ).length;
+  const warmLeaseCount = workspaceId
+    ? (state.sessionLeasesByWorkspaceId[workspaceId] ?? []).filter(
+        (lease) => lease.provider === provider && lease.status === "warm",
+      ).length
+    : 0;
+  const capabilities = PROVIDER_CAPABILITIES[provider];
+  const resumableLeaseCount = workspaceId
+    ? (state.sessionLeasesByWorkspaceId[workspaceId] ?? []).filter(
+        (lease) =>
+          lease.provider === provider &&
+          lease.status === "warm" &&
+          Boolean(lease.sessionId) &&
+          capabilities.resumeSupport !== "none",
+      ).length
+    : 0;
 
   return {
     provider,
     status: activeRuns > 0 ? "busy" : queuedRuns > 0 ? "cooldown" : "ready",
     activeRuns,
     queuedRuns,
+    warmLeaseCount,
+    resumableLeaseCount,
+    sessionStrategy: capabilities.sessionStrategy,
+    resumeSupport: capabilities.resumeSupport,
     nextAvailableLabel:
       activeRuns > 0
         ? "after current run finishes"

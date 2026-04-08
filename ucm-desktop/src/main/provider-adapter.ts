@@ -2,6 +2,20 @@ import { spawn } from "node:child_process";
 import type { RuntimeProvider } from "../shared/contracts";
 
 export type ProviderName = RuntimeProvider | "local";
+export type ProviderSessionStrategy =
+  | "pipe_only"
+  | "live_terminal"
+  | "persistent_terminal";
+export type ProviderResumeSupport =
+  | "none"
+  | "live_terminal"
+  | "persistent_terminal";
+export type ProviderCapabilities = {
+  defaultModel?: string;
+  supportsTerminalSession: boolean;
+  sessionStrategy: ProviderSessionStrategy;
+  resumeSupport: ProviderResumeSupport;
+};
 
 export type ProviderExecutionInput = {
   prompt: string;
@@ -20,6 +34,7 @@ export type ProviderExecutionResult = {
 
 export interface ProviderAdapter {
   readonly name: ProviderName;
+  readonly capabilities: ProviderCapabilities;
   execute(input: ProviderExecutionInput): Promise<ProviderExecutionResult>;
 }
 
@@ -34,6 +49,7 @@ const MAX_PROVIDER_STDERR_CHARS = 12_000;
 
 export abstract class BaseProviderAdapter implements ProviderAdapter {
   abstract readonly name: ProviderName;
+  abstract readonly capabilities: ProviderCapabilities;
 
   protected abstract buildCommand(input: ProviderExecutionInput): ProviderCommand;
 
@@ -119,6 +135,26 @@ export abstract class BaseProviderAdapter implements ProviderAdapter {
     return env;
   }
 }
+
+export const PROVIDER_CAPABILITIES: Record<RuntimeProvider, ProviderCapabilities> = {
+  claude: {
+    defaultModel: "sonnet",
+    supportsTerminalSession: true,
+    sessionStrategy: "live_terminal",
+    resumeSupport: "live_terminal",
+  },
+  codex: {
+    defaultModel: "medium",
+    supportsTerminalSession: true,
+    sessionStrategy: "live_terminal",
+    resumeSupport: "live_terminal",
+  },
+  gemini: {
+    supportsTerminalSession: false,
+    sessionStrategy: "pipe_only",
+    resumeSupport: "none",
+  },
+};
 
 export function appendProviderOutputChunk(
   current: string,

@@ -3,6 +3,7 @@ import type {
   BudgetClass,
   RoleContractId,
   RunExecutionStats,
+  SessionReusePolicy,
 } from "../shared/contracts";
 import type {
   BaseProviderAdapter,
@@ -16,6 +17,8 @@ export type AgentRunCompletion = {
   missionId: string;
   runId: string;
   agentId: string;
+  wakeupRequestId?: string;
+  executionAttemptId?: string;
   summary: string;
   source: "provider" | "mock" | "local";
   outcome: AgentRunOutcome;
@@ -35,6 +38,10 @@ export type SessionTransport =
 
 export type ExecutionSessionSnapshot = {
   sessionId: string;
+  executionAttemptId?: string;
+  leaseId?: string;
+  affinityKey?: string;
+  reusable?: boolean;
   provider: ProviderName;
   transport: SessionTransport;
   cwd: string;
@@ -48,6 +55,12 @@ export type SpawnAgentRunInput = {
   missionId: string;
   runId: string;
   agent: AgentSnapshot;
+  wakeupRequestId?: string;
+  executionAttemptId?: string;
+  sessionLeaseId?: string;
+  resumeSessionId?: string;
+  sessionReusePolicy?: SessionReusePolicy;
+  sessionAffinityKey?: string;
   objective: string;
   roleContractId?: RoleContractId;
   budgetClass: BudgetClass;
@@ -78,6 +91,7 @@ export type StartTerminalSessionInput = {
 
 export interface TerminalSessionController {
   startSession(input: StartTerminalSessionInput): string;
+  resumeSession(input: StartTerminalSessionInput & { sessionId: string }): boolean;
   killSession(sessionId: string): void;
   writeToSession(sessionId: string, data: string): boolean;
   resizeSession(sessionId: string, cols: number, rows: number): boolean;

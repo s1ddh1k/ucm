@@ -5,6 +5,12 @@ import {
 
 export class ClaudeAdapter extends BaseProviderAdapter {
   readonly name = "claude" as const;
+  readonly capabilities = {
+    defaultModel: "sonnet",
+    supportsTerminalSession: true,
+    sessionStrategy: "live_terminal",
+    resumeSupport: "live_terminal",
+  } as const;
 
   protected buildCommand(input: ProviderExecutionInput) {
     const args = [

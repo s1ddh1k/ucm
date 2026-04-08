@@ -27,6 +27,12 @@ const api: UcmDesktopApi = {
   run: {
     getActive: () => ipcRenderer.invoke("run:get-active"),
     listForActiveMission: () => ipcRenderer.invoke("run:list-for-active-mission"),
+    listWakeupRequests: (input: { runId: string }) =>
+      ipcRenderer.invoke("run:list-wakeup-requests", input),
+    listExecutionAttempts: (input: { runId: string }) =>
+      ipcRenderer.invoke("run:list-execution-attempts", input),
+    listSessionLeases: (input: { runId: string }) =>
+      ipcRenderer.invoke("run:list-session-leases", input),
     setActive: (input: { runId: string }) => ipcRenderer.invoke("run:set-active", input),
     retry: (input: { runId: string }) => ipcRenderer.invoke("run:retry", input),
     autopilotStep: () => ipcRenderer.invoke("run:autopilot-step"),

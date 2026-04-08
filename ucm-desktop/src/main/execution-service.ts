@@ -96,6 +96,8 @@ export class ExecutionService implements ExecutionController {
           missionId: input.missionId,
           runId: input.runId,
           agentId: input.agent.id,
+          wakeupRequestId: input.wakeupRequestId,
+          executionAttemptId: input.executionAttemptId,
           summary: `Provider execution failed: ${message}`,
           source: "provider",
           outcome: "blocked",
@@ -174,6 +176,8 @@ export class ExecutionService implements ExecutionController {
       missionId: input.missionId,
       runId: input.runId,
       agentId: input.agent.id,
+      wakeupRequestId: input.wakeupRequestId,
+      executionAttemptId: input.executionAttemptId,
       summary: this.summarizeProviderOutput(input.agent, input.objective, {
         ...result,
         stdout,
@@ -225,6 +229,8 @@ export class ExecutionService implements ExecutionController {
       missionId: input.missionId,
       runId: input.runId,
       agentId: input.agent.id,
+      wakeupRequestId: input.wakeupRequestId,
+      executionAttemptId: input.executionAttemptId,
       summary: this.summarizeLocalCommand(command, output.stdout, output.stderr),
       source: "local",
       outcome: output.exitCode === 0 ? "completed" : "blocked",
@@ -260,6 +266,7 @@ export class ExecutionService implements ExecutionController {
       let output = "";
       let settled = false;
       let sessionId = "";
+      let resumedSession = false;
 
       const finish = (result: AgentRunCompletion | null) => {
         if (settled) return;
@@ -269,6 +276,10 @@ export class ExecutionService implements ExecutionController {
 
       const sessionSnapshot: ExecutionSessionSnapshot = {
         sessionId: "",
+        executionAttemptId: input.input.executionAttemptId,
+        leaseId: input.input.sessionLeaseId,
+        affinityKey: input.input.sessionAffinityKey,
+        reusable: input.input.sessionReusePolicy !== "ephemeral",
         provider: input.provider,
         transport: "provider_terminal",
         cwd: input.cwd,
@@ -277,7 +288,7 @@ export class ExecutionService implements ExecutionController {
       };
 
       try {
-        sessionId = this.terminalSessionService.startSession({
+        const terminalRequest = {
           command: input.adapter.createCommand({
             prompt: input.prompt,
             cwd: input.cwd,
@@ -286,7 +297,7 @@ export class ExecutionService implements ExecutionController {
           }),
           prompt: input.prompt,
           provider: input.provider,
-          onData: (chunk) => {
+          onData: (chunk: string) => {
             output = appendCapturedText(
               output,
               chunk,
@@ -294,7 +305,7 @@ export class ExecutionService implements ExecutionController {
             );
             input.input.onTerminalData?.(chunk);
           },
-          onExit: ({ exitCode }) => {
+          onExit: ({ exitCode }: { exitCode: number; signal: number }) => {
             if (exitCode !== 0 || !output.trim()) {
               finish(null);
               return;
@@ -303,6 +314,8 @@ export class ExecutionService implements ExecutionController {
               missionId: input.input.missionId,
               runId: input.input.runId,
               agentId: input.input.agent.id,
+              wakeupRequestId: input.input.wakeupRequestId,
+              executionAttemptId: input.input.executionAttemptId,
               summary: this.summarizeTerminalOutput(
                 input.input.agent,
                 input.input.objective,
@@ -318,7 +331,7 @@ export class ExecutionService implements ExecutionController {
                 promptChars: input.promptChars,
                 outputChars: output.length,
                 latencyMs: Math.max(1, Date.now() - input.startedAt),
-                retryCount: 0,
+                retryCount: resumedSession ? 1 : 0,
                 blockerCount: 0,
                 steeringCount: 0,
                 localityScore: computeLocalityScore({
@@ -330,7 +343,19 @@ export class ExecutionService implements ExecutionController {
               },
             });
           },
-        });
+        };
+        if (input.input.resumeSessionId) {
+          resumedSession = this.terminalSessionService.resumeSession({
+            ...terminalRequest,
+            sessionId: input.input.resumeSessionId,
+          });
+          if (resumedSession) {
+            sessionId = input.input.resumeSessionId;
+          }
+        }
+        if (!resumedSession) {
+          sessionId = this.terminalSessionService.startSession(terminalRequest);
+        }
         sessionSnapshot.sessionId = sessionId;
         input.input.onSessionStart?.({ ...sessionSnapshot, sessionId });
       } catch {
@@ -443,19 +468,13 @@ export class ExecutionService implements ExecutionController {
     if (provider === "local") {
       return undefined;
     }
-    if (provider === "claude") {
-      return "sonnet";
-    }
-    if (provider === "codex") {
-      return "medium";
-    }
-    return undefined;
+    return this.providerAdapters[provider].capabilities.defaultModel;
   }
 
   private supportsTerminalSession(
     provider: Exclude<ProviderName, "local">,
   ): boolean {
-    return provider !== "gemini";
+    return this.providerAdapters[provider].capabilities.supportsTerminalSession;
   }
 
   private summarizeLocalCommand(

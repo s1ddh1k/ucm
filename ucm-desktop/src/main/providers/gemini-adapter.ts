@@ -8,6 +8,11 @@ import {
 
 export class GeminiAdapter extends BaseProviderAdapter {
   readonly name = "gemini" as const;
+  readonly capabilities = {
+    supportsTerminalSession: false,
+    sessionStrategy: "pipe_only",
+    resumeSupport: "none",
+  } as const;
 
   protected buildCommand(input: ProviderExecutionInput) {
     const args: string[] = [];

@@ -79,6 +79,59 @@ function ensureRuntimeIndexTables(database: DatabaseSync) {
       status TEXT NOT NULL,
       PRIMARY KEY (store_key, handoff_id)
     );
+
+    CREATE TABLE IF NOT EXISTS runtime_wakeup_request_index (
+      store_key TEXT NOT NULL,
+      wakeup_request_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      reason TEXT,
+      PRIMARY KEY (store_key, wakeup_request_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_execution_attempt_index (
+      store_key TEXT NOT NULL,
+      attempt_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      wakeup_request_id TEXT,
+      attempt_number INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT,
+      status TEXT NOT NULL,
+      session_id TEXT,
+      terminal_session_id TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      exit_code INTEGER,
+      latency_ms INTEGER,
+      estimated_prompt_tokens INTEGER,
+      output_chars INTEGER,
+      PRIMARY KEY (store_key, attempt_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_session_lease_index (
+      store_key TEXT NOT NULL,
+      lease_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      mission_id TEXT,
+      run_id TEXT,
+      affinity_key TEXT,
+      session_id TEXT,
+      status TEXT NOT NULL,
+      reuse_policy TEXT NOT NULL,
+      last_attempt_id TEXT,
+      last_used_at TEXT NOT NULL,
+      expires_at TEXT,
+      rotation_reason TEXT,
+      PRIMARY KEY (store_key, lease_id)
+    );
   `);
 
   ensureColumn(database, "runtime_run_index", "session_id", "TEXT");
@@ -127,6 +180,15 @@ export function projectRuntimeState(
   );
   const deleteHandoffRows = database.prepare(
     "DELETE FROM runtime_handoff_index WHERE store_key = ?",
+  );
+  const deleteWakeupRequestRows = database.prepare(
+    "DELETE FROM runtime_wakeup_request_index WHERE store_key = ?",
+  );
+  const deleteExecutionAttemptRows = database.prepare(
+    "DELETE FROM runtime_execution_attempt_index WHERE store_key = ?",
+  );
+  const deleteSessionLeaseRows = database.prepare(
+    "DELETE FROM runtime_session_lease_index WHERE store_key = ?",
   );
 
   const insertWorkspaceRow = database.prepare(`
@@ -205,6 +267,59 @@ export function projectRuntimeState(
       status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertWakeupRequestRow = database.prepare(`
+    INSERT INTO runtime_wakeup_request_index (
+      store_key,
+      wakeup_request_id,
+      workspace_id,
+      mission_id,
+      run_id,
+      source,
+      status,
+      requested_at,
+      reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertExecutionAttemptRow = database.prepare(`
+    INSERT INTO runtime_execution_attempt_index (
+      store_key,
+      attempt_id,
+      workspace_id,
+      mission_id,
+      run_id,
+      wakeup_request_id,
+      attempt_number,
+      provider,
+      model,
+      status,
+      session_id,
+      terminal_session_id,
+      started_at,
+      finished_at,
+      exit_code,
+      latency_ms,
+      estimated_prompt_tokens,
+      output_chars
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertSessionLeaseRow = database.prepare(`
+    INSERT INTO runtime_session_lease_index (
+      store_key,
+      lease_id,
+      provider,
+      workspace_id,
+      mission_id,
+      run_id,
+      affinity_key,
+      session_id,
+      status,
+      reuse_policy,
+      last_attempt_id,
+      last_used_at,
+      expires_at,
+      rotation_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
 
   database.exec("BEGIN");
   try {
@@ -213,6 +328,9 @@ export function projectRuntimeState(
     deleteRunRows.run(storeKey);
     deleteReleaseRows.run(storeKey);
     deleteHandoffRows.run(storeKey);
+    deleteWakeupRequestRows.run(storeKey);
+    deleteExecutionAttemptRows.run(storeKey);
+    deleteSessionLeaseRows.run(storeKey);
 
     for (const workspace of state.workspaces) {
       insertWorkspaceRow.run(
@@ -299,6 +417,68 @@ export function projectRuntimeState(
             handoff.status,
           );
         }
+      }
+    }
+
+    for (const [missionId, wakeupRequests] of Object.entries(state.wakeupRequestsByMissionId ?? {})) {
+      for (const wakeupRequest of wakeupRequests) {
+        insertWakeupRequestRow.run(
+          storeKey,
+          wakeupRequest.id,
+          wakeupRequest.workspaceId,
+          missionId,
+          wakeupRequest.runId,
+          wakeupRequest.source,
+          wakeupRequest.status,
+          wakeupRequest.requestedAt,
+          wakeupRequest.reason ?? null,
+        );
+      }
+    }
+
+    for (const [runId, attempts] of Object.entries(state.executionAttemptsByRunId ?? {})) {
+      for (const attempt of attempts) {
+        insertExecutionAttemptRow.run(
+          storeKey,
+          attempt.id,
+          attempt.workspaceId,
+          attempt.missionId,
+          runId,
+          attempt.wakeupRequestId ?? null,
+          attempt.attemptNumber,
+          attempt.provider,
+          attempt.model ?? null,
+          attempt.status,
+          attempt.sessionId ?? null,
+          attempt.terminalSessionId ?? null,
+          attempt.startedAt,
+          attempt.finishedAt ?? null,
+          attempt.exitCode ?? null,
+          attempt.latencyMs ?? null,
+          attempt.estimatedPromptTokens ?? null,
+          attempt.outputChars ?? null,
+        );
+      }
+    }
+
+    for (const [workspaceId, leases] of Object.entries(state.sessionLeasesByWorkspaceId ?? {})) {
+      for (const lease of leases) {
+        insertSessionLeaseRow.run(
+          storeKey,
+          lease.id,
+          lease.provider,
+          workspaceId,
+          lease.missionId ?? null,
+          lease.runId ?? null,
+          lease.affinityKey ?? null,
+          lease.sessionId ?? null,
+          lease.status,
+          lease.reusePolicy,
+          lease.lastAttemptId ?? null,
+          lease.lastUsedAt,
+          lease.expiresAt ?? null,
+          lease.rotationReason ?? null,
+        );
       }
     }
 
