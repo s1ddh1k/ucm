@@ -1,8 +1,0 @@
-{
-  "name": "Seeker",
-  "radius": 14,
-  "sprite": "seeker",
-  "speed": 120,
-  "damage": 1,
-  "value": 10
-}
